@@ -27,6 +27,7 @@ struct JsonlLine {
 
 #[derive(Debug, Deserialize)]
 struct MessageContent {
+    content: Option<serde_json::Value>,
     #[allow(dead_code)]
     role: Option<String>,
 }
@@ -137,53 +138,43 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
         return Ok(None);
     }
 
-    let head_count = 30.min(lines.len());
-    let tail_count = 10.min(lines.len());
-
     let mut session_id: Option<String> = None;
     let mut cwd: Option<String> = None;
     let mut created_at: Option<i64> = None;
-    let mut last_active_at: Option<i64> = None;
     let mut custom_title: Option<String> = None;
     let mut ai_title: Option<String> = None;
     let mut last_prompt: Option<String> = None;
     let mut message_count: i64 = 0;
 
-    // Parse head lines for metadata + first user message
-    for line in &lines[..head_count] {
+    // Parse all lines for metadata, titles, and message count
+    for line in lines.iter() {
         let parsed: JsonlLine = match serde_json::from_str(line) {
             Ok(l) => l,
             Err(_) => continue,
         };
 
-        // Collect metadata from any line that has it
+        // Collect metadata (first one wins)
         if let Some(ref sid) = parsed.session_id {
-            if session_id.is_none() {
-                session_id = Some(sid.clone());
-            }
+            if session_id.is_none() { session_id = Some(sid.clone()); }
         }
         if let Some(ref c) = parsed.cwd {
-            if cwd.is_none() {
-                cwd = Some(c.clone());
-            }
+            if cwd.is_none() { cwd = Some(c.clone()); }
         }
         if let Some(ref ts) = parsed.timestamp {
-            let ts_ms = parse_timestamp(ts);
             if created_at.is_none() {
-                created_at = ts_ms;
+                created_at = parse_timestamp(ts);
             }
         }
 
-        // Collect title: custom-title, ai-title, last-prompt (first one wins in file order)
+        // Collect titles (first one encountered wins for each type)
+        if let Some(ref ct) = parsed.custom_title {
+            if custom_title.is_none() && !ct.is_empty() { custom_title = Some(ct.clone()); }
+        }
         if let Some(ref at) = parsed.ai_title {
-            if ai_title.is_none() && !at.is_empty() {
-                ai_title = Some(at.clone());
-            }
+            if ai_title.is_none() && !at.is_empty() { ai_title = Some(at.clone()); }
         }
         if let Some(ref lp) = parsed.last_prompt {
-            if last_prompt.is_none() && !lp.is_empty() {
-                last_prompt = Some(truncate_title(lp));
-            }
+            if last_prompt.is_none() && !lp.is_empty() { last_prompt = Some(truncate_title(lp)); }
         }
 
         // Count non-meta messages
@@ -192,23 +183,31 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
         }
     }
 
-    // Parse tail lines for custom-title + last_active_at
-    for line in lines.iter().rev().take(tail_count) {
-        let parsed: JsonlLine = match serde_json::from_str(line) {
-            Ok(l) => l,
-            Err(_) => continue,
-        };
-
-        if let Some(ref ts) = parsed.timestamp {
-            if last_active_at.is_none() {
-                last_active_at = parse_timestamp(ts);
-            }
-        }
-
-        if custom_title.is_none() {
-            if let Some(ref ct) = parsed.custom_title {
-                if !ct.is_empty() {
-                    custom_title = Some(ct.clone());
+    // Fallback: extract last non-system user message if we have no title
+    let mut fallback_title: Option<String> = None;
+    if custom_title.is_none() && ai_title.is_none() && last_prompt.is_none() {
+        for line in lines.iter().rev() {
+            let parsed: JsonlLine = match serde_json::from_str(line) { Ok(l) => l, Err(_) => continue };
+            if parsed.msg_type.as_deref() == Some("user") {
+                if let Some(ref msg) = parsed.message {
+                    if let Some(ref content) = msg.content {
+                        if let Some(text) = content.as_str() {
+                            let t = text.trim();
+                            // Skip system commands
+                            if !t.starts_with("<command-name>")
+                                && !t.starts_with("/clear")
+                                && !t.starts_with("/compact")
+                                && !t.starts_with("/model")
+                                && !t.starts_with("/config")
+                                && !t.contains("<local-command-caveat>")
+                                && !t.contains("<system-reminder>")
+                                && !t.is_empty()
+                            {
+                                fallback_title = Some(truncate_title(t));
+                                break;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -231,10 +230,11 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
-    // Title priority: custom-title > ai-title > last-prompt > project name
+    // Title priority: custom-title > ai-title > last-prompt > fallback user msg > project name
     let title = custom_title
         .or(ai_title)
         .or(last_prompt)
+        .or(fallback_title)
         .unwrap_or(project_name);
 
     Ok(Some(SessionRecord {

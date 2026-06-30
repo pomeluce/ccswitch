@@ -106,7 +106,7 @@ impl TabContent for HistoryTab {
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
 
-                let time_ago = relative_time(&s.start_time);
+                let date = format_date(&s.start_time);
                 let size = format_size(s.size_bytes);
 
                 let arrow = if is_selected { "❯ " } else { "  " };
@@ -119,12 +119,14 @@ impl TabContent for HistoryTab {
                     )),
                     Line::from(vec![
                         Span::styled("    ", Style::default()),
-                        Span::styled(time_ago, Style::default().fg(Theme::COMMENT)),
+                        Span::styled(date, Style::default().fg(Theme::COMMENT)),
                         Span::styled(" · ", Style::default().fg(Theme::DIM)),
                         Span::styled(project, Style::default().fg(Theme::YELLOW)),
                         Span::styled(" · ", Style::default().fg(Theme::DIM)),
                         Span::styled(size, Style::default().fg(Theme::GREEN)),
                     ]),
+                    // Spacing between items
+                    Line::from(""),
                 ])
             })
             .collect();
@@ -253,24 +255,8 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
-fn relative_time(iso: &str) -> String {
-    if iso.len() < 19 { return iso.to_string(); }
-    let parsed = chrono::NaiveDateTime::parse_from_str(&iso[..19], "%Y-%m-%d %H:%M:%S");
-    let dt = match parsed {
-        Ok(d) => d.and_utc(),
-        Err(_) => return iso[5..16].to_string(),
-    };
-    let dur = chrono::Utc::now() - dt;
-    let mins = dur.num_minutes();
-    let hrs = dur.num_hours();
-    let days = dur.num_days();
-
-    if mins < 1 { "just now".into() }
-    else if mins < 60 { format!("{} min ago", mins) }
-    else if hrs < 24 { format!("{} hours ago", hrs) }
-    else if days < 7 { format!("{} days ago", days) }
-    else if days < 30 { format!("{} weeks ago", days / 7) }
-    else { format!("{} months ago", days / 30) }
+fn format_date(iso: &str) -> String {
+    if iso.len() >= 16 { iso[5..16].to_string() } else { iso.to_string() }
 }
 
 fn format_size(bytes: i64) -> String {
