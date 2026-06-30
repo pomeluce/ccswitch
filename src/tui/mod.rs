@@ -1,4 +1,15 @@
+pub mod app;
+pub mod theme;
+pub mod tabs;
+pub mod widgets;
+
+use std::path::PathBuf;
+
 pub fn run_tui() -> anyhow::Result<()> {
-    println!("TUI mode — not yet implemented");
-    Ok(())
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    let db_path = PathBuf::from(home).join(".ccswitch").join("ccswitch.db");
+    let defaults_path = PathBuf::from("/etc/ccswitch/defaults.toml");
+
+    let mut app = app::App::new(db_path, defaults_path)?;
+    app.run()
 }

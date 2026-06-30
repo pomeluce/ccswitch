@@ -1,0 +1,80 @@
+use std::path::PathBuf;
+
+use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use ratatui::{Frame, Terminal, backend::CrosstermBackend};
+
+use crate::core::config::ConfigManager;
+
+use super::tabs::{Tab, TabContent};
+use super::theme::Theme;
+
+pub struct App {
+    pub mgr: ConfigManager,
+    pub active_tab: Tab,
+    pub should_quit: bool,
+    pub status_message: String,
+}
+
+impl App {
+    pub fn new(db_path: PathBuf, defaults_path: PathBuf) -> anyhow::Result<Self> {
+        let mgr = ConfigManager::new(&db_path, Some(&defaults_path))?;
+        Ok(App {
+            mgr,
+            active_tab: Tab::Providers,
+            should_quit: false,
+            status_message: String::new(),
+        })
+    }
+
+    pub fn run(&mut self) -> anyhow::Result<()> {
+        let mut terminal = ratatui::init();
+        let result = self.event_loop(&mut terminal);
+        ratatui::restore();
+        result
+    }
+
+    fn event_loop(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> anyhow::Result<()> {
+        while !self.should_quit {
+            terminal.draw(|f| self.render(f))?;
+            if let Event::Key(key) = event::read()? {
+                if key.kind == KeyEventKind::Press {
+                    self.handle_key(key.code);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_key(&mut self, code: KeyCode) {
+        match code {
+            KeyCode::Char('q') => self.should_quit = true,
+            KeyCode::Char('1') => self.active_tab = Tab::Providers,
+            KeyCode::Char('2') => self.active_tab = Tab::Usage,
+            KeyCode::Char('3') => self.active_tab = Tab::History,
+            _ => {
+                // Delegate to active tab
+                match self.active_tab {
+                    Tab::Providers => {} // Task 9
+                    Tab::Usage => {}     // Task 10
+                    Tab::History => {}   // Task 11
+                }
+            }
+        }
+    }
+
+    fn render(&self, f: &mut Frame) {
+        let area = f.area();
+        let bg = ratatui::widgets::Block::new()
+            .style(ratatui::style::Style::default().bg(Theme::BG));
+        f.render_widget(bg, area);
+
+        // Placeholder: draw simple text
+        let text = format!("Active tab: {:?} | Press q to quit", self.active_tab);
+        let p = ratatui::widgets::Paragraph::new(text)
+            .style(ratatui::style::Style::default().fg(Theme::FG));
+        f.render_widget(p, area);
+    }
+}
