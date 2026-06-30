@@ -20,17 +20,16 @@ struct SessionMeta {
 #[derive(Debug, Deserialize)]
 struct SessionMessage {
     uuid: Option<String>,
-    #[allow(dead_code)]
     #[serde(rename = "type")]
     msg_type: Option<String>,
-    #[serde(rename = "userType")]
-    user_type: Option<String>,
+    message: Option<MessageContent>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MessageContent {
+    content: Option<String>,
     #[allow(dead_code)]
-    #[serde(rename = "parentUuid")]
-    parent_uuid: Option<String>,
-    attachment: Option<serde_json::Value>,
-    #[allow(dead_code)]
-    timestamp: Option<i64>,
+    role: Option<String>,
 }
 
 fn claude_dir() -> PathBuf {
@@ -81,11 +80,6 @@ impl Db {
                 continue;
             }
 
-            // Skip if already imported
-            if self.session_exists(&session_id)? {
-                continue;
-            }
-
             let cwd = meta.cwd.unwrap_or_default();
             let start_time = meta
                 .started_at
@@ -123,14 +117,6 @@ impl Db {
         Ok(imported)
     }
 
-    fn session_exists(&self, id: &str) -> Result<bool, rusqlite::Error> {
-        let count: i64 = self.conn().query_row(
-            "SELECT COUNT(*) FROM session_history WHERE id = ?1",
-            rusqlite::params![id],
-            |row| row.get(0),
-        )?;
-        Ok(count > 0)
-    }
 }
 
 /// Read session details from ~/.claude/projects/<hash>/<id>.jsonl
@@ -159,37 +145,25 @@ fn read_session_details(cwd: &str, session_id: &str) -> (Option<String>, i64) {
             Err(_) => continue,
         };
 
-        // Only count actual message events (skip snapshot/attachment-only)
-        if msg.uuid.is_some() {
+        // Count messages that have a uuid (real events, not snapshots)
+        if msg.uuid.is_some() && msg.msg_type.as_deref() != Some("file-history-snapshot") {
             message_count += 1;
         }
 
         // Capture first user message as title
-        if first_user_message.is_none() && msg.user_type.as_deref() == Some("user") {
-            if let Some(attachment) = &msg.attachment {
-                // Extract text content from attachment
-                if let Some(content_array) = attachment.as_array() {
-                    for block in content_array {
-                        if block
-                            .get("type")
-                            .and_then(|t| t.as_str())
-                            .filter(|t| *t == "text")
-                            .is_some()
-                        {
-                            if let Some(text_content) = block.get("text").and_then(|t| t.as_str()) {
-                                // Truncate to first line / reasonable length
-                                let title = text_content
-                                    .lines()
-                                    .next()
-                                    .unwrap_or("")
-                                    .chars()
-                                    .take(80)
-                                    .collect::<String>();
-                                if !title.is_empty() {
-                                    first_user_message = Some(title);
-                                }
-                            }
-                        }
+        if first_user_message.is_none() && msg.msg_type.as_deref() == Some("user") {
+            if let Some(msg_content) = &msg.message {
+                if let Some(text) = &msg_content.content {
+                    let title = text
+                        .lines()
+                        .next()
+                        .unwrap_or("")
+                        .trim()
+                        .chars()
+                        .take(80)
+                        .collect::<String>();
+                    if !title.is_empty() {
+                        first_user_message = Some(title);
                     }
                 }
             }
