@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Clear, List, ListItem, ListState, Paragraph},
     Frame,
@@ -186,6 +186,7 @@ impl TabContent for HistoryTab {
         // Right: detail for selected session (always render bordered block)
         if let Some(idx) = self.state.selected() {
             if let Some(s) = self.sessions.get(idx) {
+                let pad = "  ";
                 let lines = vec![
                     Line::from(vec![Span::styled(
                         s.title.as_deref().unwrap_or(&s.id),
@@ -193,51 +194,32 @@ impl TabContent for HistoryTab {
                     )]),
                     Line::from(""),
                     Line::from(vec![
-                        Span::styled("Project:  ", Style::default().fg(Theme::PURPLE)),
-                        Span::styled(
-                            &s.project_path,
-                            Style::default().fg(Theme::YELLOW),
-                        ),
+                        Span::styled(format!("{}Project:  ", pad), Style::default().fg(Theme::PURPLE)),
+                        Span::styled(&s.project_path, Style::default().fg(Theme::YELLOW)),
                     ]),
                     Line::from(vec![
-                        Span::styled("Profile:  ", Style::default().fg(Theme::PURPLE)),
-                        Span::styled(
-                            s.profile_id.as_deref().unwrap_or("-"),
-                            Style::default().fg(Theme::FG),
-                        ),
+                        Span::styled(format!("{}Profile:  ", pad), Style::default().fg(Theme::PURPLE)),
+                        Span::styled(s.profile_id.as_deref().unwrap_or("-"), Style::default().fg(Theme::FG)),
                     ]),
                     Line::from(vec![
-                        Span::styled("Mode:     ", Style::default().fg(Theme::PURPLE)),
+                        Span::styled(format!("{}Mode:     ", pad), Style::default().fg(Theme::PURPLE)),
                         Span::styled(&s.mode, Style::default().fg(Theme::GREEN)),
                     ]),
                     Line::from(vec![
-                        Span::styled("Tokens:   ", Style::default().fg(Theme::PURPLE)),
-                        Span::styled(
-                            format!("{} prompt / {} completion", s.prompt_tokens, s.completion_tokens),
-                            Style::default().fg(Theme::FG),
-                        ),
+                        Span::styled(format!("{}Tokens:   ", pad), Style::default().fg(Theme::PURPLE)),
+                        Span::styled(format!("{} prompt / {} completion", s.prompt_tokens, s.completion_tokens), Style::default().fg(Theme::FG)),
                     ]),
                     Line::from(vec![
-                        Span::styled("Started:  ", Style::default().fg(Theme::PURPLE)),
+                        Span::styled(format!("{}Started:  ", pad), Style::default().fg(Theme::PURPLE)),
                         Span::styled(&s.start_time, Style::default().fg(Theme::DIM)),
                     ]),
                     Line::from(vec![
-                        Span::styled("Messages: ", Style::default().fg(Theme::PURPLE)),
-                        Span::styled(
-                            format!("{}", s.message_count),
-                            Style::default().fg(Theme::FG),
-                        ),
+                        Span::styled(format!("{}Messages: ", pad), Style::default().fg(Theme::PURPLE)),
+                        Span::styled(format!("{}", s.message_count), Style::default().fg(Theme::FG)),
                     ]),
-                    Line::from(""),
                     Line::from(vec![
-                        Span::styled(
-                            "r Resume  ",
-                            Style::default().add_modifier(Modifier::REVERSED),
-                        ),
-                        Span::styled(
-                            "  d Delete",
-                            Style::default().fg(Theme::RED),
-                        ),
+                        Span::styled(format!("{}Size:     ", pad), Style::default().fg(Theme::PURPLE)),
+                        Span::styled(format_size(s.size_bytes), Style::default().fg(Theme::FG)),
                     ]),
                 ];
 
@@ -460,7 +442,7 @@ impl HistoryTab {
     }
 
     fn render_confirm_popup(&self, f: &mut Frame, area: Rect) {
-        let popup_area = centered_rect(40, 5, area);
+        let popup_area = centered_rect(44, 6, area);
         let confirm_style = if self.selected_button == 0 {
             Style::default().fg(Color::Black).bg(Theme::RED)
         } else {
@@ -473,20 +455,21 @@ impl HistoryTab {
         };
 
         let p = Paragraph::new(vec![
-            Line::from("Delete this session?"),
+            Line::from(Span::styled(" Delete this session? ", Style::default())).centered(),
             Line::from(""),
             Line::from(vec![
+                Span::raw("       "),
                 Span::styled(" Confirm ", confirm_style),
-                Span::styled("  ", Style::default()),
+                Span::styled("   ", Style::default()),
                 Span::styled(" Cancel ", cancel_style),
-            ]),
+            ]).centered(),
         ])
         .block(
             Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
                 .title("Confirm Delete")
                 .border_style(Style::default().fg(Theme::RED)),
         );
-        f.render_widget(Clear, popup_area); // clear behind
+        f.render_widget(Clear, popup_area);
         f.render_widget(p, popup_area);
     }
 
