@@ -21,6 +21,7 @@ struct JsonlLine {
     ai_title: Option<String>,
     #[serde(rename = "lastPrompt")]
     last_prompt: Option<String>,
+    #[allow(dead_code)]
     #[serde(rename = "isMeta")]
     is_meta: Option<bool>,
 }
