@@ -39,20 +39,23 @@ impl Db {
         let mut param_values: Vec<String> = vec![];
 
         if let Some(p) = project {
-            param_values.push(p.to_string());
-            sql.push_str(&format!(" AND project_path LIKE '%{}%'", p));
+            param_values.push(format!("%{}%", p));
+            sql.push_str(" AND project_path LIKE ?");
         }
         if let Some(s) = search {
-            param_values.push(format!("%{}%", s));
-            sql.push_str(&format!(" AND (title LIKE '%{}%' OR id LIKE '%{}%')", s, s));
+            let pattern = format!("%{}%", s);
+            param_values.push(pattern.clone());
+            param_values.push(pattern);
+            sql.push_str(" AND (title LIKE ? OR id LIKE ?)");
         }
         sql.push_str(" ORDER BY start_time DESC LIMIT ?");
         let limit_str = limit.to_string();
+        param_values.push(limit_str);
 
         let mut stmt = self.conn().prepare(&sql)?;
-        let rows = stmt.query_map(rusqlite::params_from_iter(
-            param_values.iter().map(|s| s.as_str()).chain(std::iter::once(limit_str.as_str()))
-        ), |row| {
+        let rows = stmt.query_map(
+            rusqlite::params_from_iter(param_values.iter().map(|s| s.as_str())),
+            |row| {
             Ok(SessionRecord {
                 id: row.get(0)?,
                 project_path: row.get(1)?,

@@ -1,8 +1,4 @@
 .superpowers/
 docs/superpowers
-
-# Added by cargo
-
-/target
+target/
 require.md
-docs/
