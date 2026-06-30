@@ -145,9 +145,9 @@ impl TabContent for HistoryTab {
                         Span::styled("    ", Style::default()),
                         Span::styled(date, Style::default().fg(Theme::COMMENT)),
                         Span::styled(" · ", Style::default().fg(Theme::DIM)),
-                        Span::styled(project, Style::default().fg(Theme::YELLOW)),
+                        Span::styled(project, Style::default().fg(Theme::COMMENT)),
                         Span::styled(" · ", Style::default().fg(Theme::DIM)),
-                        Span::styled(size, Style::default().fg(Theme::GREEN)),
+                        Span::styled(size, Style::default().fg(Theme::COMMENT)),
                     ]),
                     // Spacing between items
                     Line::from(""),
