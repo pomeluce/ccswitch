@@ -58,13 +58,18 @@ impl HistoryTab {
     }
 
     pub fn refresh(&mut self) {
-        let q = self.search_query.to_lowercase();
+        let query = self.search_query.trim().to_lowercase();
+        let tokens: Vec<&str> = query.split_whitespace().collect();
         self.sessions = self.all_sessions
             .iter()
             .filter(|s| {
-                q.is_empty()
-                    || s.title.as_deref().unwrap_or("").to_lowercase().contains(&q)
-                    || s.project_path.to_lowercase().contains(&q)
+                if tokens.is_empty() { return true; }
+                let haystack = format!(
+                    "{} {}",
+                    s.title.as_deref().unwrap_or(""),
+                    s.project_path
+                ).to_lowercase();
+                tokens.iter().all(|t| haystack.contains(t))
             })
             .cloned()
             .collect();
