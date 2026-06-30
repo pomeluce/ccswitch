@@ -18,22 +18,22 @@ ratatui = "0.29"
 crossterm = "0.28"
 
 # CLI
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = [ "derive" ] }
 clap_complete = "4.5"
 clap_mangen = "0.2"
 dialoguer = "0.11"
 
 # HTTP proxy
 axum = "0.7"
-reqwest = { version = "0.12", default-features = false, features = ["stream", "json", "rustls-tls"] }
-tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = [ "stream", "json", "rustls-tls" ] }
+tokio = { version = "1", features = [ "full" ] }
 
 # Database
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.31", features = [ "bundled" ] }
 
 # Config & serialization
 toml = "0.8"
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = [ "derive" ] }
 serde_json = "1"
 
 # Dates/times
@@ -51,3 +51,4 @@ tracing-subscriber = "0.3"
 tempfile = "3"
 rstest = "0.22"
 tokio-test = "0.4"
+

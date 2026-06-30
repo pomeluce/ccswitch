@@ -65,3 +65,4 @@ pub enum SwitchMode {
     Local,
     Proxy,
 }
+

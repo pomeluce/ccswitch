@@ -190,11 +190,24 @@ fn handle_remove(mgr: &ConfigManager, target: &str) -> Result<()> {
 }
 
 fn handle_proxy(action: ProxyAction) -> Result<()> {
+    use crate::proxy::service;
     match action {
-        ProxyAction::Start => println!("Proxy start — implemented in Task 7"),
-        ProxyAction::Stop => println!("Proxy stop — implemented in Task 7"),
-        ProxyAction::Status => println!("Proxy status — implemented in Task 7"),
-        ProxyAction::Serve => println!("Proxy serve — implemented in Task 7"),
+        ProxyAction::Start => service::start_proxy()?,
+        ProxyAction::Stop => service::stop_proxy()?,
+        ProxyAction::Status => service::proxy_status()?,
+        ProxyAction::Serve => {
+            let db_path = get_db_path();
+            let defaults_path = get_defaults_path();
+            let mgr = ConfigManager::new(&db_path, Some(&defaults_path))?;
+            let port: u16 = mgr
+                .db()
+                .get_setting("proxy_port")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(15721);
+            let server = crate::proxy::server::ProxyServer::new(mgr);
+            let rt = tokio::runtime::Runtime::new()?;
+            rt.block_on(server.serve(port))?;
+        }
     }
     Ok(())
 }

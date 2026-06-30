@@ -1,7 +1,7 @@
-use std::path::{Path, PathBuf};
-use serde::Deserialize;
-use crate::core::models::{Provider, Profile, Source};
+use crate::core::models::{Profile, Provider, Source};
 use crate::db::Db;
+use serde::Deserialize;
+use std::path::{Path, PathBuf};
 
 /// Read from ~/.ccswitch/defaults.toml (user-level config, may be managed by NixOS/home-manager)
 fn default_config_path() -> PathBuf {
@@ -53,25 +53,31 @@ impl ConfigManager {
         let system_providers = if defaults_path.exists() {
             let content = std::fs::read_to_string(defaults_path)?;
             let defaults: DefaultsFile = toml::from_str(&content)?;
-            defaults.providers.into_iter().map(|p| {
-                Provider {
+            defaults
+                .providers
+                .into_iter()
+                .map(|p| Provider {
                     id: p.id,
                     name: p.name,
                     api_url: p.api_url,
                     api_key: p.api_key,
-                    profiles: p.profiles.into_iter().map(|pr| Profile {
-                        id: pr.id,
-                        name: pr.name,
-                        opus: pr.opus,
-                        sonnet: pr.sonnet,
-                        haiku: pr.haiku,
-                        subagent: pr.subagent,
-                        default: pr.default,
-                        source: Source::System,
-                    }).collect(),
+                    profiles: p
+                        .profiles
+                        .into_iter()
+                        .map(|pr| Profile {
+                            id: pr.id,
+                            name: pr.name,
+                            opus: pr.opus,
+                            sonnet: pr.sonnet,
+                            haiku: pr.haiku,
+                            subagent: pr.subagent,
+                            default: pr.default,
+                            source: Source::System,
+                        })
+                        .collect(),
                     source: Source::System,
-                }
-            }).collect()
+                })
+                .collect()
         } else {
             vec![]
         };
@@ -132,3 +138,4 @@ impl ConfigManager {
         &self.db
     }
 }
+

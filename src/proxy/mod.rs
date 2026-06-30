@@ -1,1 +1,4 @@
-// Proxy module — implemented in Task 7
+pub mod router;
+pub mod server;
+pub mod metrics;
+pub mod service;
