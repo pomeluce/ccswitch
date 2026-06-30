@@ -17,6 +17,7 @@ pub struct SessionRecord {
 }
 
 impl Db {
+    #[allow(dead_code)]
     pub fn insert_session(&self, s: &SessionRecord) -> Result<(), rusqlite::Error> {
         self.conn().execute(
             "INSERT OR REPLACE INTO session_history (id, project_path, profile_id, mode, start_time, end_time, prompt_tokens, completion_tokens, message_count, title)

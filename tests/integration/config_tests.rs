@@ -1,13 +1,15 @@
-use tempfile::tempdir;
-use std::fs;
 use ccswitch::core::config::ConfigManager;
 use ccswitch::db::Db;
+use std::fs;
+use tempfile::tempdir;
 
 #[test]
 fn test_system_defaults_loaded() {
     let dir = tempdir().unwrap();
     let defaults_path = dir.path().join("defaults.toml");
-    fs::write(&defaults_path, r#"
+    fs::write(
+        &defaults_path,
+        r#"
 version = 1
 [[providers]]
 id = "test-provider"
@@ -22,7 +24,9 @@ sonnet = "model-sonnet"
 haiku = "model-haiku"
 subagent = "model-sub"
 default = true
-"#).unwrap();
+"#,
+    )
+    .unwrap();
 
     let db_path = dir.path().join("test.db");
     let mgr = ConfigManager::new(&db_path, Some(&defaults_path)).unwrap();
@@ -38,7 +42,9 @@ default = true
 fn test_user_override() {
     let dir = tempdir().unwrap();
     let defaults_path = dir.path().join("defaults.toml");
-    fs::write(&defaults_path, r#"
+    fs::write(
+        &defaults_path,
+        r#"
 version = 1
 [[providers]]
 id = "p1"
@@ -52,17 +58,23 @@ opus = "sys-opus"
 sonnet = "sys-sonnet"
 haiku = "sys-haiku"
 subagent = "sys-sub"
-"#).unwrap();
+"#,
+    )
+    .unwrap();
 
     let db_path = dir.path().join("test.db");
     let db = Db::open(&db_path).unwrap();
     // User adds a new profile under the system provider
     use ccswitch::core::models::{Provider, Source};
     db.insert_user_provider(&Provider {
-        id: "p1".into(), name: "My Override".into(),
-        api_url: "https://my.example.com".into(), api_key: "sk-xyz".into(),
-        profiles: vec![], source: Source::User,
-    }).unwrap();
+        id: "p1".into(),
+        name: "My Override".into(),
+        api_url: "https://my.example.com".into(),
+        api_key: "sk-xyz".into(),
+        profiles: vec![],
+        source: Source::User,
+    })
+    .unwrap();
 
     let mgr = ConfigManager::new(&db_path, Some(&defaults_path)).unwrap();
     let providers = mgr.list_providers().unwrap();
@@ -74,3 +86,4 @@ subagent = "sys-sub"
     assert_eq!(p1.profiles.len(), 1);
     assert_eq!(p1.profiles[0].name, "System Profile");
 }
+

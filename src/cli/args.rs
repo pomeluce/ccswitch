@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, ValueHint};
+use clap::{Parser, Subcommand};
 
 /// CCSwitch — Claude Code model configuration manager
 #[derive(Parser, Debug)]

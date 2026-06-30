@@ -18,6 +18,7 @@ pub struct ProviderTree {
 pub enum TreeItem {
     Provider {
         provider: Provider,
+        #[allow(dead_code)]
         index: usize,
     },
     Profile {
@@ -97,8 +98,7 @@ impl ProviderTree {
         let items: Vec<ListItem> = self
             .items
             .iter()
-            .enumerate()
-            .filter_map(|(_idx, item)| match item {
+            .filter_map(|item| match item {
                 TreeItem::Provider { provider, .. } => {
                     let icon = if provider.source.can_delete() {
                         "\u{1f464}"

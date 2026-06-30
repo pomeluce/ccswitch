@@ -16,6 +16,7 @@ impl Db {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn remove_setting(&self, key: &str) -> Result<(), rusqlite::Error> {
         self.conn().execute("DELETE FROM settings WHERE key = ?1", params![key])?;
         Ok(())

@@ -1,6 +1,6 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Style, Stylize},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, List, ListItem},
     Frame,
@@ -28,6 +28,7 @@ impl UsageTab {
         }
     }
 
+    #[allow(dead_code)]
     pub fn refresh(&mut self, mgr: &ConfigManager) {
         self.summaries = mgr.db().query_usage(&self.range).unwrap_or_default();
     }
@@ -103,15 +104,15 @@ impl TabContent for UsageTab {
 
     fn handle_key(&mut self, code: KeyCode) {
         match code {
-            KeyCode::Char('j') | KeyCode::Down => {
-                if self.selected_index < self.summaries.len().saturating_sub(1) {
-                    self.selected_index += 1;
-                }
+            KeyCode::Char('j') | KeyCode::Down
+                if self.selected_index < self.summaries.len().saturating_sub(1) =>
+            {
+                self.selected_index += 1;
             }
-            KeyCode::Char('k') | KeyCode::Up => {
-                if self.selected_index > 0 {
-                    self.selected_index -= 1;
-                }
+            KeyCode::Char('k') | KeyCode::Up
+                if self.selected_index > 0 =>
+            {
+                self.selected_index -= 1;
             }
             KeyCode::Char('t') => {
                 // Toggle range

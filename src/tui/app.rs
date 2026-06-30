@@ -8,6 +8,7 @@ use crate::core::config::ConfigManager;
 use super::tabs::{history::HistoryTab, providers::ProvidersTab, usage::UsageTab, Tab, TabContent};
 use super::theme::Theme;
 
+#[allow(dead_code)]
 pub struct App {
     pub mgr: ConfigManager,
     pub active_tab: Tab,

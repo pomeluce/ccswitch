@@ -87,7 +87,7 @@ impl TabContent for HistoryTab {
                         format!("{}  ", date),
                         Style::default().fg(Theme::COMMENT),
                     ),
-                    Span::styled(format!("{}", title), Style::default().fg(Theme::FG)),
+                    Span::styled(title.to_string(), Style::default().fg(Theme::FG)),
                     Span::styled(
                         format!("  {}", project),
                         Style::default().fg(Theme::YELLOW),

@@ -12,6 +12,7 @@ fn default_config_path() -> PathBuf {
 #[derive(Debug, Deserialize)]
 struct DefaultsFile {
     #[serde(default)]
+    #[allow(dead_code)]
     version: u32,
     #[serde(default)]
     providers: Vec<ProviderToml>,

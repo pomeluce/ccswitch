@@ -15,6 +15,7 @@ pub fn resolve_api_key(raw: &str) -> String {
 }
 
 /// Extract variable name from env:XXX reference, returns None if not a reference
+#[allow(dead_code)]
 pub fn parse_env_ref(raw: &str) -> Option<String> {
     raw.strip_prefix("env:").map(|s| s.to_string())
 }

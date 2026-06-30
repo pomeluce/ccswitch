@@ -8,6 +8,7 @@ impl Theme {
     pub const BG_SELECTED: Color  = Color::Rgb(0x40, 0x3E, 0x41);
     pub const FG: Color           = Color::Rgb(0xFC, 0xFC, 0xFA);
     pub const RED: Color          = Color::Rgb(0xFF, 0x61, 0x88);
+    #[allow(dead_code)]
     pub const ORANGE: Color       = Color::Rgb(0xFC, 0x98, 0x67);
     pub const YELLOW: Color       = Color::Rgb(0xFF, 0xD8, 0x66);
     pub const GREEN: Color        = Color::Rgb(0xA9, 0xDC, 0x76);

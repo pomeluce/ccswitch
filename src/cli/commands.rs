@@ -27,7 +27,7 @@ pub fn run_cli(args: CliArgs) -> Result<()> {
     let mgr = ConfigManager::new(&db_path, Some(&defaults_path))?;
 
     match command {
-        Commands::Switch { target, local, proxy } => {
+        Commands::Switch { target, local: _, proxy } => {
             let mode = if proxy { SwitchMode::Proxy } else { SwitchMode::Local };
             handle_switch(&mgr, target, mode)?;
         }
@@ -110,7 +110,7 @@ fn handle_list(mgr: &ConfigManager, providers_only: bool) -> Result<()> {
 fn handle_add(mgr: &ConfigManager, what: &str, parent_provider: Option<&str>) -> Result<()> {
     match what {
         "provider" => {
-            use dialoguer::{Input, Password};
+            use dialoguer::Input;
             let id: String = Input::new().with_prompt("Provider ID").interact_text()?;
             let name: String = Input::new().with_prompt("Name").interact_text()?;
             let api_url: String = Input::new().with_prompt("API URL").interact_text()?;
@@ -234,7 +234,7 @@ fn handle_usage(mgr: &ConfigManager, range: &str, profile: Option<&str>) -> Resu
 fn handle_history(mgr: &ConfigManager, project: Option<&str>, search: Option<&str>) -> Result<()> {
     let sessions = mgr.db().query_sessions(project, search, 50)?;
     println!("Session History");
-    println!("{:<6} {:<40} {:<12} {:>8} {:>6} {}", "Date", "Title", "Project", "Tokens", "Msgs", "Profile");
+    println!("{:<6} {:<40} {:<12} {:>8} {:>6} Profile", "Date", "Title", "Project", "Tokens", "Msgs");
     println!("{}", "-".repeat(100));
     for s in &sessions {
         let date = &s.start_time[5..16]; // "MM-DD HH:MM"

@@ -1,0 +1,24 @@
+version = 1
+
+[[providers]]
+id = "test-provider"
+name = "Test Provider"
+api_url = "https://test.example.com/anthropic"
+api_key = "env:TEST_API_KEY"
+
+[[providers.profiles]]
+id = "default"
+name = "Default"
+opus = "test-opus-model"
+sonnet = "test-sonnet-model"
+haiku = "test-haiku-model"
+subagent = "test-sub-model"
+default = true
+
+[[providers.profiles]]
+id = "fast"
+name = "Fast"
+opus = "fast-opus"
+sonnet = "fast-sonnet"
+haiku = "fast-haiku"
+subagent = "fast-sub"
