@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Clear, List, ListItem, ListState, Paragraph},
     Frame,
 };
 use crossterm::event::KeyCode;
@@ -19,6 +19,9 @@ pub struct HistoryTab {
     pub state: ListState,
     pub search_query: String,
     pub is_searching: bool,
+    pub detail_mode: bool,
+    pub confirm_delete: bool,
+    selected_button: usize, // 0=Open, 1=Delete
     mgr: Arc<ConfigManager>,
 }
 
@@ -47,6 +50,9 @@ impl HistoryTab {
             state,
             search_query: String::new(),
             is_searching: false,
+            detail_mode: false,
+            confirm_delete: false,
+            selected_button: 0,
             mgr,
         }
     }
@@ -92,6 +98,12 @@ impl HistoryTab {
 
 impl TabContent for HistoryTab {
     fn render(&mut self, f: &mut Frame, area: Rect) {
+        // Detail mode: full-width detail panel
+        if self.detail_mode {
+            self.render_detail_full(f, area);
+            return;
+        }
+
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
@@ -241,6 +253,33 @@ impl TabContent for HistoryTab {
     }
 
     fn handle_key(&mut self, code: KeyCode) {
+        // Delete confirmation mode
+        if self.confirm_delete {
+            match code {
+                KeyCode::Char('j') | KeyCode::Char('l') | KeyCode::Right => {
+                    self.selected_button ^= 1;
+                }
+                KeyCode::Char('k') | KeyCode::Char('h') | KeyCode::Left => {
+                    self.selected_button ^= 1;
+                }
+                KeyCode::Enter => {
+                    if self.selected_button == 0 {
+                        // Confirm
+                        self.delete_selected();
+                    }
+                    self.confirm_delete = false;
+                    self.selected_button = 0;
+                }
+                KeyCode::Esc => {
+                    self.confirm_delete = false;
+                    self.selected_button = 0;
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        // Search mode
         if self.is_searching {
             match code {
                 KeyCode::Esc => {
@@ -264,6 +303,38 @@ impl TabContent for HistoryTab {
             return;
         }
 
+        // Detail mode
+        if self.detail_mode {
+            match code {
+                KeyCode::Esc => {
+                    self.detail_mode = false;
+                }
+                KeyCode::Char('j') | KeyCode::Char('l') | KeyCode::Right => {
+                    self.selected_button = (self.selected_button + 1) % 2;
+                }
+                KeyCode::Char('k') | KeyCode::Char('h') | KeyCode::Left => {
+                    self.selected_button = if self.selected_button == 0 { 1 } else { 0 };
+                }
+                KeyCode::Enter => {
+                    match self.selected_button {
+                        0 => { /* Open — resume session */ }
+                        1 => {
+                            self.confirm_delete = true;
+                            self.selected_button = 0; // Confirm=0, Cancel=1
+                        }
+                        _ => {}
+                    }
+                }
+                KeyCode::Char('d') => {
+                    self.confirm_delete = true;
+                    self.selected_button = 0;
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        // List mode
         match code {
             KeyCode::Char('j') | KeyCode::Down => {
                 let len = self.sessions.len();
@@ -277,11 +348,16 @@ impl TabContent for HistoryTab {
                 let i = self.state.selected().unwrap_or(0);
                 self.state.select(Some(if i > 0 { i - 1 } else { len - 1 }));
             }
+            KeyCode::Enter => {
+                self.detail_mode = true;
+                self.selected_button = 0;
+            }
             KeyCode::Char('/') => {
                 self.is_searching = true;
             }
             KeyCode::Char('d') => {
-                self.delete_selected();
+                self.confirm_delete = true;
+                self.selected_button = 0;
             }
             _ => {}
         }
@@ -289,6 +365,126 @@ impl TabContent for HistoryTab {
 }
 
 impl HistoryTab {
+    fn render_detail_full(&mut self, f: &mut Frame, area: Rect) {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(3), Constraint::Length(3)])
+            .split(area);
+
+        if let Some(idx) = self.state.selected() {
+            if let Some(s) = self.sessions.get(idx) {
+                let padding = "  ";
+                let lines = vec![
+                    Line::from(Span::styled(
+                        s.title.as_deref().unwrap_or(&s.id),
+                        Style::default().fg(Theme::CYAN),
+                    )),
+                    Line::from(""),
+                    Line::from(vec![
+                        Span::styled(format!("{}Project:  ", padding), Style::default().fg(Theme::PURPLE)),
+                        Span::styled(&s.project_path, Style::default().fg(Theme::YELLOW)),
+                    ]),
+                    Line::from(vec![
+                        Span::styled(format!("{}Profile:  ", padding), Style::default().fg(Theme::PURPLE)),
+                        Span::styled(s.profile_id.as_deref().unwrap_or("-"), Style::default().fg(Theme::FG)),
+                    ]),
+                    Line::from(vec![
+                        Span::styled(format!("{}Mode:     ", padding), Style::default().fg(Theme::PURPLE)),
+                        Span::styled(&s.mode, Style::default().fg(Theme::GREEN)),
+                    ]),
+                    Line::from(vec![
+                        Span::styled(format!("{}Tokens:   ", padding), Style::default().fg(Theme::PURPLE)),
+                        Span::styled(
+                            format!("{} prompt / {} completion", s.prompt_tokens, s.completion_tokens),
+                            Style::default().fg(Theme::FG),
+                        ),
+                    ]),
+                    Line::from(vec![
+                        Span::styled(format!("{}Started:  ", padding), Style::default().fg(Theme::PURPLE)),
+                        Span::styled(&s.start_time, Style::default().fg(Theme::DIM)),
+                    ]),
+                    Line::from(vec![
+                        Span::styled(format!("{}Messages: ", padding), Style::default().fg(Theme::PURPLE)),
+                        Span::styled(format!("{}", s.message_count), Style::default().fg(Theme::FG)),
+                    ]),
+                    Line::from(vec![
+                        Span::styled(format!("{}Size:     ", padding), Style::default().fg(Theme::PURPLE)),
+                        Span::styled(format_size(s.size_bytes), Style::default().fg(Theme::FG)),
+                    ]),
+                ];
+
+                let p = Paragraph::new(lines)
+                    .block(
+                        Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
+                            .title(format!("Session Detail — Esc back"))
+                            .border_style(Style::default().fg(Theme::DIM)),
+                    );
+                f.render_widget(p, chunks[0]);
+
+                // Buttons
+                self.render_buttons(f, chunks[1]);
+            }
+        }
+
+        // Delete confirmation popup
+        if self.confirm_delete {
+            self.render_confirm_popup(f, area);
+        }
+    }
+
+    fn render_buttons(&self, f: &mut Frame, area: Rect) {
+        let open_style = if self.selected_button == 0 {
+            Style::default().fg(Color::Black).bg(Theme::CYAN)
+        } else {
+            Style::default().fg(Theme::DIM)
+        };
+        let del_style = if self.selected_button == 1 {
+            Style::default().fg(Color::Black).bg(Theme::RED)
+        } else {
+            Style::default().fg(Theme::DIM)
+        };
+
+        let line = Line::from(vec![
+            Span::styled(" Open ", open_style),
+            Span::styled("  ", Style::default()),
+            Span::styled(" Delete ", del_style),
+            Span::styled("  ", Style::default()),
+            Span::styled("j/l ←/→ switch  ⏎ confirm", Style::default().fg(Theme::COMMENT)),
+        ]);
+        f.render_widget(Paragraph::new(line), area);
+    }
+
+    fn render_confirm_popup(&self, f: &mut Frame, area: Rect) {
+        let popup_area = centered_rect(40, 5, area);
+        let confirm_style = if self.selected_button == 0 {
+            Style::default().fg(Color::Black).bg(Theme::RED)
+        } else {
+            Style::default().fg(Theme::DIM)
+        };
+        let cancel_style = if self.selected_button == 1 {
+            Style::default().fg(Color::Black).bg(Theme::CYAN)
+        } else {
+            Style::default().fg(Theme::DIM)
+        };
+
+        let p = Paragraph::new(vec![
+            Line::from("Delete this session?"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(" Confirm ", confirm_style),
+                Span::styled("  ", Style::default()),
+                Span::styled(" Cancel ", cancel_style),
+            ]),
+        ])
+        .block(
+            Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
+                .title("Confirm Delete")
+                .border_style(Style::default().fg(Theme::RED)),
+        );
+        f.render_widget(Clear, popup_area); // clear behind
+        f.render_widget(p, popup_area);
+    }
+
     fn render_search_box(&self, f: &mut Frame, area: Rect) {
         let cursor = if self.is_searching { "▌" } else { "" };
         let text = if self.search_query.is_empty() && !self.is_searching {
@@ -318,6 +514,12 @@ fn truncate(s: &str, max: usize) -> String {
 
 fn format_date(iso: &str) -> String {
     if iso.len() >= 16 { iso[5..16].to_string() } else { iso.to_string() }
+}
+
+fn centered_rect(width: u16, height: u16, r: Rect) -> Rect {
+    let x = r.x + (r.width.saturating_sub(width)) / 2;
+    let y = r.y + (r.height.saturating_sub(height)) / 2;
+    Rect { x, y, width: width.min(r.width), height: height.min(r.height) }
 }
 
 fn format_size(bytes: i64) -> String {
