@@ -11,17 +11,23 @@ struct JsonlLine {
     cwd: Option<String>,
     timestamp: Option<serde_json::Value>, // number (ms/s) or RFC3339 string
     #[serde(rename = "type")]
+    #[allow(dead_code)]
     msg_type: Option<String>,
+    #[allow(dead_code)]
     message: Option<MessageContent>,
     #[serde(rename = "customTitle")]
     custom_title: Option<String>,
+    #[serde(rename = "aiTitle")]
+    ai_title: Option<String>,
+    #[serde(rename = "lastPrompt")]
+    last_prompt: Option<String>,
     #[serde(rename = "isMeta")]
     is_meta: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
 struct MessageContent {
-    content: Option<serde_json::Value>, // string or array of blocks
+    #[allow(dead_code)]
     role: Option<String>,
 }
 
@@ -34,55 +40,14 @@ fn projects_dir() -> PathBuf {
     claude_dir().join("projects")
 }
 
-/// Extract readable text from content (string or structured array)
-fn extract_text(content: &serde_json::Value) -> Option<String> {
-    match content {
-        serde_json::Value::String(s) => Some(s.clone()),
-        serde_json::Value::Array(arr) => {
-            let mut parts: Vec<String> = Vec::new();
-            for item in arr {
-                if let Some(t) = item.get("text").and_then(|v| v.as_str()) {
-                    parts.push(t.to_string());
-                } else if let Some(t) = item.get("input_text").and_then(|v| v.as_str()) {
-                    parts.push(t.to_string());
-                } else if let Some(t) = item.get("output_text").and_then(|v| v.as_str()) {
-                    parts.push(t.to_string());
-                }
-            }
-            if parts.is_empty() { None } else { Some(parts.join(" ")) }
-        }
-        _ => None,
+/// Truncate title to 40 chars max
+fn truncate_title(s: &str) -> String {
+    let s = s.trim();
+    if s.chars().count() > 40 {
+        format!("{}...", s.chars().take(37).collect::<String>())
+    } else {
+        s.to_string()
     }
-}
-
-/// Check if a user message should be skipped as a title candidate.
-/// Skip system-injected commands and pure context references,
-/// but keep messages that have substantial content.
-fn is_context_message(text: &str) -> bool {
-    let t = text.trim();
-    if t.is_empty() {
-        return true;
-    }
-    // Pure slash commands
-    if t.starts_with("/clear") || t.starts_with("/compact")
-        || t.starts_with("/model") || t.starts_with("/config") || t.starts_with("/exit")
-    {
-        return true;
-    }
-    // System-injected meta tags
-    if t.contains("<local-command-caveat>") || t.contains("<command-name>") {
-        return true;
-    }
-    // Skill context preamble
-    if t.starts_with("Base directory for this skill:") {
-        return true;
-    }
-    // Pure file/line references (starts with @ or #, no substantial text)
-    let first_word = t.split_whitespace().next().unwrap_or("");
-    if first_word.starts_with('@') || first_word.starts_with('#') {
-        return true;
-    }
-    false
 }
 
 /// Parse timestamp that could be milliseconds or seconds
@@ -178,8 +143,9 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
     let mut cwd: Option<String> = None;
     let mut created_at: Option<i64> = None;
     let mut last_active_at: Option<i64> = None;
-    let mut first_user_message: Option<String> = None;
     let mut custom_title: Option<String> = None;
+    let mut ai_title: Option<String> = None;
+    let mut last_prompt: Option<String> = None;
     let mut message_count: i64 = 0;
 
     // Parse head lines for metadata + first user message
@@ -207,35 +173,21 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
             }
         }
 
+        // Collect title: custom-title, ai-title, last-prompt (first one wins in file order)
+        if let Some(ref at) = parsed.ai_title {
+            if ai_title.is_none() && !at.is_empty() {
+                ai_title = Some(at.clone());
+            }
+        }
+        if let Some(ref lp) = parsed.last_prompt {
+            if last_prompt.is_none() && !lp.is_empty() {
+                last_prompt = Some(truncate_title(lp));
+            }
+        }
+
         // Count non-meta messages
         if parsed.is_meta != Some(true) && parsed.message.is_some() {
             message_count += 1;
-        }
-
-        // Extract title from first non-system user message
-        if first_user_message.is_none()
-            && parsed.msg_type.as_deref() == Some("user")
-            || parsed.message.as_ref().map(|m| m.role.as_deref() == Some("user")).unwrap_or(false)
-        {
-            if let Some(ref msg) = parsed.message {
-                if let Some(ref content_val) = msg.content {
-                    if let Some(text) = extract_text(content_val) {
-                        if !is_context_message(&text) {
-                            let raw = text.lines().next().unwrap_or("").trim();
-                            // Truncate at 40 chars
-                            let title = if raw.chars().count() > 40 {
-                                let truncated: String = raw.chars().take(37).collect();
-                                format!("{}...", truncated)
-                            } else {
-                                raw.to_string()
-                            };
-                            if !title.is_empty() {
-                                first_user_message = Some(title);
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -278,8 +230,10 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
+    // Title priority: custom-title > ai-title > last-prompt > project name
     let title = custom_title
-        .or(first_user_message)
+        .or(ai_title)
+        .or(last_prompt)
         .unwrap_or(project_name);
 
     Ok(Some(SessionRecord {
