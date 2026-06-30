@@ -166,7 +166,7 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
             }
         }
 
-        // Collect titles (first one encountered wins for each type)
+        // Collect titles: custom-title/ai-title take first, last-prompt takes last
         if let Some(ref ct) = parsed.custom_title {
             if custom_title.is_none() && !ct.is_empty() { custom_title = Some(ct.clone()); }
         }
@@ -174,7 +174,7 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
             if ai_title.is_none() && !at.is_empty() { ai_title = Some(at.clone()); }
         }
         if let Some(ref lp) = parsed.last_prompt {
-            if last_prompt.is_none() && !lp.is_empty() { last_prompt = Some(truncate_title(lp)); }
+            if !lp.is_empty() { last_prompt = Some(truncate_title(lp)); } // always take latest
         }
 
         // Count non-meta messages
@@ -183,7 +183,7 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
         }
     }
 
-    // Fallback: extract last non-system user message if we have no title
+    // Fallback: extract last real user message (skip system commands)
     let mut fallback_title: Option<String> = None;
     if custom_title.is_none() && ai_title.is_none() && last_prompt.is_none() {
         for line in lines.iter().rev() {
@@ -193,19 +193,11 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
                     if let Some(ref content) = msg.content {
                         if let Some(text) = content.as_str() {
                             let t = text.trim();
-                            // Skip system commands
-                            if !t.starts_with("<command-name>")
-                                && !t.starts_with("/clear")
-                                && !t.starts_with("/compact")
-                                && !t.starts_with("/model")
-                                && !t.starts_with("/config")
-                                && !t.contains("<local-command-caveat>")
-                                && !t.contains("<system-reminder>")
-                                && !t.is_empty()
-                            {
-                                fallback_title = Some(truncate_title(t));
-                                break;
-                            }
+                            if t.is_empty() { continue; }
+                            // Skip slash commands and system messages
+                            if t.starts_with('/') || t.starts_with('<') { continue; }
+                            fallback_title = Some(truncate_title(t));
+                            break;
                         }
                     }
                 }
