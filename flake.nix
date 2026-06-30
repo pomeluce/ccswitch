@@ -16,7 +16,7 @@
       ];
 
       perSystem =
-        { config, self', inputs', pkgs, system, ... }:
+        { system, ... }:
         let
           overlays = [ (import rust-overlay) ];
           pkgs = import nixpkgs { inherit system overlays; };
@@ -82,10 +82,11 @@
               };
             };
             config = lib.mkIf cfg.enable {
-              environment.etc."ccswitch/defaults.toml" = {
-                text = builtins.toTOML cfg.defaults;
-                mode = "0444";
-              };
+              environment.etc."ccswitch/defaults.toml".source =
+                let
+                  format = pkgs.formats.toml { };
+                in
+                format.generate "defaults.toml" cfg.defaults;
               systemd.user.services.ccs-proxy = {
                 description = "CCSwitch Proxy Server";
                 after = [ "network.target" ];
