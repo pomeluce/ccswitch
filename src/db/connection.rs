@@ -23,7 +23,8 @@ impl Db {
 
     fn run_migrations(&self) -> Result<(), rusqlite::Error> {
         for sql in MIGRATIONS {
-            self.conn.execute(sql, [])?;
+            // Ignore errors (e.g. duplicate column in ALTER TABLE)
+            self.conn.execute(sql, []).ok();
         }
         Ok(())
     }
