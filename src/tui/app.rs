@@ -62,6 +62,19 @@ impl App {
                     self.handle_key(key.code);
                 }
             }
+            // Handle terminal suspend for external process (claude)
+            if self.history_tab.needs_terminal_reinit {
+                ratatui::restore();
+                if let Some(ref project) = self.history_tab.launch_project.take() {
+                    println!("\n  Launching Claude Code in {}\n", project);
+                    let _ = std::process::Command::new("claude")
+                        .current_dir(project)
+                        .status();
+                    print!("\n  Returning to CCSwitch...\n");
+                }
+                *terminal = ratatui::init();
+                self.history_tab.needs_terminal_reinit = false;
+            }
         }
         Ok(())
     }

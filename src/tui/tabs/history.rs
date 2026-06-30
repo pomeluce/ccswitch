@@ -21,6 +21,8 @@ pub struct HistoryTab {
     pub is_searching: bool,
     pub detail_mode: bool,
     pub confirm_delete: bool,
+    pub needs_terminal_reinit: bool,
+    pub launch_project: Option<String>,
     selected_button: usize,   // 0=Open, 1=Delete
     confirm_button: usize,    // 0=Confirm, 1=Cancel (independent)
     mgr: Arc<ConfigManager>,
@@ -53,6 +55,8 @@ impl HistoryTab {
             is_searching: false,
             detail_mode: false,
             confirm_delete: false,
+            needs_terminal_reinit: false,
+            launch_project: None,
             selected_button: 0,
             confirm_button: 0,
             mgr,
@@ -105,19 +109,12 @@ impl HistoryTab {
         }
     }
 
-    /// Suspend TUI, launch claude in foreground, then restore TUI
-    fn open_session(&self) {
+    /// Signal App to launch claude (terminal suspend/restore handled by event loop)
+    fn open_session(&mut self) {
         if let Some(idx) = self.state.selected() {
             if let Some(s) = self.sessions.get(idx) {
-                // Restore terminal before launching claude
-                ratatui::restore();
-                println!("\n  Launching Claude Code in {}\n", s.project_path);
-                let _ = std::process::Command::new("claude")
-                    .current_dir(&s.project_path)
-                    .status(); // wait for claude to exit
-                print!("\n  Returning to CCSwitch...");
-                // Re-init TUI
-                ratatui::init();
+                self.needs_terminal_reinit = true;
+                self.launch_project = Some(s.project_path.clone());
             }
         }
     }
