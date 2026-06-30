@@ -14,6 +14,7 @@ use super::super::theme::Theme;
 use super::TabContent;
 
 pub struct HistoryTab {
+    all_sessions: Vec<SessionRecord>,
     pub sessions: Vec<SessionRecord>,
     pub state: ListState,
     pub search_query: String,
@@ -30,16 +31,18 @@ impl HistoryTab {
             _ => {}
         }
 
-        let sessions = mgr.db().query_sessions(None, None, 200)
+        let all = mgr.db().query_sessions(None, None, 200)
             .unwrap_or_default()
             .into_iter()
             .filter(|s| s.size_bytes > 0)
             .collect::<Vec<_>>();
+        let sessions = all.clone();
         let mut state = ListState::default();
         if !sessions.is_empty() {
             state.select(Some(0));
         }
         HistoryTab {
+            all_sessions: all,
             sessions,
             state,
             search_query: String::new(),
@@ -48,18 +51,20 @@ impl HistoryTab {
         }
     }
 
-    #[allow(dead_code)]
     pub fn refresh(&mut self) {
-        let search = if self.search_query.is_empty() {
-            None
-        } else {
-            Some(self.search_query.as_str())
-        };
-        self.sessions = self.mgr.db().query_sessions(None, search, 200)
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|s| s.size_bytes > 0)
+        let q = self.search_query.to_lowercase();
+        self.sessions = self.all_sessions
+            .iter()
+            .filter(|s| {
+                q.is_empty()
+                    || s.title.as_deref().unwrap_or("").to_lowercase().contains(&q)
+                    || s.project_path.to_lowercase().contains(&q)
+            })
+            .cloned()
             .collect();
+        if self.state.selected().unwrap_or(0) >= self.sessions.len() {
+            self.state.select(if self.sessions.is_empty() { None } else { Some(0) });
+        }
     }
 
     fn delete_selected(&mut self) {
@@ -240,17 +245,19 @@ impl TabContent for HistoryTab {
             match code {
                 KeyCode::Esc => {
                     self.is_searching = false;
+                    self.search_query.clear();
                     self.refresh();
                 }
                 KeyCode::Enter => {
                     self.is_searching = false;
-                    self.refresh();
                 }
                 KeyCode::Backspace | KeyCode::Delete => {
                     self.search_query.pop();
+                    self.refresh();
                 }
                 KeyCode::Char(c) => {
                     self.search_query.push(c);
+                    self.refresh();
                 }
                 _ => {}
             }
@@ -259,20 +266,19 @@ impl TabContent for HistoryTab {
 
         match code {
             KeyCode::Char('j') | KeyCode::Down => {
+                let len = self.sessions.len();
+                if len == 0 { return; }
                 let i = self.state.selected().unwrap_or(0);
-                if i < self.sessions.len().saturating_sub(1) {
-                    self.state.select(Some(i + 1));
-                }
+                self.state.select(Some(if i + 1 < len { i + 1 } else { 0 }));
             }
             KeyCode::Char('k') | KeyCode::Up => {
+                let len = self.sessions.len();
+                if len == 0 { return; }
                 let i = self.state.selected().unwrap_or(0);
-                if i > 0 {
-                    self.state.select(Some(i - 1));
-                }
+                self.state.select(Some(if i > 0 { i - 1 } else { len - 1 }));
             }
             KeyCode::Char('/') => {
                 self.is_searching = true;
-                self.search_query.clear();
             }
             KeyCode::Char('d') => {
                 self.delete_selected();
@@ -286,7 +292,9 @@ impl HistoryTab {
     fn render_search_box(&self, f: &mut Frame, area: Rect) {
         let cursor = if self.is_searching { "▌" } else { "" };
         let text = if self.search_query.is_empty() && !self.is_searching {
-            "⌕ Search (/ to focus, Esc to exit)".to_string()
+            "⌕ Search (/ to focus)".to_string()
+        } else if !self.search_query.is_empty() && !self.is_searching {
+            format!("⌕ {} (/) — Esc to clear", self.search_query)
         } else {
             format!("⌕ {}{}", self.search_query, cursor)
         };
