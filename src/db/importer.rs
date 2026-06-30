@@ -55,12 +55,21 @@ fn extract_text(content: &serde_json::Value) -> Option<String> {
     }
 }
 
-/// Check if a message is a system-injected command (should be skipped for titles)
-fn is_system_message(text: &str) -> bool {
-    text.contains("<local-command-caveat>")
-        || text.starts_with("<command-name>")
-        || text.starts_with("/clear")
-        || text.starts_with("/compact")
+/// Check if a message is a context preamble (should be skipped for titles)
+fn is_context_message(text: &str) -> bool {
+    let t = text.trim();
+    t.is_empty()
+        || t.starts_with('<')
+        || t.starts_with("/clear")
+        || t.starts_with("/compact")
+        || t.starts_with("/model")
+        || t.starts_with("/config")
+        || t.starts_with("/exit")
+        || t.starts_with("Base directory for this skill")
+        || t.starts_with('@')  // file references like @src/main.rs
+        || t.starts_with('#')  // file references like #L10-20
+        || t.contains("<local-command-caveat>")
+        || t.contains("<command-name>")
 }
 
 /// Parse timestamp that could be milliseconds or seconds
@@ -198,7 +207,7 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
             if let Some(ref msg) = parsed.message {
                 if let Some(ref content_val) = msg.content {
                     if let Some(text) = extract_text(content_val) {
-                        if !is_system_message(&text) {
+                        if !is_context_message(&text) {
                             let raw = text.lines().next().unwrap_or("").trim();
                             // Truncate at 40 chars
                             let title = if raw.chars().count() > 40 {
