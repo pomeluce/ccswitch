@@ -102,9 +102,9 @@ impl TabContent for HistoryTab {
                 } else {
                     raw.to_string()
                 };
-                // Truncate to 55 chars
-                let title: String = if title.chars().count() > 55 {
-                    format!("{}...", title.chars().take(52).collect::<String>())
+                // Truncate to 35 chars
+                let title: String = if title.chars().count() > 35 {
+                    format!("{}...", title.chars().take(32).collect::<String>())
                 } else {
                     title
                 };

@@ -257,11 +257,11 @@ fn handle_history(mgr: &ConfigManager, project: Option<&str>, search: Option<&st
         } else {
             raw.to_string()
         };
-        let title = title.chars().take(50).collect::<String>();
+        let title = title.chars().take(40).collect::<String>();
         let project_short = project_name(s).unwrap_or_default().chars().take(12).collect::<String>();
         let tokens = s.prompt_tokens + s.completion_tokens;
         let profile = s.profile_id.as_deref().unwrap_or("-");
-        println!("{:<6} {:<50} {:<12} {:>8} {:>6} {}", date, title, project_short, tokens, s.message_count, profile);
+        println!("{:<6} {:<40} {:<12} {:>8} {:>6} {}", date, title, project_short, tokens, s.message_count, profile);
     }
     Ok(())
 }

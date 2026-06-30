@@ -200,9 +200,9 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
                     if let Some(text) = extract_text(content_val) {
                         if !is_system_message(&text) {
                             let raw = text.lines().next().unwrap_or("").trim();
-                            // Truncate at word boundary (60 chars max)
-                            let title = if raw.chars().count() > 60 {
-                                let truncated: String = raw.chars().take(57).collect();
+                            // Truncate at 40 chars
+                            let title = if raw.chars().count() > 40 {
+                                let truncated: String = raw.chars().take(37).collect();
                                 format!("{}...", truncated)
                             } else {
                                 raw.to_string()
