@@ -119,7 +119,7 @@ impl TabContent for HistoryTab {
 
         let list = List::new(items)
             .block(
-                Block::bordered()
+                Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
                     .title(format!("Sessions ({})", search_hint))
                     .border_style(Style::default().fg(Theme::DIM)),
             )
@@ -187,7 +187,7 @@ impl TabContent for HistoryTab {
 
                 let p = Paragraph::new(lines)
                     .block(
-                        Block::bordered()
+                        Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
                             .title("Session Detail")
                             .border_style(Style::default().fg(Theme::DIM)),
                     )

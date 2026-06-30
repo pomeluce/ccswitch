@@ -46,7 +46,7 @@ pub fn render_bar_chart(
 
     let p = Paragraph::new(lines)
         .block(
-            Block::bordered()
+            Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
                 .title(title)
                 .border_style(Style::default().fg(Theme::DIM)),
         )

@@ -78,7 +78,7 @@ impl TabContent for UsageTab {
             .sum();
         let list = List::new(items)
             .block(
-                Block::bordered()
+                Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
                     .title(format!("Usage ({}) — Σ {}", self.range, total_tokens))
                     .border_style(Style::default().fg(Theme::DIM)),
             );

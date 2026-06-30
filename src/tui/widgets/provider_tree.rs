@@ -148,7 +148,7 @@ impl ProviderTree {
 
         let list = List::new(items)
             .block(
-                Block::bordered()
+                Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
                     .title("Providers")
                     .border_style(Style::default().fg(Theme::DIM)),
             )

@@ -82,7 +82,7 @@ impl DetailPanel {
 
         let p = Paragraph::new(lines)
             .block(
-                Block::bordered()
+                Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
                     .title("Detail")
                     .border_style(Style::default().fg(Theme::DIM)),
             )

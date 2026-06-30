@@ -33,7 +33,7 @@ pub fn render_status_bar(
         proxy_status,
         Span::styled("  |  ", Style::default().fg(Theme::COMMENT)),
         Span::styled(
-            "1/2/3 tabs  j/k nav  \u{23ce} apply  / search  q quit",
+            "Tab switch  j/k nav  \u{23ce} apply  / search  q quit",
             Style::default().fg(Theme::COMMENT),
         ),
     ]);
