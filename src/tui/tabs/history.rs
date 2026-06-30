@@ -83,11 +83,12 @@ impl HistoryTab {
     fn delete_selected(&mut self) {
         if let Some(idx) = self.state.selected() {
             if idx < self.sessions.len() {
-                // Delete from the database first
                 if let Some(session) = self.sessions.get(idx) {
                     if let Err(e) = self.mgr.db().delete_session(&session.id) {
                         tracing::warn!("Failed to delete session from database: {}", e);
                     }
+                    // Also remove from all_sessions
+                    self.all_sessions.retain(|s| s.id != session.id);
                 }
                 self.sessions.remove(idx);
                 let len = self.sessions.len();
@@ -98,6 +99,25 @@ impl HistoryTab {
                 } else {
                     self.state.select(Some(idx));
                 }
+                // Exit detail mode and confirm after delete
+                self.detail_mode = false;
+            }
+        }
+    }
+
+    /// Suspend TUI, launch claude in foreground, then restore TUI
+    fn open_session(&self) {
+        if let Some(idx) = self.state.selected() {
+            if let Some(s) = self.sessions.get(idx) {
+                // Restore terminal before launching claude
+                ratatui::restore();
+                println!("\n  Launching Claude Code in {}\n", s.project_path);
+                let _ = std::process::Command::new("claude")
+                    .current_dir(&s.project_path)
+                    .status(); // wait for claude to exit
+                print!("\n  Returning to CCSwitch...");
+                // Re-init TUI
+                ratatui::init();
             }
         }
     }
@@ -308,15 +328,7 @@ impl TabContent for HistoryTab {
                 }
                 KeyCode::Enter => {
                     match self.selected_button {
-                        0 => {
-                            if let Some(idx) = self.state.selected() {
-                                if let Some(s) = self.sessions.get(idx) {
-                                    let _ = std::process::Command::new("claude")
-                                        .current_dir(&s.project_path)
-                                        .spawn();
-                                }
-                            }
-                        }
+                        0 => self.open_session(),
                         1 => {
                             self.confirm_delete = true;
                             self.confirm_button = 0;
