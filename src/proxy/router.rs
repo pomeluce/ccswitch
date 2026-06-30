@@ -15,6 +15,7 @@ use super::metrics::record_metrics;
 /// uses internal `RefCell` and is therefore not `Sync`.
 pub struct ProxyState {
     pub mgr: Arc<Mutex<ConfigManager>>,
+    pub client: Client,
 }
 
 /// Handle all incoming Anthropic-compatible API requests.
@@ -66,10 +67,10 @@ pub async fn proxy_handler(
     };
 
     // Build upstream request with replaced auth header
-    let client = Client::new();
     let headers = replace_auth_header(&original_headers, &auth_token);
 
-    let upstream_req = client
+    let upstream_req = state
+        .client
         .request(method, &upstream_url)
         .headers(headers)
         .body(reqwest::Body::from(body_bytes))
@@ -85,12 +86,17 @@ pub async fn proxy_handler(
     };
 
     // Execute the upstream request
-    match client.execute(upstream_req).await {
+    match state.client.execute(upstream_req).await {
         Ok(resp) => {
-            // Record metrics (best-effort) — synchronous, no lock held across await
-            if let Ok(mgr) = state.mgr.lock() {
-                if let Err(e) = record_metrics(&mgr, &resp) {
-                    tracing::warn!("Failed to record metrics: {}", e);
+            // Record metrics (best-effort)
+            match state.mgr.lock() {
+                Ok(mgr) => {
+                    if let Err(e) = record_metrics(&mgr, &resp) {
+                        tracing::warn!("Failed to record metrics: {}", e);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Mutex poisoned during metrics recording: {}", e);
                 }
             }
 
@@ -135,10 +141,8 @@ fn get_active_upstream(mgr: &ConfigManager) -> anyhow::Result<(String, String)> 
 /// resolved API token.
 fn replace_auth_header(original: &HeaderMap, new_token: &str) -> HeaderMap {
     let mut headers = original.clone();
-    headers.insert(
-        "Authorization",
-        HeaderValue::from_str(&format!("Bearer {}", new_token))
-            .expect("Invalid header value"),
-    );
+    if let Ok(hv) = HeaderValue::from_str(&format!("Bearer {}", new_token)) {
+        headers.insert("Authorization", hv);
+    }
     headers
 }

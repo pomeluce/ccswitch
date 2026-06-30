@@ -29,6 +29,7 @@ impl ProxyServer {
     pub async fn serve(self, port: u16) -> anyhow::Result<()> {
         let state = Arc::new(ProxyState {
             mgr: self.mgr.clone(),
+            client: reqwest::Client::new(),
         });
 
         let app = Router::<Arc<ProxyState>>::new()
@@ -39,7 +40,12 @@ impl ProxyServer {
         let listener = TcpListener::bind(addr).await?;
         tracing::info!("Proxy listening on http://{}", addr);
 
-        axum::serve(listener, app).await?;
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async {
+                tokio::signal::ctrl_c().await.ok();
+                tracing::info!("Shutting down proxy gracefully...");
+            })
+            .await?;
         Ok(())
     }
 }
