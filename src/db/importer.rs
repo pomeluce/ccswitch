@@ -118,6 +118,13 @@ impl Db {
 
             match parse_session_file(path) {
                 Ok(Some(record)) => {
+                    // Skip if already in DB (preserves deletions)
+                    let exists: bool = self.conn().query_row(
+                        "SELECT COUNT(*) FROM session_history WHERE id = ?1",
+                        [&record.id],
+                        |row| row.get::<_, i64>(0),
+                    ).map(|c| c > 0).unwrap_or(false);
+                    if exists { continue; }
                     self.insert_session(&record)?;
                     imported += 1;
                 }
