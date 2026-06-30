@@ -68,6 +68,24 @@ fn parse_timestamp(val: &serde_json::Value) -> Option<i64> {
     }
 }
 
+/// Extract a readable command string from XML content like
+/// "<command-name>/clear</command-name> <command-message>clear</command-message> <command-args>foo</command-args>"
+fn extract_command(text: &str) -> Option<String> {
+    let name = text
+        .split("<command-name>").nth(1)?
+        .split("</command-name>").next()?
+        .trim().to_string();
+    let args = text
+        .split("<command-args>").nth(1)
+        .and_then(|s| s.split("</command-args>").next())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
+    match args {
+        Some(a) => Some(format!("{} {}", name, a)),
+        None => Some(name),
+    }
+}
+
 fn ts_to_iso(ts_ms: i64) -> String {
     let secs = ts_ms / 1000;
     let nanos = ((ts_ms % 1000) * 1_000_000) as u32;
@@ -183,7 +201,7 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
         }
     }
 
-    // Fallback: extract last real user message (skip system commands)
+    // Fallback: extract last user message (including commands as e.g. "/clear")
     let mut fallback_title: Option<String> = None;
     if custom_title.is_none() && ai_title.is_none() && last_prompt.is_none() {
         for line in lines.iter().rev() {
@@ -194,8 +212,14 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
                         if let Some(text) = content.as_str() {
                             let t = text.trim();
                             if t.is_empty() { continue; }
-                            // Skip slash commands and system messages
-                            if t.starts_with('/') || t.starts_with('<') { continue; }
+                            // If it's a slash command, extract the command name
+                            if t.starts_with('<') {
+                                if let Some(cmd) = extract_command(t) {
+                                    fallback_title = Some(cmd);
+                                    break;
+                                }
+                                continue; // XML but not a recognized command — try next
+                            }
                             fallback_title = Some(truncate_title(t));
                             break;
                         }
