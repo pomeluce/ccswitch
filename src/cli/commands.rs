@@ -232,7 +232,13 @@ fn handle_usage(mgr: &ConfigManager, range: &str, profile: Option<&str>) -> Resu
 }
 
 fn handle_history(mgr: &ConfigManager, project: Option<&str>, search: Option<&str>) -> Result<()> {
-    let sessions = mgr.db().query_sessions(project, search, 50)?;
+    // Auto-import Claude Code sessions before listing
+    match mgr.db().import_claude_sessions() {
+        Ok(n) if n > 0 => eprintln!("Imported {} new session(s)", n),
+        Err(e) => eprintln!("Warning: failed to import sessions: {}", e),
+        _ => {}
+    }
+    let sessions = mgr.db().query_sessions(project, search, 200)?;
     println!("Session History");
     println!("{:<6} {:<40} {:<12} {:>8} {:>6} Profile", "Date", "Title", "Project", "Tokens", "Msgs");
     println!("{}", "-".repeat(100));

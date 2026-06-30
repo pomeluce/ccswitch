@@ -22,7 +22,14 @@ pub struct HistoryTab {
 
 impl HistoryTab {
     pub fn new(mgr: Arc<ConfigManager>) -> Self {
-        let sessions = mgr.db().query_sessions(None, None, 100).unwrap_or_default();
+        // Auto-import Claude Code sessions
+        match mgr.db().import_claude_sessions() {
+            Ok(n) if n > 0 => tracing::info!("Imported {} Claude Code sessions", n),
+            Err(e) => tracing::warn!("Failed to import sessions: {}", e),
+            _ => {}
+        }
+
+        let sessions = mgr.db().query_sessions(None, None, 200).unwrap_or_default();
         let mut state = ListState::default();
         if !sessions.is_empty() {
             state.select(Some(0));

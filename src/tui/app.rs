@@ -138,47 +138,39 @@ impl App {
                 if *tab == self.active_tab {
                     vec![
                         Span::styled(*label, Style::default().fg(Color::Black).bg(Theme::CYAN)),
-                        Span::styled(" ", Style::default()),
                     ]
                 } else {
                     vec![
                         Span::styled(*label, Style::default().fg(Theme::DIM)),
-                        Span::styled(" ", Style::default()),
                     ]
                 }
             })
             .collect();
 
-        // Left: app name
-        let left = Span::styled(" ccswitch ", Style::default().fg(Theme::DIM));
-        // Right: mode
-        let mode = if self.proxy_running {
-            Span::styled(" 代理模式 ", Style::default().fg(Theme::GREEN))
+        // Calculate widths
+        let left_label = " ccswitch ";
+        let left_width = left_label.len() as u16;
+        let mode_label = if self.proxy_running { " 代理模式 " } else { " 本地模式 " };
+        let mode_width = mode_label.len() as u16;
+        let tabs_total_width: u16 = tab_spans.iter().map(|s| s.width() as u16).sum();
+
+        // Available space for centering
+        let inner_width = area.width.saturating_sub(left_width + tabs_total_width + mode_width + 4); // +4 for border padding
+        let pad_left = inner_width / 2;
+        let pad_right = inner_width - pad_left;
+
+        let mut all_spans: Vec<Span> = Vec::new();
+        all_spans.push(Span::styled(left_label, Style::default().fg(Theme::DIM)));
+        all_spans.push(Span::styled(" ".repeat(pad_left as usize), Style::default()));
+        all_spans.extend(tab_spans);
+        all_spans.push(Span::styled(" ".repeat(pad_right as usize), Style::default()));
+        all_spans.push(Span::styled(mode_label, if self.proxy_running {
+            Style::default().fg(Theme::GREEN)
         } else {
-            Span::styled(" 本地模式 ", Style::default().fg(Theme::DIM))
-        };
+            Style::default().fg(Theme::DIM)
+        }));
 
-        // Fill space between tabs and mode
-        let fill_width = area.width.saturating_sub(
-            10 + // " ccswitch "
-            tab_spans.iter().map(|s| s.width()).sum::<usize>() as u16 +
-            10 // " 代理模式 " / " 本地模式 "
-        );
-        let fill = if fill_width > 0 {
-            Span::styled(" ".repeat(fill_width as usize), Style::default())
-        } else {
-            Span::styled(" ", Style::default())
-        };
-
-        let line = Line::from(
-            std::iter::once(left)
-                .chain(tab_spans.into_iter())
-                .chain(std::iter::once(fill))
-                .chain(std::iter::once(mode))
-                .collect::<Vec<_>>(),
-        );
-
-        let p = Paragraph::new(line).block(
+        let p = Paragraph::new(Line::from(all_spans)).block(
             Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
                 .border_style(Style::default().fg(Theme::DIM))
         );
