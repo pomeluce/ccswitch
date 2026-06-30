@@ -56,4 +56,6 @@ pub const MIGRATIONS: &[&str] = &[
     );",
     "CREATE INDEX IF NOT EXISTS idx_usage_profile ON usage_logs(profile_id, timestamp);",
     "CREATE INDEX IF NOT EXISTS idx_session_project ON session_history(project_path, start_time);",
+    // v2: add size_bytes column
+    "ALTER TABLE session_history ADD COLUMN size_bytes INTEGER NOT NULL DEFAULT 0;",
 ];

@@ -82,18 +82,15 @@ impl TabContent for HistoryTab {
             .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
             .split(area);
 
-        // Left: session list
+        // Left: session list — 2-line items like claude --resume
         let items: Vec<ListItem> = self
             .sessions
             .iter()
-            .map(|s| {
-                let date = if s.start_time.len() >= 16 {
-                    &s.start_time[5..16]
-                } else {
-                    &s.start_time
-                };
+            .enumerate()
+            .map(|(i, s)| {
+                let is_selected = self.state.selected() == Some(i);
+
                 let raw = s.title.as_deref().unwrap_or(&s.id);
-                // If title is a UUID, use project name instead
                 let is_uuid = raw.len() >= 32 && raw.chars().filter(|c| *c == '-').count() >= 4;
                 let title = if is_uuid {
                     std::path::Path::new(&s.project_path)
@@ -102,34 +99,33 @@ impl TabContent for HistoryTab {
                 } else {
                     raw.to_string()
                 };
-                // Truncate to 35 chars
-                let title: String = if title.chars().count() > 35 {
-                    format!("{}...", title.chars().take(32).collect::<String>())
-                } else {
-                    title
-                };
+                let title = truncate(&title, 50);
+
                 let project = std::path::Path::new(&s.project_path)
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
-                let tokens = s.prompt_tokens + s.completion_tokens;
 
-                let line = Line::from(vec![
-                    Span::styled(
-                        format!("{}  ", date),
-                        Style::default().fg(Theme::COMMENT),
-                    ),
-                    Span::styled(title.to_string(), Style::default().fg(Theme::FG)),
-                    Span::styled(
-                        format!("  {}", project),
-                        Style::default().fg(Theme::YELLOW),
-                    ),
-                    Span::styled(
-                        format!("  {}t", tokens),
-                        Style::default().fg(Theme::GREEN),
-                    ),
-                ]);
-                ListItem::new(line)
+                let time_ago = relative_time(&s.start_time);
+                let size = format_size(s.size_bytes);
+
+                let arrow = if is_selected { "❯ " } else { "  " };
+                let title_color = if is_selected { Theme::CYAN } else { Theme::FG };
+
+                ListItem::new(vec![
+                    Line::from(Span::styled(
+                        format!("{}{}", arrow, title),
+                        Style::default().fg(title_color),
+                    )),
+                    Line::from(vec![
+                        Span::styled("    ", Style::default()),
+                        Span::styled(time_ago, Style::default().fg(Theme::COMMENT)),
+                        Span::styled(" · ", Style::default().fg(Theme::DIM)),
+                        Span::styled(project, Style::default().fg(Theme::YELLOW)),
+                        Span::styled(" · ", Style::default().fg(Theme::DIM)),
+                        Span::styled(size, Style::default().fg(Theme::GREEN)),
+                    ]),
+                ])
             })
             .collect();
 
@@ -145,7 +141,7 @@ impl TabContent for HistoryTab {
                     .title(format!("Sessions ({})", search_hint))
                     .border_style(Style::default().fg(Theme::DIM)),
             )
-            .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+            .highlight_style(Style::default());
 
         f.render_stateful_widget(list, chunks[0], &mut self.state);
 
@@ -247,6 +243,40 @@ impl TabContent for HistoryTab {
             _ => {}
         }
     }
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() > max {
+        format!("{}...", s.chars().take(max - 3).collect::<String>())
+    } else {
+        s.to_string()
+    }
+}
+
+fn relative_time(iso: &str) -> String {
+    if iso.len() < 19 { return iso.to_string(); }
+    let parsed = chrono::NaiveDateTime::parse_from_str(&iso[..19], "%Y-%m-%d %H:%M:%S");
+    let dt = match parsed {
+        Ok(d) => d.and_utc(),
+        Err(_) => return iso[5..16].to_string(),
+    };
+    let dur = chrono::Utc::now() - dt;
+    let mins = dur.num_minutes();
+    let hrs = dur.num_hours();
+    let days = dur.num_days();
+
+    if mins < 1 { "just now".into() }
+    else if mins < 60 { format!("{} min ago", mins) }
+    else if hrs < 24 { format!("{} hours ago", hrs) }
+    else if days < 7 { format!("{} days ago", days) }
+    else if days < 30 { format!("{} weeks ago", days / 7) }
+    else { format!("{} months ago", days / 30) }
+}
+
+fn format_size(bytes: i64) -> String {
+    if bytes < 1024 { format!("{}B", bytes) }
+    else if bytes < 1024 * 1024 { format!("{:.1}KB", bytes as f64 / 1024.0) }
+    else { format!("{:.1}MB", bytes as f64 / (1024.0 * 1024.0)) }
 }
 
 fn render_empty_detail(f: &mut Frame, area: Rect, hint: &str) {
