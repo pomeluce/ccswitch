@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::{Frame, Terminal, backend::CrosstermBackend};
@@ -10,7 +11,7 @@ use super::theme::Theme;
 
 #[allow(dead_code)]
 pub struct App {
-    pub mgr: ConfigManager,
+    pub mgr: Arc<ConfigManager>,
     pub active_tab: Tab,
     pub providers_tab: ProvidersTab,
     pub usage_tab: UsageTab,
@@ -21,10 +22,10 @@ pub struct App {
 
 impl App {
     pub fn new(db_path: PathBuf, defaults_path: PathBuf) -> anyhow::Result<Self> {
-        let mgr = ConfigManager::new(&db_path, Some(&defaults_path))?;
-        let providers_tab = ProvidersTab::new(&mgr);
-        let usage_tab = UsageTab::new(&mgr);
-        let history_tab = HistoryTab::new(&mgr);
+        let mgr = Arc::new(ConfigManager::new(&db_path, Some(&defaults_path))?);
+        let providers_tab = ProvidersTab::new(&*mgr);
+        let usage_tab = UsageTab::new(&*mgr);
+        let history_tab = HistoryTab::new(mgr.clone());
         Ok(App {
             mgr,
             active_tab: Tab::Providers,

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::Style,
@@ -15,10 +17,11 @@ pub struct HistoryTab {
     pub sessions: Vec<SessionRecord>,
     pub state: ListState,
     pub search_query: String,
+    mgr: Arc<ConfigManager>,
 }
 
 impl HistoryTab {
-    pub fn new(mgr: &ConfigManager) -> Self {
+    pub fn new(mgr: Arc<ConfigManager>) -> Self {
         let sessions = mgr.db().query_sessions(None, None, 100).unwrap_or_default();
         let mut state = ListState::default();
         if !sessions.is_empty() {
@@ -28,22 +31,29 @@ impl HistoryTab {
             sessions,
             state,
             search_query: String::new(),
+            mgr,
         }
     }
 
     #[allow(dead_code)]
-    pub fn refresh(&mut self, mgr: &ConfigManager) {
+    pub fn refresh(&mut self) {
         let search = if self.search_query.is_empty() {
             None
         } else {
             Some(self.search_query.as_str())
         };
-        self.sessions = mgr.db().query_sessions(None, search, 100).unwrap_or_default();
+        self.sessions = self.mgr.db().query_sessions(None, search, 100).unwrap_or_default();
     }
 
     fn delete_selected(&mut self) {
         if let Some(idx) = self.state.selected() {
             if idx < self.sessions.len() {
+                // Delete from the database first
+                if let Some(session) = self.sessions.get(idx) {
+                    if let Err(e) = self.mgr.db().delete_session(&session.id) {
+                        tracing::warn!("Failed to delete session from database: {}", e);
+                    }
+                }
                 self.sessions.remove(idx);
                 let len = self.sessions.len();
                 if len == 0 {

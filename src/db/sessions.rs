@@ -27,6 +27,15 @@ impl Db {
         Ok(())
     }
 
+    /// Delete a session record by ID.
+    pub fn delete_session(&self, id: &str) -> Result<(), rusqlite::Error> {
+        self.conn().execute(
+            "DELETE FROM session_history WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
+    }
+
     pub fn query_sessions(
         &self,
         project: Option<&str>,
