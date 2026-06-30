@@ -55,21 +55,34 @@ fn extract_text(content: &serde_json::Value) -> Option<String> {
     }
 }
 
-/// Check if a message is a context preamble (should be skipped for titles)
+/// Check if a user message should be skipped as a title candidate.
+/// Skip system-injected commands and pure context references,
+/// but keep messages that have substantial content.
 fn is_context_message(text: &str) -> bool {
     let t = text.trim();
-    t.is_empty()
-        || t.starts_with('<')
-        || t.starts_with("/clear")
-        || t.starts_with("/compact")
-        || t.starts_with("/model")
-        || t.starts_with("/config")
-        || t.starts_with("/exit")
-        || t.starts_with("Base directory for this skill")
-        || t.starts_with('@')  // file references like @src/main.rs
-        || t.starts_with('#')  // file references like #L10-20
-        || t.contains("<local-command-caveat>")
-        || t.contains("<command-name>")
+    if t.is_empty() {
+        return true;
+    }
+    // Pure slash commands
+    if t.starts_with("/clear") || t.starts_with("/compact")
+        || t.starts_with("/model") || t.starts_with("/config") || t.starts_with("/exit")
+    {
+        return true;
+    }
+    // System-injected meta tags
+    if t.contains("<local-command-caveat>") || t.contains("<command-name>") {
+        return true;
+    }
+    // Skill context preamble
+    if t.starts_with("Base directory for this skill:") {
+        return true;
+    }
+    // Pure file/line references (starts with @ or #, no substantial text)
+    let first_word = t.split_whitespace().next().unwrap_or("");
+    if first_word.starts_with('@') || first_word.starts_with('#') {
+        return true;
+    }
+    false
 }
 
 /// Parse timestamp that could be milliseconds or seconds
