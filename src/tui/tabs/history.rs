@@ -169,7 +169,7 @@ impl TabContent for HistoryTab {
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
 
-                let date = format_date(&s.start_time);
+                let date = relative_time(&s.start_time);
                 let size = format_size(s.size_bytes);
 
                 let arrow = if is_selected { "❯ " } else { "  " };
@@ -524,8 +524,23 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
-fn format_date(iso: &str) -> String {
-    if iso.len() >= 16 { iso[5..16].to_string() } else { iso.to_string() }
+fn relative_time(iso: &str) -> String {
+    if iso.len() < 19 { return iso[5..16].to_string(); }
+    let parsed = chrono::NaiveDateTime::parse_from_str(&iso[..19], "%Y-%m-%d %H:%M:%S");
+    let dt = match parsed {
+        Ok(d) => d.and_utc(),
+        Err(_) => return iso[5..16].to_string(),
+    };
+    let dur = chrono::Utc::now() - dt;
+    let mins = dur.num_minutes();
+    let hrs = dur.num_hours();
+    let days = dur.num_days();
+    if mins < 1 { "just now".into() }
+    else if mins < 60 { format!("{} min ago", mins) }
+    else if hrs < 24 { format!("{} hours ago", hrs) }
+    else if days < 7 { format!("{} days ago", days) }
+    else if days < 30 { format!("{} weeks ago", days / 7) }
+    else { format!("{} months ago", days / 30) }
 }
 
 fn centered_rect(width: u16, height: u16, r: Rect) -> Rect {
