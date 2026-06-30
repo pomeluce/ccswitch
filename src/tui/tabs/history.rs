@@ -21,7 +21,8 @@ pub struct HistoryTab {
     pub is_searching: bool,
     pub detail_mode: bool,
     pub confirm_delete: bool,
-    selected_button: usize, // 0=Open, 1=Delete
+    selected_button: usize,   // 0=Open, 1=Delete
+    confirm_button: usize,    // 0=Confirm, 1=Cancel (independent)
     mgr: Arc<ConfigManager>,
 }
 
@@ -53,6 +54,7 @@ impl HistoryTab {
             detail_mode: false,
             confirm_delete: false,
             selected_button: 0,
+            confirm_button: 0,
             mgr,
         }
     }
@@ -242,31 +244,30 @@ impl TabContent for HistoryTab {
         }
     }
 
-    fn handle_key(&mut self, code: KeyCode) {
+    fn handle_key(&mut self, code: KeyCode) -> bool {
         // Delete confirmation mode
         if self.confirm_delete {
             match code {
                 KeyCode::Char('j') | KeyCode::Char('l') | KeyCode::Right => {
-                    self.selected_button ^= 1;
+                    self.confirm_button ^= 1;
                 }
                 KeyCode::Char('k') | KeyCode::Char('h') | KeyCode::Left => {
-                    self.selected_button ^= 1;
+                    self.confirm_button ^= 1;
                 }
                 KeyCode::Enter => {
-                    if self.selected_button == 0 {
-                        // Confirm
+                    if self.confirm_button == 0 {
                         self.delete_selected();
                     }
                     self.confirm_delete = false;
-                    self.selected_button = 0;
+                    self.confirm_button = 0;
                 }
-                KeyCode::Esc => {
+                KeyCode::Esc | KeyCode::Char('q') => {
                     self.confirm_delete = false;
-                    self.selected_button = 0;
+                    self.confirm_button = 0;
                 }
                 _ => {}
             }
-            return;
+            return true;
         }
 
         // Search mode
@@ -290,13 +291,13 @@ impl TabContent for HistoryTab {
                 }
                 _ => {}
             }
-            return;
+            return true;
         }
 
         // Detail mode
         if self.detail_mode {
             match code {
-                KeyCode::Esc => {
+                KeyCode::Esc | KeyCode::Char('q') => {
                     self.detail_mode = false;
                 }
                 KeyCode::Char('j') | KeyCode::Char('l') | KeyCode::Right => {
@@ -308,42 +309,41 @@ impl TabContent for HistoryTab {
                 KeyCode::Enter => {
                     match self.selected_button {
                         0 => {
-                            // Open — resume session in Claude Code
                             if let Some(idx) = self.state.selected() {
                                 if let Some(s) = self.sessions.get(idx) {
                                     let _ = std::process::Command::new("claude")
-                                        .args(["--resume", &s.id])
+                                        .current_dir(&s.project_path)
                                         .spawn();
                                 }
                             }
                         }
                         1 => {
                             self.confirm_delete = true;
-                            self.selected_button = 0; // Confirm=0, Cancel=1
+                            self.confirm_button = 0;
                         }
                         _ => {}
                     }
                 }
                 KeyCode::Char('d') => {
                     self.confirm_delete = true;
-                    self.selected_button = 0;
+                    self.confirm_button = 0;
                 }
-                _ => {}
+                _ => { return false; }
             }
-            return;
+            return true;
         }
 
         // List mode
         match code {
             KeyCode::Char('j') | KeyCode::Down => {
                 let len = self.sessions.len();
-                if len == 0 { return; }
+                if len == 0 { return true; }
                 let i = self.state.selected().unwrap_or(0);
                 self.state.select(Some(if i + 1 < len { i + 1 } else { 0 }));
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 let len = self.sessions.len();
-                if len == 0 { return; }
+                if len == 0 { return true; }
                 let i = self.state.selected().unwrap_or(0);
                 self.state.select(Some(if i > 0 { i - 1 } else { len - 1 }));
             }
@@ -356,10 +356,11 @@ impl TabContent for HistoryTab {
             }
             KeyCode::Char('d') => {
                 self.confirm_delete = true;
-                self.selected_button = 0;
+                self.confirm_button = 0;
             }
-            _ => {}
+            _ => { return false; }
         }
+        true
     }
 }
 
@@ -455,12 +456,12 @@ impl HistoryTab {
 
     fn render_confirm_popup(&self, f: &mut Frame, area: Rect) {
         let popup_area = centered_rect(44, 6, area);
-        let confirm_style = if self.selected_button == 0 {
+        let confirm_style = if self.confirm_button == 0 {
             Style::default().fg(Color::Black).bg(Theme::RED)
         } else {
             Style::default().fg(Theme::DIM)
         };
-        let cancel_style = if self.selected_button == 1 {
+        let cancel_style = if self.confirm_button == 1 {
             Style::default().fg(Color::Black).bg(Theme::CYAN)
         } else {
             Style::default().fg(Theme::DIM)
@@ -470,9 +471,9 @@ impl HistoryTab {
             Line::from(" Delete this session? ").centered(),
             Line::from(""),
             Line::from(vec![
-                Span::styled("   Confirm ", confirm_style),
-                Span::raw("   "),
-                Span::styled(" Cancel ", cancel_style),
+                Span::styled("  Confirm  ", confirm_style),
+                Span::raw("     "),
+                Span::styled("  Cancel  ", cancel_style),
             ]).centered(),
         ])
         .block(

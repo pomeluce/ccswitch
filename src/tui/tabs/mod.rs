@@ -13,5 +13,5 @@ pub enum Tab {
 
 pub trait TabContent {
     fn render(&mut self, f: &mut Frame, area: ratatui::layout::Rect);
-    fn handle_key(&mut self, code: ratatui::crossterm::event::KeyCode);
+    fn handle_key(&mut self, code: ratatui::crossterm::event::KeyCode) -> bool;
 }

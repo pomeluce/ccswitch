@@ -102,7 +102,7 @@ impl TabContent for UsageTab {
         }
     }
 
-    fn handle_key(&mut self, code: KeyCode) {
+    fn handle_key(&mut self, code: KeyCode) -> bool {
         match code {
             KeyCode::Char('j') | KeyCode::Down
                 if self.selected_index < self.summaries.len().saturating_sub(1) =>
@@ -124,5 +124,6 @@ impl TabContent for UsageTab {
             }
             _ => {}
         }
+        true
     }
 }

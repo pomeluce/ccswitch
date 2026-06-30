@@ -68,17 +68,21 @@ impl App {
 
     fn handle_key(&mut self, code: KeyCode) {
         match code {
-            KeyCode::Char('q') => self.should_quit = true,
             KeyCode::Tab => self.next_tab(),
             KeyCode::BackTab => self.prev_tab(),
             KeyCode::Char('1') => self.active_tab = Tab::Providers,
             KeyCode::Char('2') => self.active_tab = Tab::Usage,
             KeyCode::Char('3') => self.active_tab = Tab::History,
-            _ => match self.active_tab {
-                Tab::Providers => self.providers_tab.handle_key(code),
-                Tab::Usage => self.usage_tab.handle_key(code),
-                Tab::History => self.history_tab.handle_key(code),
-            },
+            _ => {
+                let handled = match self.active_tab {
+                    Tab::Providers => self.providers_tab.handle_key(code),
+                    Tab::Usage => self.usage_tab.handle_key(code),
+                    Tab::History => self.history_tab.handle_key(code),
+                };
+                if !handled && code == KeyCode::Char('q') {
+                    self.should_quit = true;
+                }
+            }
         }
     }
 

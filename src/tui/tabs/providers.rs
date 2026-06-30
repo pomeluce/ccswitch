@@ -150,7 +150,7 @@ impl TabContent for ProvidersTab {
         );
     }
 
-    fn handle_key(&mut self, code: KeyCode) {
+    fn handle_key(&mut self, code: KeyCode) -> bool {
         match code {
             KeyCode::Char('j') | KeyCode::Down => self.tree.move_down(),
             KeyCode::Char('k') | KeyCode::Up => self.tree.move_up(),
@@ -193,5 +193,7 @@ impl TabContent for ProvidersTab {
             }
             _ => {}
         }
+
+        true
     }
 }
