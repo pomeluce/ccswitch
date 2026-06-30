@@ -38,6 +38,6 @@ pub fn render_status_bar(
         ),
     ]);
 
-    let p = Paragraph::new(line).style(Style::default().bg(Theme::BG_PANEL));
+    let p = Paragraph::new(line).style(Style::default());
     f.render_widget(p, area);
 }

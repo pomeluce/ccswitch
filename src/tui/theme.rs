@@ -3,9 +3,6 @@ use ratatui::style::Color;
 pub struct Theme;
 
 impl Theme {
-    pub const BG: Color           = Color::Rgb(0x2D, 0x2A, 0x2E);
-    pub const BG_PANEL: Color     = Color::Rgb(0x22, 0x1F, 0x22);
-    pub const BG_SELECTED: Color  = Color::Rgb(0x40, 0x3E, 0x41);
     pub const FG: Color           = Color::Rgb(0xFC, 0xFC, 0xFA);
     pub const RED: Color          = Color::Rgb(0xFF, 0x61, 0x88);
     #[allow(dead_code)]

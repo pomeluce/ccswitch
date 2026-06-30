@@ -1,6 +1,6 @@
 use ratatui::{
     layout::Rect,
-    style::Style,
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Paragraph},
     Frame,
@@ -67,15 +67,15 @@ impl DetailPanel {
             Line::from(vec![
                 Span::styled(
                     " \u{23ce} Apply  ",
-                    Style::default().fg(Theme::BG).bg(Theme::CYAN),
+                    Style::default().add_modifier(Modifier::REVERSED),
                 ),
                 Span::styled(
                     " e Edit  ",
-                    Style::default().fg(Theme::FG).bg(Theme::BG_SELECTED),
+                    Style::default().add_modifier(Modifier::REVERSED),
                 ),
                 Span::styled(
                     " d Delete",
-                    Style::default().fg(Theme::RED).bg(Theme::BG_SELECTED),
+                    Style::default().fg(Theme::RED),
                 ),
             ]),
         ];
@@ -86,7 +86,7 @@ impl DetailPanel {
                     .title("Detail")
                     .border_style(Style::default().fg(Theme::DIM)),
             )
-            .style(Style::default().bg(Theme::BG_PANEL));
+            .style(Style::default());
         f.render_widget(p, area);
     }
 }

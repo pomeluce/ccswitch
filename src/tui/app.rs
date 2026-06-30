@@ -74,15 +74,54 @@ impl App {
     }
 
     fn render(&mut self, f: &mut Frame) {
-        let area = f.area();
-        let bg = ratatui::widgets::Block::new()
-            .style(ratatui::style::Style::default().bg(Theme::BG));
-        f.render_widget(bg, area);
+        use ratatui::layout::{Constraint, Direction, Layout};
 
+        let area = f.area();
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Min(0)])
+            .split(area);
+
+        // Tab bar
+        self.render_tab_bar(f, chunks[0]);
+        // Content
         match self.active_tab {
-            Tab::Providers => self.providers_tab.render(f, area),
-            Tab::Usage => self.usage_tab.render(f, area),
-            Tab::History => self.history_tab.render(f, area),
+            Tab::Providers => self.providers_tab.render(f, chunks[1]),
+            Tab::Usage => self.usage_tab.render(f, chunks[1]),
+            Tab::History => self.history_tab.render(f, chunks[1]),
         }
+    }
+
+    fn render_tab_bar(&self, f: &mut Frame, area: ratatui::layout::Rect) {
+        use ratatui::{
+            style::Style,
+            text::{Line, Span},
+            widgets::Paragraph,
+        };
+        use super::tabs::Tab;
+
+        let tabs = [
+            (Tab::Providers, "[1] 模型"),
+            (Tab::Usage, "[2] 用量"),
+            (Tab::History, "[3] 会话"),
+        ];
+
+        let spans: Vec<Span> = tabs
+            .iter()
+            .flat_map(|(tab, label)| {
+                let style = if *tab == self.active_tab {
+                    Style::default().fg(Theme::CYAN)
+                } else {
+                    Style::default().fg(Theme::DIM)
+                };
+                vec![
+                    Span::styled(*label, style),
+                    Span::styled("  ", Style::default()),
+                ]
+            })
+            .collect();
+
+        let p = Paragraph::new(Line::from(spans));
+        f.render_widget(p, area);
     }
 }

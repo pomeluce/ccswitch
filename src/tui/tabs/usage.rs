@@ -1,6 +1,6 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::Style,
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, List, ListItem},
     Frame,
@@ -64,7 +64,7 @@ impl TabContent for UsageTab {
                     ),
                 ]);
                 if i == self.selected_index {
-                    ListItem::new(line).style(Style::default().bg(Theme::BG_SELECTED))
+                    ListItem::new(line).style(Style::default().add_modifier(Modifier::REVERSED))
                 } else {
                     ListItem::new(line)
                 }

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::Style,
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, List, ListItem, ListState, Paragraph},
     Frame,
@@ -123,7 +123,7 @@ impl TabContent for HistoryTab {
                     .title(format!("Sessions ({})", search_hint))
                     .border_style(Style::default().fg(Theme::DIM)),
             )
-            .highlight_style(Style::default().bg(Theme::BG_SELECTED));
+            .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
         f.render_stateful_widget(list, chunks[0], &mut self.state);
 
@@ -176,11 +176,11 @@ impl TabContent for HistoryTab {
                     Line::from(vec![
                         Span::styled(
                             "r Resume  ",
-                            Style::default().fg(Theme::BG).bg(Theme::CYAN),
+                            Style::default().add_modifier(Modifier::REVERSED),
                         ),
                         Span::styled(
                             "  d Delete",
-                            Style::default().fg(Theme::RED).bg(Theme::BG_SELECTED),
+                            Style::default().fg(Theme::RED),
                         ),
                     ]),
                 ];
@@ -191,7 +191,7 @@ impl TabContent for HistoryTab {
                             .title("Session Detail")
                             .border_style(Style::default().fg(Theme::DIM)),
                     )
-                    .style(Style::default().bg(Theme::BG_PANEL));
+                    .style(Style::default());
                 f.render_widget(p, chunks[1]);
             }
         }

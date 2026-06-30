@@ -50,6 +50,6 @@ pub fn render_bar_chart(
                 .title(title)
                 .border_style(Style::default().fg(Theme::DIM)),
         )
-        .style(Style::default().bg(Theme::BG_PANEL));
+        .style(Style::default());
     f.render_widget(p, area);
 }

@@ -1,6 +1,6 @@
 use ratatui::{
     layout::Rect,
-    style::Style,
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, List, ListItem, ListState},
     Frame,
@@ -152,8 +152,8 @@ impl ProviderTree {
                     .title("Providers")
                     .border_style(Style::default().fg(Theme::DIM)),
             )
-            .highlight_style(Style::default().bg(Theme::BG_SELECTED))
-            .style(Style::default().bg(Theme::BG_PANEL));
+            .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
+            .style(Style::default());
         f.render_stateful_widget(list, area, &mut self.state);
     }
 }

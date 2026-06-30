@@ -8,7 +8,13 @@
   };
 
   outputs =
-    { self, nixpkgs, flake-parts, rust-overlay, ... }@inputs:
+    {
+      self,
+      nixpkgs,
+      flake-parts,
+      rust-overlay,
+      ...
+    }@inputs:
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [
         "x86_64-linux"
@@ -68,7 +74,12 @@
 
       flake = {
         nixosModules.default =
-          { config, lib, pkgs, ... }:
+          {
+            config,
+            lib,
+            pkgs,
+            ...
+          }:
           let
             cfg = config.services.ccswitch;
           in
