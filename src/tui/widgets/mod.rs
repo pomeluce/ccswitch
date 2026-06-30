@@ -1,1 +1,4 @@
-// Widget modules will be filled in Tasks 9/10/11
+pub mod bar_chart;
+pub mod detail_panel;
+pub mod provider_tree;
+pub mod status_bar;

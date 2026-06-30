@@ -5,12 +5,13 @@ use ratatui::{Frame, Terminal, backend::CrosstermBackend};
 
 use crate::core::config::ConfigManager;
 
-use super::tabs::{Tab, TabContent};
+use super::tabs::{providers::ProvidersTab, Tab, TabContent};
 use super::theme::Theme;
 
 pub struct App {
     pub mgr: ConfigManager,
     pub active_tab: Tab,
+    pub providers_tab: ProvidersTab,
     pub should_quit: bool,
     pub status_message: String,
 }
@@ -18,9 +19,11 @@ pub struct App {
 impl App {
     pub fn new(db_path: PathBuf, defaults_path: PathBuf) -> anyhow::Result<Self> {
         let mgr = ConfigManager::new(&db_path, Some(&defaults_path))?;
+        let providers_tab = ProvidersTab::new(&mgr);
         Ok(App {
             mgr,
             active_tab: Tab::Providers,
+            providers_tab,
             should_quit: false,
             status_message: String::new(),
         })
@@ -54,27 +57,24 @@ impl App {
             KeyCode::Char('1') => self.active_tab = Tab::Providers,
             KeyCode::Char('2') => self.active_tab = Tab::Usage,
             KeyCode::Char('3') => self.active_tab = Tab::History,
-            _ => {
-                // Delegate to active tab
-                match self.active_tab {
-                    Tab::Providers => {} // Task 9
-                    Tab::Usage => {}     // Task 10
-                    Tab::History => {}   // Task 11
-                }
-            }
+            _ => match self.active_tab {
+                Tab::Providers => self.providers_tab.handle_key(code),
+                Tab::Usage => {}   // Task 10
+                Tab::History => {} // Task 11
+            },
         }
     }
 
-    fn render(&self, f: &mut Frame) {
+    fn render(&mut self, f: &mut Frame) {
         let area = f.area();
         let bg = ratatui::widgets::Block::new()
             .style(ratatui::style::Style::default().bg(Theme::BG));
         f.render_widget(bg, area);
 
-        // Placeholder: draw simple text
-        let text = format!("Active tab: {:?} | Press q to quit", self.active_tab);
-        let p = ratatui::widgets::Paragraph::new(text)
-            .style(ratatui::style::Style::default().fg(Theme::FG));
-        f.render_widget(p, area);
+        match self.active_tab {
+            Tab::Providers => self.providers_tab.render(f, area),
+            Tab::Usage => {}   // Task 10
+            Tab::History => {} // Task 11
+        }
     }
 }

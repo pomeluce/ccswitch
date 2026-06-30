@@ -1,3 +1,5 @@
+pub mod providers;
+
 use ratatui::Frame;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -8,6 +10,6 @@ pub enum Tab {
 }
 
 pub trait TabContent {
-    fn render(&self, f: &mut Frame, area: ratatui::layout::Rect);
+    fn render(&mut self, f: &mut Frame, area: ratatui::layout::Rect);
     fn handle_key(&mut self, code: ratatui::crossterm::event::KeyCode);
 }
