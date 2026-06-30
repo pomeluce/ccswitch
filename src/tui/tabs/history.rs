@@ -188,10 +188,13 @@ impl TabContent for HistoryTab {
             if let Some(s) = self.sessions.get(idx) {
                 let pad = "  ";
                 let lines = vec![
-                    Line::from(vec![Span::styled(
-                        s.title.as_deref().unwrap_or(&s.id),
-                        Style::default().fg(Theme::CYAN),
-                    )]),
+                    Line::from(vec![
+                        Span::styled(pad, Style::default()),
+                        Span::styled(
+                            s.title.as_deref().unwrap_or(&s.id),
+                            Style::default().fg(Theme::CYAN),
+                        ),
+                    ]),
                     Line::from(""),
                     Line::from(vec![
                         Span::styled(format!("{}Project:  ", pad), Style::default().fg(Theme::PURPLE)),
@@ -304,7 +307,16 @@ impl TabContent for HistoryTab {
                 }
                 KeyCode::Enter => {
                     match self.selected_button {
-                        0 => { /* Open — resume session */ }
+                        0 => {
+                            // Open — resume session in Claude Code
+                            if let Some(idx) = self.state.selected() {
+                                if let Some(s) = self.sessions.get(idx) {
+                                    let _ = std::process::Command::new("claude")
+                                        .args(["--resume", &s.id])
+                                        .spawn();
+                                }
+                            }
+                        }
                         1 => {
                             self.confirm_delete = true;
                             self.selected_button = 0; // Confirm=0, Cancel=1
@@ -455,18 +467,17 @@ impl HistoryTab {
         };
 
         let p = Paragraph::new(vec![
-            Line::from(Span::styled(" Delete this session? ", Style::default())).centered(),
+            Line::from(" Delete this session? ").centered(),
             Line::from(""),
             Line::from(vec![
-                Span::raw("       "),
-                Span::styled(" Confirm ", confirm_style),
-                Span::styled("   ", Style::default()),
+                Span::styled("   Confirm ", confirm_style),
+                Span::raw("   "),
                 Span::styled(" Cancel ", cancel_style),
             ]).centered(),
         ])
         .block(
             Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                .title("Confirm Delete")
+                .title(" Confirm Delete ")
                 .border_style(Style::default().fg(Theme::RED)),
         );
         f.render_widget(Clear, popup_area);
