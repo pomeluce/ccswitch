@@ -27,6 +27,7 @@ pub fn switch_profile(mgr: &ConfigManager, provider_id: &str, profile_id: &str, 
         profile_name: profile.name.clone(),
         base_url: base_url.clone(),
         auth_token: auth_token.clone(),
+        api_key: provider.api_key.clone(),
         opus_model: profile.opus.clone(),
         sonnet_model: profile.sonnet.clone(),
         haiku_model: profile.haiku.clone(),
@@ -49,6 +50,21 @@ pub fn switch_profile(mgr: &ConfigManager, provider_id: &str, profile_id: &str, 
     }
 
     Ok(config)
+}
+
+/// If the original api_key is an `env:XXX` reference or empty, return the reference
+/// instead of the resolved plaintext value, so it is never written to disk in plaintext.
+fn preserve_env_ref(original: &str, resolved: &str) -> String {
+    if original.starts_with("env:") || original.is_empty() {
+        if original.is_empty() {
+            "env:CLAUDE_API_KEY".to_string()
+        } else {
+            original.to_string()
+        }
+    } else {
+        // Literal key — user chose to store it
+        resolved.to_string()
+    }
 }
 
 fn write_settings_json(config: &ActiveConfig, path: Option<&Path>) -> Result<()> {
@@ -74,7 +90,7 @@ fn write_settings_json(config: &ActiveConfig, path: Option<&Path>) -> Result<()>
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     existing["env"] = json!({
         "ANTHROPIC_BASE_URL": config.base_url,
-        "ANTHROPIC_AUTH_TOKEN": config.auth_token,
+        "ANTHROPIC_AUTH_TOKEN": preserve_env_ref(&config.api_key, &config.auth_token),
         "ANTHROPIC_MODEL": config.opus_model,
         "ANTHROPIC_DEFAULT_OPUS_MODEL": config.opus_model,
         "ANTHROPIC_DEFAULT_SONNET_MODEL": config.sonnet_model,
