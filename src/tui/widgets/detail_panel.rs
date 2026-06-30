@@ -89,4 +89,18 @@ impl DetailPanel {
             .style(Style::default());
         f.render_widget(p, area);
     }
+
+    pub fn render_empty(f: &mut Frame, area: Rect, hint: &str) {
+        let p = Paragraph::new(Line::from(Span::styled(
+            hint,
+            Style::default().fg(Theme::COMMENT),
+        )))
+        .block(
+            Block::bordered()
+                .border_set(ratatui::symbols::border::ROUNDED)
+                .title("Detail")
+                .border_style(Style::default().fg(Theme::DIM)),
+        );
+        f.render_widget(p, area);
+    }
 }

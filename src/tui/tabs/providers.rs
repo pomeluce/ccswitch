@@ -108,7 +108,7 @@ impl TabContent for ProvidersTab {
 
         self.tree.render(f, main[0]);
 
-        // Render detail if a profile is selected
+        // Always render detail panel (with or without selection)
         if let Some(item) = self.tree.selected_item() {
             if let Some((provider, profile)) = self.find_selected_profile(item) {
                 let is_active = self.is_active_selection(item);
@@ -122,7 +122,11 @@ impl TabContent for ProvidersTab {
                     is_active,
                     provider.source.can_delete(),
                 );
+            } else {
+                DetailPanel::render_empty(f, main[1], "Select a profile");
             }
+        } else {
+            DetailPanel::render_empty(f, main[1], "Select a profile");
         }
 
         let active_provider = if self.active_provider.is_empty() {

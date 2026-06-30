@@ -127,7 +127,7 @@ impl TabContent for HistoryTab {
 
         f.render_stateful_widget(list, chunks[0], &mut self.state);
 
-        // Right: detail for selected session
+        // Right: detail for selected session (always render bordered block)
         if let Some(idx) = self.state.selected() {
             if let Some(s) = self.sessions.get(idx) {
                 let lines = vec![
@@ -193,7 +193,11 @@ impl TabContent for HistoryTab {
                     )
                     .style(Style::default());
                 f.render_widget(p, chunks[1]);
+            } else {
+                render_empty_detail(f, chunks[1], "No session selected");
             }
+        } else {
+            render_empty_detail(f, chunks[1], "No sessions available");
         }
     }
 
@@ -221,4 +225,19 @@ impl TabContent for HistoryTab {
             _ => {}
         }
     }
+}
+
+fn render_empty_detail(f: &mut Frame, area: Rect, hint: &str) {
+    use ratatui::{style::Style, text::Line, widgets::Block};
+    let p = Paragraph::new(Line::from(Span::styled(
+        hint,
+        Style::default().fg(Theme::COMMENT),
+    )))
+    .block(
+        Block::bordered()
+            .border_set(ratatui::symbols::border::ROUNDED)
+            .title("Session Detail")
+            .border_style(Style::default().fg(Theme::DIM)),
+    );
+    f.render_widget(p, area);
 }
