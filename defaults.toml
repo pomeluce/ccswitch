@@ -1,0 +1,16 @@
+version = 1
+
+[[providers]]
+id = "deepseek"
+name = "DeepSeek"
+api_url = "https://api.deepseek.com/anthropic"
+api_key = "env:DEEPSEEK_API_KEY"
+
+[[providers.profiles]]
+id = "v4"
+name = "V4"
+opus = "deepseek-v4-pro[1m]"
+sonnet = "deepseek-v4-pro[1m]"
+haiku = "deepseek-v4-flash"
+subagent = "deepseek-v4-flash"
+default = true

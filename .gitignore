@@ -1,0 +1,8 @@
+.superpowers/
+docs/superpowers
+
+# Added by cargo
+
+/target
+require.md
+docs/
