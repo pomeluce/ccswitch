@@ -88,10 +88,20 @@ impl HistoryTab {
         if let Some(idx) = self.state.selected() {
             if idx < self.sessions.len() {
                 if let Some(session) = self.sessions.get(idx) {
+                    // Physically delete Claude Code session files
+                    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+                    let project_hash = session.project_path.replace('/', "-");
+                    let jsonl_path = std::path::PathBuf::from(&home)
+                        .join(".claude/projects")
+                        .join(&project_hash)
+                        .join(format!("{}.jsonl", session.id));
+                    if let Err(e) = std::fs::remove_file(&jsonl_path) {
+                        tracing::warn!("Failed to delete session file {:?}: {}", jsonl_path, e);
+                    }
+
                     if let Err(e) = self.mgr.db().delete_session(&session.id) {
                         tracing::warn!("Failed to delete session from database: {}", e);
                     }
-                    // Also remove from all_sessions
                     self.all_sessions.retain(|s| s.id != session.id);
                 }
                 self.sessions.remove(idx);
@@ -103,7 +113,6 @@ impl HistoryTab {
                 } else {
                     self.state.select(Some(idx));
                 }
-                // Exit detail mode and confirm after delete
                 self.detail_mode = false;
             }
         }
