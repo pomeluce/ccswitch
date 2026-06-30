@@ -1,4 +1,5 @@
 pub mod providers;
+pub mod usage;
 
 use ratatui::Frame;
 

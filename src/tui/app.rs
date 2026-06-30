@@ -5,13 +5,14 @@ use ratatui::{Frame, Terminal, backend::CrosstermBackend};
 
 use crate::core::config::ConfigManager;
 
-use super::tabs::{providers::ProvidersTab, Tab, TabContent};
+use super::tabs::{providers::ProvidersTab, usage::UsageTab, Tab, TabContent};
 use super::theme::Theme;
 
 pub struct App {
     pub mgr: ConfigManager,
     pub active_tab: Tab,
     pub providers_tab: ProvidersTab,
+    pub usage_tab: UsageTab,
     pub should_quit: bool,
     pub status_message: String,
 }
@@ -20,10 +21,12 @@ impl App {
     pub fn new(db_path: PathBuf, defaults_path: PathBuf) -> anyhow::Result<Self> {
         let mgr = ConfigManager::new(&db_path, Some(&defaults_path))?;
         let providers_tab = ProvidersTab::new(&mgr);
+        let usage_tab = UsageTab::new(&mgr);
         Ok(App {
             mgr,
             active_tab: Tab::Providers,
             providers_tab,
+            usage_tab,
             should_quit: false,
             status_message: String::new(),
         })
@@ -59,7 +62,7 @@ impl App {
             KeyCode::Char('3') => self.active_tab = Tab::History,
             _ => match self.active_tab {
                 Tab::Providers => self.providers_tab.handle_key(code),
-                Tab::Usage => {}   // Task 10
+                Tab::Usage => self.usage_tab.handle_key(code),
                 Tab::History => {} // Task 11
             },
         }
@@ -73,7 +76,7 @@ impl App {
 
         match self.active_tab {
             Tab::Providers => self.providers_tab.render(f, area),
-            Tab::Usage => {}   // Task 10
+            Tab::Usage => self.usage_tab.render(f, area),
             Tab::History => {} // Task 11
         }
     }
