@@ -231,6 +231,12 @@ fn handle_usage(mgr: &ConfigManager, range: &str, profile: Option<&str>) -> Resu
     Ok(())
 }
 
+fn project_name(s: &crate::db::sessions::SessionRecord) -> Option<String> {
+    std::path::Path::new(&s.project_path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+}
+
 fn handle_history(mgr: &ConfigManager, project: Option<&str>, search: Option<&str>) -> Result<()> {
     // Auto-import Claude Code sessions before listing
     match mgr.db().import_claude_sessions() {
@@ -244,14 +250,18 @@ fn handle_history(mgr: &ConfigManager, project: Option<&str>, search: Option<&st
     println!("{}", "-".repeat(100));
     for s in &sessions {
         let date = &s.start_time[5..16]; // "MM-DD HH:MM"
-        let title = s.title.as_deref().unwrap_or(&s.id).chars().take(38).collect::<String>();
-        let project = std::path::Path::new(&s.project_path)
-            .file_name().map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let project_short = project.chars().take(10).collect::<String>();
+        let raw = s.title.as_deref().unwrap_or(&s.id);
+        let is_uuid = raw.len() >= 32 && raw.chars().filter(|c| *c == '-').count() >= 4;
+        let title: String = if is_uuid {
+            project_name(s).unwrap_or_else(|| raw.to_string())
+        } else {
+            raw.to_string()
+        };
+        let title = title.chars().take(50).collect::<String>();
+        let project_short = project_name(s).unwrap_or_default().chars().take(12).collect::<String>();
         let tokens = s.prompt_tokens + s.completion_tokens;
         let profile = s.profile_id.as_deref().unwrap_or("-");
-        println!("{:<6} {:<40} {:<12} {:>8} {:>6} {}", date, title, project_short, tokens, s.message_count, profile);
+        println!("{:<6} {:<50} {:<12} {:>8} {:>6} {}", date, title, project_short, tokens, s.message_count, profile);
     }
     Ok(())
 }

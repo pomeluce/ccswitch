@@ -199,14 +199,14 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
                 if let Some(ref content_val) = msg.content {
                     if let Some(text) = extract_text(content_val) {
                         if !is_system_message(&text) {
-                            let title = text
-                                .lines()
-                                .next()
-                                .unwrap_or("")
-                                .trim()
-                                .chars()
-                                .take(80)
-                                .collect::<String>();
+                            let raw = text.lines().next().unwrap_or("").trim();
+                            // Truncate at word boundary (60 chars max)
+                            let title = if raw.chars().count() > 60 {
+                                let truncated: String = raw.chars().take(57).collect();
+                                format!("{}...", truncated)
+                            } else {
+                                raw.to_string()
+                            };
                             if !title.is_empty() {
                                 first_user_message = Some(title);
                             }

@@ -92,7 +92,22 @@ impl TabContent for HistoryTab {
                 } else {
                     &s.start_time
                 };
-                let title = s.title.as_deref().unwrap_or(&s.id);
+                let raw = s.title.as_deref().unwrap_or(&s.id);
+                // If title is a UUID, use project name instead
+                let is_uuid = raw.len() >= 32 && raw.chars().filter(|c| *c == '-').count() >= 4;
+                let title = if is_uuid {
+                    std::path::Path::new(&s.project_path)
+                        .file_name().map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| raw.to_string())
+                } else {
+                    raw.to_string()
+                };
+                // Truncate to 55 chars
+                let title: String = if title.chars().count() > 55 {
+                    format!("{}...", title.chars().take(52).collect::<String>())
+                } else {
+                    title
+                };
                 let project = std::path::Path::new(&s.project_path)
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
