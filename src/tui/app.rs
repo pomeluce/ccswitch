@@ -150,7 +150,7 @@ impl App {
         // Calculate widths
         let left_label = " ccswitch ";
         let left_width = left_label.len() as u16;
-        let mode_label = if self.proxy_running { " 代理模式 " } else { " 本地模式 " };
+        let mode_label = if self.proxy_running { " 模式: proxy " } else { " 模式: local " };
         let mode_width = mode_label.len() as u16;
         let tabs_total_width: u16 = tab_spans.iter().map(|s| s.width() as u16).sum();
 
