@@ -148,7 +148,6 @@ fn collect_jsonl_files(dir: &PathBuf) -> Vec<PathBuf> {
 /// Parse a single Claude Code session JSONL file
 fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::Error> {
     let size_bytes = std::fs::metadata(path).map(|m| m.len() as i64).unwrap_or(0);
-    // Read head lines for session metadata + title
     let content = std::fs::read_to_string(path)?;
     let lines: Vec<&str> = content.lines().collect();
 
@@ -156,22 +155,25 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
         return Ok(None);
     }
 
+    let head_count = 50.min(lines.len());
+    let tail_count = 30.min(lines.len());
+    // Approximate message count from total lines (skip empty)
+    let message_count = lines.iter().filter(|l| !l.trim().is_empty()).count() as i64;
+
     let mut session_id: Option<String> = None;
     let mut cwd: Option<String> = None;
     let mut created_at: Option<i64> = None;
     let mut custom_title: Option<String> = None;
     let mut ai_title: Option<String> = None;
     let mut last_prompt: Option<String> = None;
-    let mut message_count: i64 = 0;
 
-    // Parse all lines for metadata, titles, and message count
-    for line in lines.iter() {
+    // Parse head + tail lines only (fast path for large files)
+    for line in lines.iter().take(head_count).chain(lines.iter().rev().take(tail_count)) {
         let parsed: JsonlLine = match serde_json::from_str(line) {
             Ok(l) => l,
             Err(_) => continue,
         };
 
-        // Collect metadata (first one wins)
         if let Some(ref sid) = parsed.session_id {
             if session_id.is_none() { session_id = Some(sid.clone()); }
         }
@@ -179,12 +181,8 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
             if cwd.is_none() { cwd = Some(c.clone()); }
         }
         if let Some(ref ts) = parsed.timestamp {
-            if created_at.is_none() {
-                created_at = parse_timestamp(ts);
-            }
+            if created_at.is_none() { created_at = parse_timestamp(ts); }
         }
-
-        // Collect titles: custom-title/ai-title take first, last-prompt takes last
         if let Some(ref ct) = parsed.custom_title {
             if custom_title.is_none() && !ct.is_empty() { custom_title = Some(ct.clone()); }
         }
@@ -192,19 +190,14 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
             if ai_title.is_none() && !at.is_empty() { ai_title = Some(at.clone()); }
         }
         if let Some(ref lp) = parsed.last_prompt {
-            if !lp.is_empty() { last_prompt = Some(truncate_title(lp)); } // always take latest
-        }
-
-        // Count non-meta messages
-        if parsed.is_meta != Some(true) && parsed.message.is_some() {
-            message_count += 1;
+            if !lp.is_empty() { last_prompt = Some(truncate_title(lp)); }
         }
     }
 
-    // Fallback: extract last user message (including commands as e.g. "/clear")
+    // Fallback: extract last user message from tail
     let mut fallback_title: Option<String> = None;
     if custom_title.is_none() && ai_title.is_none() && last_prompt.is_none() {
-        for line in lines.iter().rev() {
+        for line in lines.iter().rev().take(tail_count) {
             let parsed: JsonlLine = match serde_json::from_str(line) { Ok(l) => l, Err(_) => continue };
             if parsed.msg_type.as_deref() == Some("user") {
                 if let Some(ref msg) = parsed.message {
@@ -212,13 +205,12 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
                         if let Some(text) = content.as_str() {
                             let t = text.trim();
                             if t.is_empty() { continue; }
-                            // If it's a slash command, extract the command name
                             if t.starts_with('<') {
                                 if let Some(cmd) = extract_command(t) {
                                     fallback_title = Some(cmd);
                                     break;
                                 }
-                                continue; // XML but not a recognized command — try next
+                                continue;
                             }
                             fallback_title = Some(truncate_title(t));
                             break;

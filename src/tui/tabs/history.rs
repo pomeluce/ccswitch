@@ -17,6 +17,7 @@ pub struct HistoryTab {
     pub sessions: Vec<SessionRecord>,
     pub state: ListState,
     pub search_query: String,
+    pub is_searching: bool,
     mgr: Arc<ConfigManager>,
 }
 
@@ -29,7 +30,11 @@ impl HistoryTab {
             _ => {}
         }
 
-        let sessions = mgr.db().query_sessions(None, None, 200).unwrap_or_default();
+        let sessions = mgr.db().query_sessions(None, None, 200)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|s| s.size_bytes > 0)
+            .collect::<Vec<_>>();
         let mut state = ListState::default();
         if !sessions.is_empty() {
             state.select(Some(0));
@@ -38,6 +43,7 @@ impl HistoryTab {
             sessions,
             state,
             search_query: String::new(),
+            is_searching: false,
             mgr,
         }
     }
@@ -49,7 +55,11 @@ impl HistoryTab {
         } else {
             Some(self.search_query.as_str())
         };
-        self.sessions = self.mgr.db().query_sessions(None, search, 100).unwrap_or_default();
+        self.sessions = self.mgr.db().query_sessions(None, search, 200)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|s| s.size_bytes > 0)
+            .collect();
     }
 
     fn delete_selected(&mut self) {
@@ -82,7 +92,16 @@ impl TabContent for HistoryTab {
             .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
             .split(area);
 
-        // Left: session list — 2-line items like claude --resume
+        // Left panel: search box + session list
+        let left_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Min(0)])
+            .split(chunks[0]);
+
+        // Search box
+        self.render_search_box(f, left_chunks[0]);
+
+        // Session list — 2-line items
         let items: Vec<ListItem> = self
             .sessions
             .iter()
@@ -131,21 +150,16 @@ impl TabContent for HistoryTab {
             })
             .collect();
 
-        let search_hint = if self.search_query.is_empty() {
-            "/ to search".to_string()
-        } else {
-            format!("Search: \"{}\"", self.search_query)
-        };
-
+        let count = items.len();
         let list = List::new(items)
             .block(
                 Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                    .title(format!("Sessions ({})", search_hint))
+                    .title(format!("Sessions ({})", count))
                     .border_style(Style::default().fg(Theme::DIM)),
             )
             .highlight_style(Style::default());
 
-        f.render_stateful_widget(list, chunks[0], &mut self.state);
+        f.render_stateful_widget(list, left_chunks[1], &mut self.state);
 
         // Right: detail for selected session (always render bordered block)
         if let Some(idx) = self.state.selected() {
@@ -222,6 +236,27 @@ impl TabContent for HistoryTab {
     }
 
     fn handle_key(&mut self, code: KeyCode) {
+        if self.is_searching {
+            match code {
+                KeyCode::Esc => {
+                    self.is_searching = false;
+                    self.refresh();
+                }
+                KeyCode::Enter => {
+                    self.is_searching = false;
+                    self.refresh();
+                }
+                KeyCode::Backspace | KeyCode::Delete => {
+                    self.search_query.pop();
+                }
+                KeyCode::Char(c) => {
+                    self.search_query.push(c);
+                }
+                _ => {}
+            }
+            return;
+        }
+
         match code {
             KeyCode::Char('j') | KeyCode::Down => {
                 let i = self.state.selected().unwrap_or(0);
@@ -236,14 +271,32 @@ impl TabContent for HistoryTab {
                 }
             }
             KeyCode::Char('/') => {
-                // Enter search mode — simplified: just clear search for now
-                self.search_query = String::new();
+                self.is_searching = true;
+                self.search_query.clear();
             }
             KeyCode::Char('d') => {
                 self.delete_selected();
             }
             _ => {}
         }
+    }
+}
+
+impl HistoryTab {
+    fn render_search_box(&self, f: &mut Frame, area: Rect) {
+        let cursor = if self.is_searching { "▌" } else { "" };
+        let text = if self.search_query.is_empty() && !self.is_searching {
+            "⌕ Search (/ to focus, Esc to exit)".to_string()
+        } else {
+            format!("⌕ {}{}", self.search_query, cursor)
+        };
+        let color = if self.is_searching { Theme::CYAN } else { Theme::COMMENT };
+        let p = Paragraph::new(Line::from(Span::styled(text, Style::default().fg(color))))
+            .block(
+                Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
+                    .border_style(Style::default().fg(Theme::DIM)),
+            );
+        f.render_widget(p, area);
     }
 }
 
