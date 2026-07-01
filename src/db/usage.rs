@@ -108,16 +108,8 @@ impl Db {
                 }
             }
             if prompt > 0 || completion > 0 {
-                let provider = self.conn().query_row(
-                    "SELECT active_provider FROM settings WHERE key = 'active_provider'",
-                    [], |r| r.get::<_, String>(0),
-                ).unwrap_or_default();
-                let profile = self.conn().query_row(
-                    "SELECT active_profile FROM settings WHERE key = 'active_profile'",
-                    [], |r| r.get::<_, String>(0),
-                ).unwrap_or_default();
                 self.insert_usage_log(
-                    &provider, &profile, "local", Some(sid), prompt, completion,
+                    "Claude Code", "local", "local", Some(sid), prompt, completion,
                 )?;
                 imported += 1;
             }

@@ -60,14 +60,8 @@ impl TabContent for UsageTab {
         // Profile ranking
         self.render_profile_list(f, left[2]);
 
-        // Right: daily chart + profile summary
-        let right = Layout::default().direction(Direction::Vertical)
-            .constraints([Constraint::Min(3), Constraint::Length(5)])
-            .split(main[1]);
-        self.render_daily_chart(f, right[0]);
-        if let Some(s) = self.summaries.get(self.selected_index) {
-            self.render_profile_summary(f, right[1], s);
-        }
+        // Right: daily chart with profile summary inline
+        self.render_daily_chart(f, main[1]);
     }
 
     fn handle_key(&mut self, code: KeyCode) -> bool {
@@ -179,10 +173,11 @@ impl UsageTab {
     fn render_daily_chart(&self, f: &mut Frame, area: Rect) {
         if let Some(s) = self.summaries.get(self.selected_index) {
             let label = format!("{} / {}", s.provider_id, s.profile_id);
+            let total = s.total_prompt + s.total_completion;
             let days = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-            let max_val = (s.total_prompt + s.total_completion).max(1);
-            let lines: Vec<Line> = days.iter().enumerate().map(|(i, day)| {
-                let val = (s.total_prompt + s.total_completion) * (7 - i as i64) / 28 + i as i64 * 50;
+            let max_val = total.max(1);
+            let mut lines: Vec<Line> = days.iter().enumerate().map(|(i, day)| {
+                let val = total * (7 - i as i64) / 28 + i as i64 * 50;
                 let w = (val as f64 / max_val as f64 * 30.0) as usize;
                 let bar = "\u{2588}".repeat(w.min(35));
                 let is_today = i == 6;
@@ -193,34 +188,24 @@ impl UsageTab {
                     Span::styled(format!(" {}", format_tokens(val)), Style::default().fg(if is_today { Theme::CYAN } else { Theme::DIM })),
                 ])
             }).collect();
+            // Summary line at bottom of chart
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled("  Today ", Style::default().fg(Theme::COMMENT)),
+                Span::styled(format_tokens(total / 7), Style::default().fg(Theme::GREEN)),
+                Span::styled("   Week ", Style::default().fg(Theme::COMMENT)),
+                Span::styled(format_tokens(total), Style::default().fg(Theme::CYAN)),
+                Span::styled("   Total ", Style::default().fg(Theme::COMMENT)),
+                Span::styled(format_tokens(total * 4), Style::default().fg(Theme::PURPLE)),
+                Span::styled("   Reqs ", Style::default().fg(Theme::COMMENT)),
+                Span::styled(format!("{}", s.request_count), Style::default().fg(Theme::YELLOW)),
+            ]).centered());
 
             let p = Paragraph::new(lines)
                 .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
                     .title(format!("{} — This Week", label))
                     .border_style(Style::default().fg(Theme::DIM)));
             f.render_widget(p, area);
-        }
-    }
-
-    fn render_profile_summary(&self, f: &mut Frame, area: Rect, s: &UsageSummary) {
-        let cards = Layout::default().direction(Direction::Horizontal)
-            .constraints([Constraint::Ratio(1,4); 4]).split(area);
-        let total = s.total_prompt + s.total_completion;
-        let data = [
-            ("Today", format_tokens(total / 7), Theme::GREEN),
-            ("Week", format_tokens(total), Theme::CYAN),
-            ("Total", format_tokens(total * 4), Theme::PURPLE),
-            ("Reqs", format!("{}", s.request_count), Theme::YELLOW),
-        ];
-        for (i, (label, value, color)) in data.iter().enumerate() {
-            let lines = vec![
-                Line::from(Span::styled(*label, Style::default().fg(Theme::COMMENT))).centered(),
-                Line::from(Span::styled(value.to_string(), Style::default().fg(*color))).centered(),
-            ];
-            let p = Paragraph::new(lines)
-                .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                    .border_style(Style::default().fg(Theme::DIM)));
-            f.render_widget(p, cards[i]);
         }
     }
 }
