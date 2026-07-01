@@ -133,16 +133,20 @@ impl ProvidersTab {
         let Some(ref form) = self.edit_form else { return };
         let popup = centered_rect(60, 20, area);
         let mut lines: Vec<Line> = Vec::new();
-        lines.push(Line::from("")); // top padding
+        // Top padding (3 lines)
+        lines.push(Line::from("")); lines.push(Line::from("")); lines.push(Line::from(""));
         for (i, label) in EDIT_LABELS.iter().enumerate() {
             let val = &form.fields[i];
             let cursor = if i == form.focused { " ▌" } else { "" };
             let style = if i == form.focused { Style::default().fg(Theme::CYAN) } else { Style::default().fg(Theme::FG) };
-            lines.push(Line::from(Span::styled(format!("{}: {}{}", label, val, cursor), style)).centered());
+            lines.push(Line::from(Span::styled(
+                format!("{:>15}: {}{}", label, val, cursor), style,
+            )).centered());
             lines.push(Line::from(""));
         }
-        // Push hints to bottom
-        while lines.len() < 17 { lines.push(Line::from("")); }
+        // Padding before hints
+        lines.push(Line::from("")); lines.push(Line::from(""));
+        // Hints at bottom
         lines.push(Line::from(vec![
             Span::styled(" Enter ", Style::default().fg(Theme::GREEN)),
             Span::styled(" Save  ", Style::default().fg(Theme::COMMENT)),
@@ -151,7 +155,6 @@ impl ProvidersTab {
             Span::styled(" Tab ", Style::default().fg(Theme::CYAN)),
             Span::styled(" Next field", Style::default().fg(Theme::COMMENT)),
         ]).centered());
-        lines.push(Line::from("")); // bottom padding
 
         let p = Paragraph::new(lines)
             .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
