@@ -67,8 +67,8 @@ impl DetailPanel {
                 Span::styled(&masked_key, Style::default().fg(Theme::GREEN)),
             ]),
         ];
-        // Continuation lines for long URL/Key values — align with value text
-        let indent = format!("{}Key:      ", pad);
+        // Continuation lines — align with value text (width of "  Key:      ")
+        let indent = "             ";
         let max_w = (area.width as usize).saturating_sub(indent.len()).max(10);
         for &(val, color) in &[(api_url, Theme::DIM), (masked_key.as_str(), Theme::GREEN)] {
             if val.len() > max_w {
