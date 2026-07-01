@@ -186,7 +186,6 @@ impl TabContent for HistoryTab {
                         Style::default().fg(title_color),
                     )),
                     Line::from(vec![
-                        Span::styled("    ", Style::default()),
                         Span::styled(date, Style::default().fg(Theme::COMMENT)),
                         Span::styled(" · ", Style::default().fg(Theme::DIM)),
                         Span::styled(project, Style::default().fg(Theme::COMMENT)),

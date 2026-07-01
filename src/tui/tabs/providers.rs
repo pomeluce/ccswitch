@@ -20,8 +20,6 @@ pub struct ProvidersTab {
     pub is_searching: bool,
     pub active_provider: String,
     pub active_profile: String,
-    pub proxy_running: bool,
-    pub proxy_port: u16,
 }
 
 impl ProvidersTab {
@@ -36,8 +34,6 @@ impl ProvidersTab {
 
         let active_provider = mgr.db().get_setting("active_provider").unwrap_or_default();
         let active_profile = mgr.db().get_setting("active_profile").unwrap_or_default();
-        let proxy_running = mgr.db().get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false);
-        let proxy_port = mgr.db().get_setting("proxy_port").and_then(|s| s.parse().ok()).unwrap_or(15721);
 
         let filtered: Vec<usize> = (0..all_profiles.len()).collect();
         let mut state = ListState::default();
@@ -51,8 +47,6 @@ impl ProvidersTab {
             is_searching: false,
             active_provider,
             active_profile,
-            proxy_running,
-            proxy_port,
         }
     }
 
@@ -119,7 +113,6 @@ impl TabContent for ProvidersTab {
                         Style::default().fg(title_color),
                     )),
                     Line::from(vec![
-                        Span::styled("    ", Style::default()),
                         Span::styled(&prov.name, Style::default().fg(Theme::COMMENT)),
                         Span::styled(" · ", Style::default().fg(Theme::DIM)),
                         Span::styled(&prov.id, Style::default().fg(Theme::COMMENT)),
