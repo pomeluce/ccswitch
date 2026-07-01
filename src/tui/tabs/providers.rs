@@ -145,7 +145,7 @@ impl ProvidersTab {
             Line::from(""), Line::from(msg).centered(), Line::from(""),
             Line::from(Span::styled("  OK  ", Style::default().fg(Color::Black).bg(Theme::CYAN))).centered(),
         ]).block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-            .title(" Notice ").border_style(Style::default().fg(Theme::YELLOW)));
+            .title(Line::from(" Notice ").centered()).border_style(Style::default().fg(Theme::YELLOW)));
         f.render_widget(Clear, popup);
         f.render_widget(p, popup);
     }

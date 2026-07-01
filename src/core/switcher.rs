@@ -86,17 +86,19 @@ fn write_settings_json(config: &ActiveConfig, path: Option<&Path>) -> Result<()>
         std::fs::create_dir_all(parent)?;
     }
 
-    // Build env block
+    // Merge into existing env (preserve user's other env vars)
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    existing["env"] = json!({
-        "ANTHROPIC_BASE_URL": config.base_url,
-        "ANTHROPIC_AUTH_TOKEN": preserve_env_ref(&config.api_key, &config.auth_token),
-        "ANTHROPIC_MODEL": config.opus_model,
-        "ANTHROPIC_DEFAULT_OPUS_MODEL": config.opus_model,
-        "ANTHROPIC_DEFAULT_SONNET_MODEL": config.sonnet_model,
-        "ANTHROPIC_DEFAULT_HAIKU_MODEL": config.haiku_model,
-        "CLAUDE_CODE_SUBAGENT_MODEL": config.subagent_model,
-    });
+    if existing["env"].is_null() || !existing["env"].is_object() {
+        existing["env"] = json!({});
+    }
+    let env = &mut existing["env"];
+    env["ANTHROPIC_BASE_URL"] = json!(config.base_url);
+    env["ANTHROPIC_AUTH_TOKEN"] = json!(preserve_env_ref(&config.api_key, &config.auth_token));
+    env["ANTHROPIC_MODEL"] = json!(config.opus_model);
+    env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = json!(config.opus_model);
+    env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = json!(config.sonnet_model);
+    env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = json!(config.haiku_model);
+    env["CLAUDE_CODE_SUBAGENT_MODEL"] = json!(config.subagent_model);
     existing["last_switch"] = json!({
         "source": format!("{}/{}", config.provider_id, config.profile_id),
         "at": now,
