@@ -176,17 +176,20 @@ impl UsageTab {
             let total = s.total_prompt + s.total_completion;
             let days = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
             let max_val = total.max(1);
-            let mut lines: Vec<Line> = days.iter().enumerate().map(|(i, day)| {
+            let mut lines: Vec<Line> = days.iter().enumerate().flat_map(|(i, day)| {
                 let val = total * (7 - i as i64) / 28 + i as i64 * 50;
                 let w = (val as f64 / max_val as f64 * 30.0) as usize;
                 let bar = "\u{2588}".repeat(w.min(35));
                 let is_today = i == 6;
                 let color = if is_today { Theme::CYAN } else { Theme::PURPLE };
-                Line::from(vec![
-                    Span::styled(format!(" {}  ", day), Style::default().fg(Theme::COMMENT)),
-                    Span::styled(bar, Style::default().fg(color)),
-                    Span::styled(format!(" {}", format_tokens(val)), Style::default().fg(if is_today { Theme::CYAN } else { Theme::DIM })),
-                ])
+                vec![
+                    Line::from(vec![
+                        Span::styled(format!(" {}  ", day), Style::default().fg(Theme::COMMENT)),
+                        Span::styled(bar, Style::default().fg(color)),
+                        Span::styled(format!(" {}", format_tokens(val)), Style::default().fg(if is_today { Theme::CYAN } else { Theme::DIM })),
+                    ]),
+                    Line::from(""), // spacing
+                ]
             }).collect();
             // Summary line at bottom of chart
             lines.push(Line::from(""));
