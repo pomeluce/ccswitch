@@ -99,22 +99,21 @@ impl ProvidersTab {
         };
         self.needs_reinit = true;
         ratatui::restore();
-        use dialoguer::Input;
-        let name: String = Input::new().with_prompt("Name").with_initial_text(&prof_name).interact_text().unwrap_or_default();
-        let opus: String = Input::new().with_prompt("Opus model").with_initial_text(&opus).interact_text().unwrap_or_default();
-        let sonnet: String = Input::new().with_prompt("Sonnet model").with_initial_text(&sonnet).interact_text().unwrap_or_default();
-        let haiku: String = Input::new().with_prompt("Haiku model").with_initial_text(&haiku).interact_text().unwrap_or_default();
-        let subagent: String = Input::new().with_prompt("SubAgent model").with_initial_text(&subagent).interact_text().unwrap_or_default();
-        {
-            let pr = crate::core::models::Profile {
-                id: prof_id, name: name.clone(), opus: opus.clone(), sonnet: sonnet.clone(), haiku: haiku.clone(),
-                subagent: subagent.clone(), default: false, source: crate::core::models::Source::User,
-            };
-            self.mgr.db().insert_user_profile(&prov_id, &pr).ok();
-            if let Some((_, p)) = self.all_profiles.iter_mut().find(|(prov, prof)| prov.id == prov_id && prof.id == pr.id) {
-                p.opus = opus; p.sonnet = sonnet; p.haiku = haiku; p.subagent = subagent;
+        // Signal-safe: catch SIGINT via dialoguer's error handling
+        let mut edited = false;
+        if let Ok(mut profile) = edit_profile_interactive(&prof_name, &opus, &sonnet, &haiku, &subagent) {
+            profile.id = prof_id;
+            self.mgr.db().insert_user_profile(&prov_id, &profile).ok();
+            if let Some((_, p)) = self.all_profiles.iter_mut().find(|(prov, prof)| prov.id == prov_id && prof.id == profile.id) {
+                p.name = profile.name.clone();
+                p.opus = profile.opus; p.sonnet = profile.sonnet;
+                p.haiku = profile.haiku; p.subagent = profile.subagent;
             }
+            edited = true;
             self.refresh_filter();
+        }
+        if !edited {
+            // Ctrl+C or error — just restore and continue
         }
     }
 
@@ -287,4 +286,26 @@ impl TabContent for ProvidersTab {
 
 fn centered_rect(w: u16, h: u16, r: Rect) -> Rect {
     Rect { x: r.x + (r.width.saturating_sub(w)) / 2, y: r.y + (r.height.saturating_sub(h)) / 2, width: w.min(r.width), height: h.min(r.height) }
+}
+
+fn edit_profile_interactive(
+    name: &str, opus: &str, sonnet: &str, haiku: &str, subagent: &str,
+) -> Result<crate::core::models::Profile, ()> {
+    // Ignore SIGINT during editing (terminal in cooked mode)
+    let _ = ctrlc::set_handler(|| {});
+    let result = (|| -> Result<crate::core::models::Profile, anyhow::Error> {
+        use dialoguer::Input;
+        let name: String = Input::new().with_prompt("Name").with_initial_text(name).interact_text()?;
+        let opus: String = Input::new().with_prompt("Opus model").with_initial_text(opus).interact_text()?;
+        let sonnet: String = Input::new().with_prompt("Sonnet model").with_initial_text(sonnet).interact_text()?;
+        let haiku: String = Input::new().with_prompt("Haiku model").with_initial_text(haiku).interact_text()?;
+        let subagent: String = Input::new().with_prompt("SubAgent model").with_initial_text(subagent).interact_text()?;
+        Ok(crate::core::models::Profile {
+            id: String::new(), name, opus, sonnet, haiku, subagent,
+            default: false, source: crate::core::models::Source::User,
+        })
+    })();
+    // Restore default SIGINT
+    let _ = ctrlc::set_handler(|| std::process::exit(0));
+    result.map_err(|_| ())
 }
