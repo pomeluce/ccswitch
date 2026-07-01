@@ -171,7 +171,11 @@ impl TabContent for HistoryTab {
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
 
-                let date = relative_time(&s.start_time);
+                let date = if s.file_mtime.is_empty() {
+                    relative_time(&s.start_time)
+                } else {
+                    relative_time(&s.file_mtime)
+                };
                 let size = format_size(s.size_bytes);
 
                 let arrow = if is_selected { "❯ " } else { "  " };

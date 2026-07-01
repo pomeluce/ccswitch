@@ -209,7 +209,16 @@ fn collect_jsonl_files(dir: &PathBuf) -> Vec<PathBuf> {
 
 /// Parse a single Claude Code session JSONL file
 fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::Error> {
-    let size_bytes = std::fs::metadata(path).map(|m| m.len() as i64).unwrap_or(0);
+    let meta = std::fs::metadata(path)?;
+    let size_bytes = meta.len() as i64;
+    let file_mtime = meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| {
+            let secs = d.as_secs() as i64;
+            ts_to_iso(secs * 1000)
+        })
+        .unwrap_or_default();
     let content = std::fs::read_to_string(path)?;
     let lines: Vec<&str> = content.lines().collect();
 
@@ -315,5 +324,6 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
         message_count,
         title: Some(title),
         size_bytes,
+        file_mtime,
     }))
 }

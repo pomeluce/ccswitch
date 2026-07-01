@@ -72,4 +72,6 @@ pub const MIGRATIONS: &[&str] = &[
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_msg_id ON usage_logs(message_id) WHERE message_id IS NOT NULL;",
     // v5: scanned_at for incremental scan tracking
     "ALTER TABLE session_usage_track ADD COLUMN scanned_at TEXT NOT NULL DEFAULT '';",
+    // v6: file mtime for session relative-time display
+    "ALTER TABLE session_history ADD COLUMN file_mtime TEXT NOT NULL DEFAULT '';",
 ];
