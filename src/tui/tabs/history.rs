@@ -137,10 +137,14 @@ impl TabContent for HistoryTab {
             .constraints([Constraint::Length(3), Constraint::Min(0)])
             .split(main[0]);
 
-        // Right panel: detail preview + shortcut bar
+        // Right panel: detail preview + shortcut bar (dynamic height)
+        let shortcut_lines = shortcut_needed_lines(main[1].width);
         let right_chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(3), Constraint::Length(5)])
+            .constraints([
+                Constraint::Min(3),
+                Constraint::Length(2 + shortcut_lines as u16), // borders + content
+            ])
             .split(main[1]);
 
         // Search box
@@ -210,7 +214,13 @@ impl TabContent for HistoryTab {
         if let Some(idx) = self.state.selected() {
             if let Some(s) = self.sessions.get(idx) {
                 let pad = "  ";
-                let lines = vec![
+                let home = std::env::var("HOME").unwrap_or_default();
+                let path_short = s.project_path.replace(&home, "~");
+                let label = format!("{}Project:  ", pad);
+                let path_start_len = (right_chunks[0].width as usize).saturating_sub(14);
+                let (first_part, rest_lines) = split_path(&path_short, path_start_len);
+
+                let mut lines = vec![
                     Line::from(vec![
                         Span::styled(pad, Style::default()),
                         Span::styled(
@@ -220,9 +230,19 @@ impl TabContent for HistoryTab {
                     ]),
                     Line::from(""),
                     Line::from(vec![
-                        Span::styled(format!("{}Project:  ", pad), Style::default().fg(Theme::PURPLE)),
-                        Span::styled(shorten_path(&s.project_path), Style::default().fg(Theme::YELLOW)),
+                        Span::styled(label, Style::default().fg(Theme::PURPLE)),
+                        Span::styled(&first_part, Style::default().fg(Theme::YELLOW)),
                     ]),
+                ];
+                // Continuation lines for long paths
+                let cont_indent = format!("{}           ", pad);
+                for rest in rest_lines {
+                    lines.push(Line::from(Span::styled(
+                        format!("{}{}", cont_indent, rest),
+                        Style::default().fg(Theme::YELLOW),
+                    )));
+                }
+                lines.extend(vec![
                     Line::from(vec![
                         Span::styled(format!("{}Profile:  ", pad), Style::default().fg(Theme::PURPLE)),
                         Span::styled(s.profile_id.as_deref().unwrap_or("-"), Style::default().fg(Theme::FG)),
@@ -247,7 +267,7 @@ impl TabContent for HistoryTab {
                         Span::styled(format!("{}Size:     ", pad), Style::default().fg(Theme::PURPLE)),
                         Span::styled(format_size(s.size_bytes), Style::default().fg(Theme::FG)),
                     ]),
-                ];
+                ]);
 
                 let p = Paragraph::new(lines)
                     .block(
@@ -470,17 +490,32 @@ fn relative_time(iso: &str) -> String {
     else { format!("{} months ago", days / 30) }
 }
 
+/// How many content lines the shortcut bar needs at this width
+fn shortcut_needed_lines(available_width: u16) -> usize {
+    // ~52 chars for shortcuts, plus separators
+    let content_width = 55usize;
+    let w = available_width.max(10) as usize;
+    if w >= content_width { 1 } else { 2 }
+}
+
 fn centered_rect(width: u16, height: u16, r: Rect) -> Rect {
     let x = r.x + (r.width.saturating_sub(width)) / 2;
     let y = r.y + (r.height.saturating_sub(height)) / 2;
     Rect { x, y, width: width.min(r.width), height: height.min(r.height) }
 }
 
-fn shorten_path(path: &str) -> String {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let short = path.replace(&home, "~");
-    if short.len() <= 45 { return short; }
-    format!(".../{}", std::path::Path::new(path).file_name().unwrap_or_default().to_string_lossy())
+/// Split path: first `max_width` chars on first line, remainder on continuation lines
+fn split_path(path: &str, max_width: usize) -> (String, Vec<String>) {
+    let max = max_width.max(10);
+    if path.len() <= max { return (path.to_string(), vec![]); }
+    let first: String = path.chars().take(max).collect();
+    let remainder: String = path.chars().skip(max).collect();
+    let cont_width = max.max(10);
+    let rest = remainder.chars().collect::<Vec<_>>()
+        .chunks(cont_width)
+        .map(|c| c.iter().collect::<String>())
+        .collect();
+    (first, rest)
 }
 
 fn format_size(bytes: i64) -> String {
