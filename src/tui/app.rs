@@ -59,6 +59,10 @@ impl App {
             terminal.draw(|f| self.render(f))?;
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
+                    // Ignore Ctrl+key combos (tabs use plain key bindings)
+                    if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+                        continue;
+                    }
                     self.handle_key(key.code);
                 }
             }
