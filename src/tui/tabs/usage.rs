@@ -25,7 +25,7 @@ pub struct UsageTab {
 impl UsageTab {
     pub fn new(mgr: Arc<ConfigManager>) -> Self {
         // Scan local files for usage
-        match mgr.db().scan_local_usage() {
+        match mgr.usage_db().scan_local_usage() {
             Ok(n) if n > 0 => tracing::info!("Imported usage from {} sessions", n),
             _ => {}
         }
@@ -175,7 +175,7 @@ impl UsageTab {
         if let Some(s) = self.summaries.get(self.selected_index) {
             let label = s.model.clone();
             let total = Self::token_total(s);
-            let daily = self.mgr.db().query_daily_usage(&s.model).unwrap_or_default();
+            let daily = self.mgr.usage_db().query_daily_usage(&s.model).unwrap_or_default();
             let today_date = chrono::Local::now().format("%Y-%m-%d").to_string();
 
             // Build last 7 days with breakdown data
