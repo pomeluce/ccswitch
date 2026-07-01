@@ -202,33 +202,26 @@ impl UsageTab {
                 let bar = "\u{2500}".repeat(w.min(35));
                 let color = if *is_today { Theme::CYAN } else { Theme::PURPLE };
                 let indent = "       ";
-                let metric = |label: &str, val: &str| -> Span {
-                    Span::styled(format!("{}{}  ", label, val), Style::default().fg(Theme::COMMENT))
-                };
                 let detail_lines: Vec<Line> = if total > 0 {
-                    let single_line = format!("input {}  output {}  cache read {}  cache create {}",
+                    let text = format!("input {}  output {}  cache read {}  cache create {}",
                         format_tokens(*in_tok), format_tokens(*out_tok),
                         format_tokens(*cr_tok), format_tokens(*cc_tok));
-                    // Only split to two lines if terminal is too narrow
-                    if single_line.len() + indent.len() < area.width as usize {
-                        vec![Line::from(vec![
-                            Span::styled(indent, Style::default()),
-                            Span::styled(single_line, Style::default().fg(Theme::COMMENT)),
-                        ])]
-                    } else {
-                        vec![
-                            Line::from(vec![
-                                Span::styled(indent, Style::default()),
-                                metric("input ", &format_tokens(*in_tok)),
-                                metric("output ", &format_tokens(*out_tok)),
-                            ]),
-                            Line::from(vec![
-                                Span::styled(indent, Style::default()),
-                                metric("cache read ", &format_tokens(*cr_tok)),
-                                metric("cache create ", &format_tokens(*cc_tok)),
-                            ]),
-                        ]
+                    let max_w = (area.width as usize).saturating_sub(indent.len()).max(10);
+                    let mut result = vec![Line::from(vec![
+                        Span::styled(indent, Style::default()),
+                        Span::styled(text.chars().take(max_w).collect::<String>(), Style::default().fg(Theme::COMMENT)),
+                    ])];
+                    let remainder: String = text.chars().skip(max_w).collect();
+                    for chunk in remainder.chars().collect::<Vec<_>>().chunks(max_w) {
+                        let cont: String = chunk.iter().collect();
+                        if !cont.is_empty() {
+                            result.push(Line::from(Span::styled(
+                                format!("{}{}", indent, cont),
+                                Style::default().fg(Theme::COMMENT),
+                            )));
+                        }
                     }
+                    result
                 } else { vec![] };
                 let mut day_lines = vec![
                     Line::from(vec![
