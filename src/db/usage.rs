@@ -1,5 +1,6 @@
 use rusqlite::params;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use super::connection::Db;
 
 #[derive(Debug, Clone, Serialize)]
@@ -9,6 +10,25 @@ pub struct UsageSummary {
     pub total_prompt: i64,
     pub total_completion: i64,
     pub request_count: i64,
+}
+
+/// Lightweight parser for assistant message usage data in JSONL files
+#[derive(Debug, Deserialize)]
+struct UsageLine {
+    #[serde(rename = "type")]
+    msg_type: Option<String>,
+    message: Option<UsageMessage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UsageMessage {
+    usage: Option<UsageData>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UsageData {
+    input_tokens: Option<i64>,
+    output_tokens: Option<i64>,
 }
 
 impl Db {
@@ -53,4 +73,68 @@ impl Db {
         })?;
         rows.collect()
     }
+
+    /// Scan Claude Code session JSONL files for assistant message usage data.
+    /// Only imports sessions not already in usage_logs.
+    pub fn scan_local_usage(&self) -> Result<usize, anyhow::Error> {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+        let projects_dir = PathBuf::from(&home).join(".claude/projects");
+        if !projects_dir.exists() { return Ok(0); }
+
+        let jsonl_files = collect_jsonl_files(&projects_dir);
+        // Track which sessions we've already imported
+        let existing: std::collections::HashSet<String> = {
+            let mut stmt = self.conn().prepare("SELECT DISTINCT session_id FROM usage_logs WHERE mode = 'local'")?;
+            let rows = stmt.query_map([], |r| r.get::<_, Option<String>>(0))?;
+            rows.filter_map(|r| r.ok().flatten()).collect()
+        };
+
+        let mut imported = 0usize;
+        for path in &jsonl_files {
+            let sid = path.file_stem().and_then(|n| n.to_str()).unwrap_or("");
+            if existing.contains(sid) { continue; }
+            let content = match std::fs::read_to_string(path) { Ok(c) => c, Err(_) => continue };
+            let mut prompt = 0i64;
+            let mut completion = 0i64;
+            for line in content.lines().take(200) { // head only for performance
+                let parsed: UsageLine = match serde_json::from_str(line) { Ok(l) => l, Err(_) => continue };
+                if parsed.msg_type.as_deref() == Some("assistant") {
+                    if let Some(ref msg) = parsed.message {
+                        if let Some(ref u) = msg.usage {
+                            prompt += u.input_tokens.unwrap_or(0);
+                            completion += u.output_tokens.unwrap_or(0);
+                        }
+                    }
+                }
+            }
+            if prompt > 0 || completion > 0 {
+                let provider = self.conn().query_row(
+                    "SELECT active_provider FROM settings WHERE key = 'active_provider'",
+                    [], |r| r.get::<_, String>(0),
+                ).unwrap_or_default();
+                let profile = self.conn().query_row(
+                    "SELECT active_profile FROM settings WHERE key = 'active_profile'",
+                    [], |r| r.get::<_, String>(0),
+                ).unwrap_or_default();
+                self.insert_usage_log(
+                    &provider, &profile, "local", Some(sid), prompt, completion,
+                )?;
+                imported += 1;
+            }
+        }
+        Ok(imported)
+    }
+}
+
+/// Recursively collect all .jsonl files under a directory
+fn collect_jsonl_files(dir: &PathBuf) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() { files.extend(collect_jsonl_files(&path)); }
+            else if path.extension().map_or(false, |e| e == "jsonl") { files.push(path); }
+        }
+    }
+    files
 }
