@@ -5,6 +5,8 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
     rust-overlay.url = "github:oxalica/rust-overlay";
+    home-manager.url = "github:nix-community/home-manager";
+    home-manager.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs =
@@ -13,6 +15,7 @@
       nixpkgs,
       flake-parts,
       rust-overlay,
+      home-manager,
       ...
     }@inputs:
     flake-parts.lib.mkFlake { inherit inputs; } {
@@ -35,7 +38,7 @@
         {
           packages.default = rustPlatform.buildRustPackage {
             pname = "ccswitch";
-            version = "0.1.0";
+            version = "1.0.23";
             src = ./.;
             cargoLock = {
               lockFile = ./Cargo.lock;
@@ -73,6 +76,7 @@
         };
 
       flake = {
+        # NixOS system-level module
         nixosModules.default =
           {
             config,
@@ -86,23 +90,74 @@
           {
             options.services.ccswitch = {
               enable = lib.mkEnableOption "CCSwitch model configuration manager";
+            };
+            config = lib.mkIf cfg.enable {
+              environment.systemPackages = [ self.packages.${pkgs.system}.default ];
+            };
+          };
+
+        # Home Manager user-level module
+        homeModules.default =
+          {
+            config,
+            lib,
+            pkgs,
+            ...
+          }:
+          let
+            cfg = config.programs.ccswitch;
+          in
+          {
+            options.programs.ccswitch = {
+              enable = lib.mkEnableOption "CCSwitch model configuration manager";
               defaults = lib.mkOption {
                 type = lib.types.attrs;
                 default = { };
-                description = "System default provider configurations";
+                description = "Default provider configurations";
+                example = {
+                  version = 1;
+                  providers = [
+                    {
+                      id = "deepseek";
+                      name = "DeepSeek";
+                      api_url = "https://api.deepseek.com/anthropic";
+                      api_key = "env:DEEPSEEK_API_KEY";
+                      profiles = [
+                        {
+                          id = "v4";
+                          name = "V4";
+                          opus = "deepseek-v4-pro[1m]";
+                          sonnet = "deepseek-v4-pro[1m]";
+                          haiku = "deepseek-v4-flash";
+                          subagent = "deepseek-v4-flash";
+                          default = true;
+                        }
+                      ];
+                    }
+                  ];
+                };
               };
             };
             config = lib.mkIf cfg.enable {
-              environment.etc."ccswitch/defaults.toml".source =
+              home.packages = [ self.packages.${pkgs.system}.default ];
+
+              xdg.configFile."ccswitch/defaults.toml" =
                 let
                   format = pkgs.formats.toml { };
                 in
-                format.generate "defaults.toml" cfg.defaults;
+                {
+                  source = format.generate "ccswitch-defaults.toml" cfg.defaults;
+                };
+
               systemd.user.services.ccs-proxy = {
-                description = "CCSwitch Proxy Server";
-                after = [ "network.target" ];
-                wantedBy = [ "default.target" ];
-                serviceConfig = {
+                Unit = {
+                  Description = "CCSwitch Proxy Server";
+                  After = [ "network.target" ];
+                };
+                Install = {
+                  WantedBy = [ "default.target" ];
+                };
+                Service = {
                   ExecStart = "${self.packages.${pkgs.system}.default}/bin/ccs proxy serve";
                   Restart = "on-failure";
                   RestartSec = "5";

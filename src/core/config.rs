@@ -3,10 +3,11 @@ use crate::db::Db;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
-/// Read from ~/.ccswitch/defaults.toml (user-level config, may be managed by NixOS/home-manager)
 fn default_config_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    PathBuf::from(home).join(".ccswitch").join("defaults.toml")
+    let xdg = PathBuf::from(&home).join(".config/ccswitch/defaults.toml");
+    if xdg.exists() { return xdg; }
+    PathBuf::from(&home).join(".ccswitch").join("defaults.toml")
 }
 
 #[derive(Debug, Deserialize)]

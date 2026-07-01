@@ -11,8 +11,8 @@ fn get_db_path() -> PathBuf {
     PathBuf::from(home).join(".ccswitch").join("ccswitch.db")
 }
 
-fn get_defaults_path() -> PathBuf {
-    PathBuf::from("/etc/ccswitch/defaults.toml")
+fn get_defaults_path() -> Option<PathBuf> {
+    None // let ConfigManager resolve via XDG/legacy path
 }
 
 pub fn run_cli(args: CliArgs) -> Result<()> {
@@ -24,7 +24,7 @@ pub fn run_cli(args: CliArgs) -> Result<()> {
 
     let db_path = get_db_path();
     let defaults_path = get_defaults_path();
-    let mgr = ConfigManager::new(&db_path, Some(&defaults_path))?;
+    let mgr = ConfigManager::new(&db_path, defaults_path.as_deref())?;
 
     match command {
         Commands::Switch { target, local: _, proxy } => {
@@ -198,7 +198,7 @@ fn handle_proxy(action: ProxyAction) -> Result<()> {
         ProxyAction::Serve => {
             let db_path = get_db_path();
             let defaults_path = get_defaults_path();
-            let mgr = ConfigManager::new(&db_path, Some(&defaults_path))?;
+            let mgr = ConfigManager::new(&db_path, defaults_path.as_deref())?;
             let port: u16 = mgr
                 .db()
                 .get_setting("proxy_port")
