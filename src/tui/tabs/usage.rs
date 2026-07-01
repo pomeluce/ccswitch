@@ -288,6 +288,7 @@ impl UsageTab {
                         Span::styled(format!(" {}", format_tokens(total)), Style::default().fg(if *is_today { Theme::CYAN } else { Theme::DIM })),
                     ])];
                     day_lines.extend(detail_lines);
+                    day_lines.push(Line::from(""));
                     day_lines
                 })
                 .collect();
