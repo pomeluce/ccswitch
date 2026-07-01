@@ -132,6 +132,8 @@ impl ProvidersTab {
     fn render_edit_form(&self, f: &mut Frame, area: Rect) {
         let Some(ref form) = self.edit_form else { return };
         let popup = centered_rect(60, 20, area);
+        let inner_w = popup.width.saturating_sub(2) as usize; // minus borders
+        let pad = " ".repeat(inner_w.saturating_sub(40) / 2); // center ~40-char lines
         let mut lines: Vec<Line> = Vec::new();
         // Top padding (3 lines)
         lines.push(Line::from("")); lines.push(Line::from("")); lines.push(Line::from(""));
@@ -140,13 +142,13 @@ impl ProvidersTab {
             let cursor = if i == form.focused { " ▌" } else { "" };
             let style = if i == form.focused { Style::default().fg(Theme::CYAN) } else { Style::default().fg(Theme::FG) };
             lines.push(Line::from(Span::styled(
-                format!("{:<15}: {}{}", label, val, cursor), style,
-            )).centered());
+                format!("{}{:<15}: {}{}", pad, label, val, cursor), style,
+            )));
             lines.push(Line::from(""));
         }
         // Padding before hints
         lines.push(Line::from("")); lines.push(Line::from(""));
-        // Hints at bottom
+        // Hints at bottom (centered)
         lines.push(Line::from(vec![
             Span::styled(" Enter ", Style::default().fg(Theme::GREEN)),
             Span::styled(" Save  ", Style::default().fg(Theme::COMMENT)),
