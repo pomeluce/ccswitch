@@ -46,6 +46,9 @@ const EDIT_LABELS: [&str; 5] = ["Profile Name", "Opus model", "Sonnet model", "H
 
 impl ProvidersTab {
     pub fn new(mgr: Arc<ConfigManager>) -> Self {
+        // Sync active state from settings.json's last_switch.source
+        sync_active_from_settings(&mgr);
+
         let providers = mgr.list_providers().unwrap_or_default();
         let mut all_profiles = Vec::new();
         for p in &providers {
@@ -415,5 +418,22 @@ fn provider_shortcut_lines(available_width: u16) -> usize {
 
 fn centered_rect(w: u16, h: u16, r: Rect) -> Rect {
     Rect { x: r.x + (r.width.saturating_sub(w)) / 2, y: r.y + (r.height.saturating_sub(h)) / 2, width: w.min(r.width), height: h.min(r.height) }
+}
+
+/// Sync active provider/profile from settings.json's last_switch.source
+fn sync_active_from_settings(mgr: &ConfigManager) {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    let settings_path = std::path::PathBuf::from(&home).join(".claude/settings.json");
+    if !settings_path.exists() { return; }
+    let content = match std::fs::read_to_string(&settings_path) { Ok(c) => c, Err(_) => return };
+    let parsed: serde_json::Value = match serde_json::from_str(&content) { Ok(v) => v, Err(_) => return };
+    let source = parsed.get("last_switch").and_then(|v| v.get("source")).and_then(|v| v.as_str()).unwrap_or("");
+    if let Some((pid, pfid)) = source.split_once('/') {
+        let providers = mgr.list_providers().unwrap_or_default();
+        if providers.iter().any(|p| p.id == pid && p.profiles.iter().any(|pr| pr.id == pfid)) {
+            mgr.db().set_setting("active_provider", pid).ok();
+            mgr.db().set_setting("active_profile", pfid).ok();
+        }
+    }
 }
 
