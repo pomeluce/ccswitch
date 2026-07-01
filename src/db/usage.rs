@@ -1,8 +1,8 @@
+use super::connection::Db;
+use rayon::prelude::*;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use rayon::prelude::*;
-use super::connection::Db;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct UsageSummary {
@@ -47,9 +47,14 @@ struct UsageData {
 
 /// Parsed usage record awaiting DB insert
 struct UsageRecord {
-    sid: String, msg_id: String, model: String,
+    sid: String,
+    msg_id: String,
+    model: String,
     date: String,
-    input: i64, output: i64, cr: i64, cc: i64,
+    input: i64,
+    output: i64,
+    cr: i64,
+    cc: i64,
 }
 
 impl Db {
@@ -68,7 +73,18 @@ impl Db {
         self.conn().execute(
             "INSERT INTO usage_logs (model, provider_id, profile_id, mode, session_id, prompt_tokens, completion_tokens, cache_read_tokens, cache_create_tokens, total_tokens)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![provider_id, provider_id, profile_id, mode, session_id, prompt_tokens, completion_tokens, cache_read_tokens, cache_create_tokens, total],
+            params![
+                provider_id,
+                provider_id,
+                profile_id,
+                mode,
+                session_id,
+                prompt_tokens,
+                completion_tokens,
+                cache_read_tokens,
+                cache_create_tokens,
+                total
+            ],
         )?;
         Ok(())
     }
@@ -89,7 +105,7 @@ impl Db {
         let rows = stmt.query_map([], |row| {
             Ok(UsageSummary {
                 model: row.get(0)?,
-                
+
                 total_prompt: row.get(1)?,
                 total_completion: row.get(2)?,
                 total_cache_read: row.get(3)?,
@@ -111,8 +127,13 @@ impl Db {
                    GROUP BY day ORDER BY day";
         let mut stmt = self.conn().prepare(sql)?;
         let rows = stmt.query_map(params![model], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?,
-                row.get::<_, i64>(3)?, row.get::<_, i64>(4)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, i64>(4)?,
+            ))
         })?;
         rows.collect()
     }
@@ -122,7 +143,9 @@ impl Db {
     pub fn scan_local_usage(&self) -> Result<usize, anyhow::Error> {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
         let projects_dir = PathBuf::from(&home).join(".claude/projects");
-        if !projects_dir.exists() { return Ok(0); }
+        if !projects_dir.exists() {
+            return Ok(0);
+        }
 
         let jsonl_files = collect_jsonl_files(&projects_dir);
 
@@ -134,33 +157,54 @@ impl Db {
             rows.filter_map(|r| r.ok()).collect()
         };
 
-        if jsonl_files.is_empty() { return Ok(0); }
+        if jsonl_files.is_empty() {
+            return Ok(0);
+        }
 
         // Parallel parse all files
-        let all_records: Vec<Vec<UsageRecord>> = jsonl_files.par_iter().filter_map(|path| {
-            let content = std::fs::read_to_string(path).ok()?;
-            let sid = path.file_stem().and_then(|n| n.to_str()).unwrap_or("");
-            let records: Vec<UsageRecord> = content.lines().filter_map(|line| {
-                let parsed: UsageLine = serde_json::from_str(line).ok()?;
-                if parsed.msg_type.as_deref() != Some("assistant") { return None; }
-                let msg = parsed.message.as_ref()?;
-                let usage = msg.usage.as_ref()?;
-                let msg_id = msg.id.as_deref().unwrap_or("").to_string();
-                if !msg_id.is_empty() && known_msg_ids.contains(&msg_id) { return None; }
-                let model = msg.model.as_deref().unwrap_or("unknown").replace("[1m]", "");
-                // Skip synthetic system messages with zero tokens
-                if model == "<synthetic>" { return None; }
-                let date = parsed.timestamp.as_deref().unwrap_or("").get(0..10).unwrap_or("today").to_string();
-                Some(UsageRecord {
-                    sid: sid.to_string(), msg_id, model: model.to_string(), date,
-                    input: usage.input_tokens.unwrap_or(0),
-                    output: usage.output_tokens.unwrap_or(0),
-                    cr: usage.cache_read_input_tokens.unwrap_or(0),
-                    cc: usage.cache_creation_input_tokens.unwrap_or(0),
-                })
-            }).collect();
-            if records.is_empty() { None } else { Some(records) }
-        }).collect();
+        let all_records: Vec<Vec<UsageRecord>> = jsonl_files
+            .par_iter()
+            .filter_map(|path| {
+                let content = std::fs::read_to_string(path).ok()?;
+                let sid = path.file_stem().and_then(|n| n.to_str()).unwrap_or("");
+                let records: Vec<UsageRecord> = content
+                    .lines()
+                    .filter_map(|line| {
+                        let parsed: UsageLine = serde_json::from_str(line).ok()?;
+                        if parsed.msg_type.as_deref() != Some("assistant") {
+                            return None;
+                        }
+                        let msg = parsed.message.as_ref()?;
+                        let usage = msg.usage.as_ref()?;
+                        let msg_id = msg.id.as_deref().unwrap_or("").to_string();
+                        if !msg_id.is_empty() && known_msg_ids.contains(&msg_id) {
+                            return None;
+                        }
+                        let model = msg.model.as_deref().unwrap_or("unknown").replace("[1m]", "");
+                        // Skip synthetic system messages with zero tokens
+                        if model == "<synthetic>" {
+                            return None;
+                        }
+                        let date = parsed.timestamp.as_deref().unwrap_or("").get(0..10).unwrap_or("today").to_string();
+                        Some(UsageRecord {
+                            sid: sid.to_string(),
+                            msg_id,
+                            model: model.to_string(),
+                            date,
+                            input: usage.input_tokens.unwrap_or(0),
+                            output: usage.output_tokens.unwrap_or(0),
+                            cr: usage.cache_read_input_tokens.unwrap_or(0),
+                            cc: usage.cache_creation_input_tokens.unwrap_or(0),
+                        })
+                    })
+                    .collect();
+                if records.is_empty() {
+                    None
+                } else {
+                    Some(records)
+                }
+            })
+            .collect();
 
         // Serial DB insert
         let mut imported = 0usize;
@@ -176,7 +220,6 @@ impl Db {
         }
         Ok(imported)
     }
-
 }
 
 /// Recursively collect all .jsonl files under a directory
@@ -185,8 +228,11 @@ fn collect_jsonl_files(dir: &PathBuf) -> Vec<PathBuf> {
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.is_dir() { files.extend(collect_jsonl_files(&path)); }
-            else if path.extension().map_or(false, |e| e == "jsonl") { files.push(path); }
+            if path.is_dir() {
+                files.extend(collect_jsonl_files(&path));
+            } else if path.extension().map_or(false, |e| e == "jsonl") {
+                files.push(path);
+            }
         }
     }
     files

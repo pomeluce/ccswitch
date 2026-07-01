@@ -1,4 +1,8 @@
-use std::sync::Arc;
+use super::super::theme::Theme;
+use super::TabContent;
+use crate::core::config::ConfigManager;
+use crate::db::usage::UsageSummary;
+use crossterm::event::KeyCode;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::Style,
@@ -6,11 +10,7 @@ use ratatui::{
     widgets::{Block, List, ListItem, ListState, Paragraph},
     Frame,
 };
-use crossterm::event::KeyCode;
-use crate::core::config::ConfigManager;
-use crate::db::usage::UsageSummary;
-use super::super::theme::Theme;
-use super::TabContent;
+use std::sync::Arc;
 
 pub struct UsageTab {
     mgr: Arc<ConfigManager>,
@@ -31,25 +31,40 @@ impl UsageTab {
         }
         let summaries = mgr.usage_db().query_usage("all").unwrap_or_default();
         let mut state = ListState::default();
-        if !summaries.is_empty() { state.select(Some(0)); }
+        if !summaries.is_empty() {
+            state.select(Some(0));
+        }
         UsageTab {
-            mgr, summaries, state,
-            selected_index: 0, range: "all".into(),
-            search_query: String::new(), is_searching: false,
+            mgr,
+            summaries,
+            state,
+            selected_index: 0,
+            range: "all".into(),
+            search_query: String::new(),
+            is_searching: false,
         }
     }
 
-    fn token_total(s: &UsageSummary) -> i64 { s.total_prompt + s.total_completion + s.total_cache_read + s.total_cache_create }
-    fn total_tokens(&self) -> i64 { self.summaries.iter().map(|s| Self::token_total(s)).sum() }
-    fn max_tokens(&self) -> i64 { self.summaries.iter().map(|s| Self::token_total(s)).max().unwrap_or(1) }
+    fn token_total(s: &UsageSummary) -> i64 {
+        s.total_prompt + s.total_completion + s.total_cache_read + s.total_cache_create
+    }
+    fn total_tokens(&self) -> i64 {
+        self.summaries.iter().map(|s| Self::token_total(s)).sum()
+    }
+    fn max_tokens(&self) -> i64 {
+        self.summaries.iter().map(|s| Self::token_total(s)).max().unwrap_or(1)
+    }
 }
 
 impl TabContent for UsageTab {
     fn render(&mut self, f: &mut Frame, area: Rect) {
-        let main = Layout::default().direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)]).split(area);
+        let main = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(area);
 
-        let left = Layout::default().direction(Direction::Vertical)
+        let left = Layout::default()
+            .direction(Direction::Vertical)
             .constraints([Constraint::Length(3), Constraint::Length(4), Constraint::Min(3)])
             .split(main[0]);
 
@@ -67,10 +82,19 @@ impl TabContent for UsageTab {
     fn handle_key(&mut self, code: KeyCode) -> bool {
         if self.is_searching {
             match code {
-                KeyCode::Esc => { self.is_searching = false; self.search_query.clear(); }
-                KeyCode::Enter => { self.is_searching = false; }
-                KeyCode::Backspace | KeyCode::Delete => { self.search_query.pop(); }
-                KeyCode::Char(c) => { self.search_query.push(c); }
+                KeyCode::Esc => {
+                    self.is_searching = false;
+                    self.search_query.clear();
+                }
+                KeyCode::Enter => {
+                    self.is_searching = false;
+                }
+                KeyCode::Backspace | KeyCode::Delete => {
+                    self.search_query.pop();
+                }
+                KeyCode::Char(c) => {
+                    self.search_query.push(c);
+                }
                 _ => {}
             }
             return true;
@@ -78,16 +102,29 @@ impl TabContent for UsageTab {
         match code {
             KeyCode::Tab | KeyCode::BackTab => return false,
             KeyCode::Char('j') | KeyCode::Down => {
-                if self.selected_index + 1 < self.summaries.len() { self.selected_index += 1; self.state.select(Some(self.selected_index)); }
+                if self.selected_index + 1 < self.summaries.len() {
+                    self.selected_index += 1;
+                    self.state.select(Some(self.selected_index));
+                }
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                if self.selected_index > 0 { self.selected_index -= 1; self.state.select(Some(self.selected_index)); }
+                if self.selected_index > 0 {
+                    self.selected_index -= 1;
+                    self.state.select(Some(self.selected_index));
+                }
             }
             KeyCode::Char('t') => {
-                self.range = match self.range.as_str() { "day" => "week", "week" => "month", _ => "day" }.into();
+                self.range = match self.range.as_str() {
+                    "day" => "week",
+                    "week" => "month",
+                    _ => "day",
+                }
+                .into();
                 self.summaries = self.mgr.usage_db().query_usage(&self.range).unwrap_or_default();
             }
-            KeyCode::Char('/') => { self.is_searching = true; }
+            KeyCode::Char('/') => {
+                self.is_searching = true;
+            }
             _ => return false,
         }
         true
@@ -101,17 +138,20 @@ impl UsageTab {
             "\u{2315} Search (/ to focus)".to_string()
         } else if !self.search_query.is_empty() && !self.is_searching {
             format!("\u{2315} {} (/) — Esc to clear", self.search_query)
-        } else { format!("\u{2315} {}{}", self.search_query, cursor) };
+        } else {
+            format!("\u{2315} {}{}", self.search_query, cursor)
+        };
         let color = if self.is_searching { Theme::CYAN } else { Theme::COMMENT };
-        let p = Paragraph::new(Line::from(Span::styled(text, Style::default().fg(color))))
-            .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                .border_style(Style::default().fg(Theme::DIM)));
+        let p = Paragraph::new(Line::from(Span::styled(text, Style::default().fg(color)))).block(
+            Block::bordered()
+                .border_set(ratatui::symbols::border::ROUNDED)
+                .border_style(Style::default().fg(Theme::DIM)),
+        );
         f.render_widget(p, area);
     }
 
     fn render_summary_cards(&self, f: &mut Frame, area: Rect) {
-        let cards = Layout::default().direction(Direction::Horizontal)
-            .constraints([Constraint::Ratio(1,4); 4]).split(area);
+        let cards = Layout::default().direction(Direction::Horizontal).constraints([Constraint::Ratio(1, 4); 4]).split(area);
 
         // Summary cards show selected profile's data
         let (today, week, all, reqs) = if let Some(s) = self.summaries.get(self.selected_index) {
@@ -133,44 +173,50 @@ impl UsageTab {
                 Line::from(Span::styled(*label, Style::default().fg(Theme::COMMENT))).centered(),
                 Line::from(Span::styled(value.to_string(), Style::default().fg(*color))).centered(),
             ];
-            let p = Paragraph::new(lines)
-                .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                    .border_style(Style::default().fg(Theme::DIM)));
+            let p = Paragraph::new(lines).block(
+                Block::bordered()
+                    .border_set(ratatui::symbols::border::ROUNDED)
+                    .border_style(Style::default().fg(Theme::DIM)),
+            );
             f.render_widget(p, cards[i]);
         }
     }
 
     fn render_profile_list(&mut self, f: &mut Frame, area: Rect) {
         let max = self.max_tokens();
-        let items: Vec<ListItem> = self.summaries.iter()
+        let items: Vec<ListItem> = self
+            .summaries
+            .iter()
             .filter(|s| Self::token_total(s) > 0)
-            .enumerate().map(|(i, s)| {
-            let total = Self::token_total(s);
-            let pct = if max > 0 { (total as f64 / max as f64 * 100.0) as usize } else { 0 };
-            let bar_len = if total > 0 { (pct / 4).max(1).min(20) } else { 0 };
-            let bar = "\u{2500}".repeat(bar_len);
-            let label = title_case(&s.model);
-            let is_sel = i == self.selected_index;
-            let arrow = if is_sel { "\u{276f} " } else { "  " };
-            let tc = if is_sel { Theme::CYAN } else { Theme::FG };
-            let bar_text = if total > 0 { format!("{} {}%", bar, pct) } else { String::new() };
-            ListItem::new(vec![
-                Line::from(vec![
-                    Span::styled(format!("{}{}", arrow, label), Style::default().fg(tc)),
-                    Span::styled(format!("  {}", format_tokens(total)), Style::default().fg(Theme::DIM)),
-                ]),
-                Line::from(vec![
-                    Span::styled("  ", Style::default()),
-                    Span::styled(bar_text, Style::default().fg(Theme::PURPLE)),
-                ]),
-                Line::from(""),
-            ])
-        }).collect();
+            .enumerate()
+            .map(|(i, s)| {
+                let total = Self::token_total(s);
+                let pct = if max > 0 { (total as f64 / max as f64 * 100.0) as usize } else { 0 };
+                let bar_len = if total > 0 { (pct / 4).max(1).min(20) } else { 0 };
+                let bar = "\u{2500}".repeat(bar_len);
+                let label = title_case(&s.model);
+                let is_sel = i == self.selected_index;
+                let arrow = if is_sel { "\u{276f} " } else { "  " };
+                let tc = if is_sel { Theme::CYAN } else { Theme::FG };
+                let bar_text = if total > 0 { format!("{} {}%", bar, pct) } else { String::new() };
+                ListItem::new(vec![
+                    Line::from(vec![
+                        Span::styled(format!("{}{}", arrow, label), Style::default().fg(tc)),
+                        Span::styled(format!("  {}", format_tokens(total)), Style::default().fg(Theme::DIM)),
+                    ]),
+                    Line::from(vec![Span::styled("  ", Style::default()), Span::styled(bar_text, Style::default().fg(Theme::PURPLE))]),
+                    Line::from(""),
+                ])
+            })
+            .collect();
 
         let list = List::new(items)
-            .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                .title(format!("Models — \u{3a3} {}", format_tokens(self.total_tokens())))
-                .border_style(Style::default().fg(Theme::DIM)))
+            .block(
+                Block::bordered()
+                    .border_set(ratatui::symbols::border::ROUNDED)
+                    .title(format!("Models — \u{3a3} {}", format_tokens(self.total_tokens())))
+                    .border_style(Style::default().fg(Theme::DIM)),
+            )
             .highlight_style(Style::default());
         f.render_stateful_widget(list, area, &mut self.state);
     }
@@ -182,63 +228,76 @@ impl UsageTab {
             let today_date = chrono::Local::now().format("%Y-%m-%d").to_string();
 
             // Build days with actual usage data (skip zero-token days, max 7)
-            let days: Vec<(String, i64, i64, i64, i64, bool)> = (0..7).rev().filter_map(|offset| {
-                let d = chrono::Local::now() - chrono::Duration::days(offset);
-                let date_str = d.format("%Y-%m-%d").to_string();
-                let (in_tok, out_tok, cr_tok, cc_tok) = daily.iter()
-                    .find(|(dt, _, _, _, _)| dt == &date_str)
-                    .map(|(_, i, o, cr, cc)| (*i, *o, *cr, *cc))
-                    .unwrap_or((0, 0, 0, 0));
-                let total = in_tok + out_tok + cr_tok + cc_tok;
-                if total == 0 { None } else {
-                    Some((d.format("%m-%d").to_string(), in_tok, out_tok, cr_tok, cc_tok, date_str == today_date))
-                }
-            }).collect();
+            let days: Vec<(String, i64, i64, i64, i64, bool)> = (0..7)
+                .rev()
+                .filter_map(|offset| {
+                    let d = chrono::Local::now() - chrono::Duration::days(offset);
+                    let date_str = d.format("%Y-%m-%d").to_string();
+                    let (in_tok, out_tok, cr_tok, cc_tok) = daily
+                        .iter()
+                        .find(|(dt, _, _, _, _)| dt == &date_str)
+                        .map(|(_, i, o, cr, cc)| (*i, *o, *cr, *cc))
+                        .unwrap_or((0, 0, 0, 0));
+                    let total = in_tok + out_tok + cr_tok + cc_tok;
+                    if total == 0 {
+                        None
+                    } else {
+                        Some((d.format("%m-%d").to_string(), in_tok, out_tok, cr_tok, cc_tok, date_str == today_date))
+                    }
+                })
+                .collect();
 
             let max_val = days.iter().map(|(_, i, o, cr, cc, _)| i + o + cr + cc).max().unwrap_or(1).max(1);
-            let lines: Vec<Line> = days.iter().flat_map(|(date, in_tok, out_tok, cr_tok, cc_tok, is_today)| {
-                let total = in_tok + out_tok + cr_tok + cc_tok;
-                let w = if max_val > 0 { (total as f64 / max_val as f64 * 30.0) as usize } else { 0 };
-                let bar = "\u{2500}".repeat(w.min(35));
-                let color = if *is_today { Theme::CYAN } else { Theme::PURPLE };
-                let indent = "       ";
-                let detail_lines: Vec<Line> = if total > 0 {
-                    let text = format!("input {}  output {}  cache read {}  cache create {}",
-                        format_tokens(*in_tok), format_tokens(*out_tok),
-                        format_tokens(*cr_tok), format_tokens(*cc_tok));
-                    let max_w = (area.width as usize).saturating_sub(indent.len() + 1).max(10);
-                    let mut result = vec![Line::from(vec![
-                        Span::styled(indent, Style::default()),
-                        Span::styled(text.chars().take(max_w).collect::<String>(), Style::default().fg(Theme::COMMENT)),
-                    ])];
-                    let remainder: String = text.chars().skip(max_w).collect();
-                    for chunk in remainder.chars().collect::<Vec<_>>().chunks(max_w) {
-                        let cont: String = chunk.iter().collect();
-                        if !cont.is_empty() {
-                            result.push(Line::from(Span::styled(
-                                format!("{}{}", indent, cont),
-                                Style::default().fg(Theme::COMMENT),
-                            )));
+            let lines: Vec<Line> = days
+                .iter()
+                .flat_map(|(date, in_tok, out_tok, cr_tok, cc_tok, is_today)| {
+                    let total = in_tok + out_tok + cr_tok + cc_tok;
+                    let w = if max_val > 0 { (total as f64 / max_val as f64 * 30.0) as usize } else { 0 };
+                    let w = if total > 0 { w.max(1) } else { 0 };
+                    let bar = "\u{2500}".repeat(w.min(35));
+                    let color = if *is_today { Theme::CYAN } else { Theme::PURPLE };
+                    let indent = "       ";
+                    let detail_lines: Vec<Line> = if total > 0 {
+                        let text = format!(
+                            "input {}  output {}  cache read {}  cache create {}",
+                            format_tokens(*in_tok),
+                            format_tokens(*out_tok),
+                            format_tokens(*cr_tok),
+                            format_tokens(*cc_tok)
+                        );
+                        let max_w = (area.width as usize).saturating_sub(indent.len() + 2).max(10);
+                        let mut result = vec![Line::from(vec![
+                            Span::styled(indent, Style::default()),
+                            Span::styled(text.chars().take(max_w).collect::<String>(), Style::default().fg(Theme::COMMENT)),
+                        ])];
+                        let remainder: String = text.chars().skip(max_w).collect();
+                        for chunk in remainder.chars().collect::<Vec<_>>().chunks(max_w) {
+                            let cont: String = chunk.iter().collect();
+                            if !cont.is_empty() {
+                                result.push(Line::from(Span::styled(format!("{}{}", indent, cont), Style::default().fg(Theme::COMMENT))));
+                            }
                         }
-                    }
-                    result
-                } else { vec![] };
-                let mut day_lines = vec![
-                    Line::from(vec![
+                        result
+                    } else {
+                        vec![]
+                    };
+                    let mut day_lines = vec![Line::from(vec![
                         Span::styled("  ", Style::default()),
                         Span::styled(format!("{}  ", date), Style::default().fg(Theme::COMMENT)),
                         Span::styled(bar, Style::default().fg(color)),
                         Span::styled(format!(" {}", format_tokens(total)), Style::default().fg(if *is_today { Theme::CYAN } else { Theme::DIM })),
-                    ]),
-                ];
-                day_lines.extend(detail_lines);
-                day_lines
-            }).collect();
+                    ])];
+                    day_lines.extend(detail_lines);
+                    day_lines
+                })
+                .collect();
 
-            let p = Paragraph::new(lines)
-                .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
+            let p = Paragraph::new(lines).block(
+                Block::bordered()
+                    .border_set(ratatui::symbols::border::ROUNDED)
                     .title(format!("{} — This Week", label))
-                    .border_style(Style::default().fg(Theme::DIM)));
+                    .border_style(Style::default().fg(Theme::DIM)),
+            );
             f.render_widget(p, area);
         }
     }
@@ -248,15 +307,25 @@ fn title_case(s: &str) -> String {
     let mut result = String::new();
     let mut upper = true;
     for c in s.chars() {
-        if c == '-' || c == '.' || c == '_' { upper = true; result.push(c); }
-        else if upper { result.push(c.to_ascii_uppercase()); upper = false; }
-        else { result.push(c); }
+        if c == '-' || c == '.' || c == '_' {
+            upper = true;
+            result.push(c);
+        } else if upper {
+            result.push(c.to_ascii_uppercase());
+            upper = false;
+        } else {
+            result.push(c);
+        }
     }
     result
 }
 
 fn format_tokens(n: i64) -> String {
-    if n >= 1_000_000 { format!("{:.1}M", n as f64 / 1_000_000.0) }
-    else if n >= 1_000 { format!("{:.1}k", n as f64 / 1_000.0) }
-    else { n.to_string() }
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else if n >= 1_000 {
+        format!("{:.1}k", n as f64 / 1_000.0)
+    } else {
+        n.to_string()
+    }
 }
