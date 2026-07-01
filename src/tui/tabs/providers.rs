@@ -291,8 +291,9 @@ fn centered_rect(w: u16, h: u16, r: Rect) -> Rect {
 fn edit_profile_interactive(
     name: &str, opus: &str, sonnet: &str, haiku: &str, subagent: &str,
 ) -> Result<crate::core::models::Profile, ()> {
-    // Ignore SIGINT during editing (terminal in cooked mode)
+    // Ignore SIGINT + clear screen before editing
     let _ = ctrlc::set_handler(|| {});
+    print!("\x1B[2J\x1B[H");
     let result = (|| -> Result<crate::core::models::Profile, anyhow::Error> {
         use dialoguer::Input;
         let name: String = Input::new().with_prompt("Name").with_initial_text(name).interact_text()?;
