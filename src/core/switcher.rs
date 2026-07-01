@@ -52,20 +52,6 @@ pub fn switch_profile(mgr: &ConfigManager, provider_id: &str, profile_id: &str, 
     Ok(config)
 }
 
-/// If the original api_key is an `env:XXX` reference or empty, return the reference
-/// instead of the resolved plaintext value, so it is never written to disk in plaintext.
-fn preserve_env_ref(original: &str, resolved: &str) -> String {
-    if original.starts_with("env:") || original.is_empty() {
-        if original.is_empty() {
-            "env:CLAUDE_API_KEY".to_string()
-        } else {
-            original.to_string()
-        }
-    } else {
-        // Literal key — user chose to store it
-        resolved.to_string()
-    }
-}
 
 fn write_settings_json(config: &ActiveConfig, path: Option<&Path>) -> Result<()> {
     let settings_path = path.map(|p| p.to_path_buf()).unwrap_or_else(|| {
@@ -93,7 +79,7 @@ fn write_settings_json(config: &ActiveConfig, path: Option<&Path>) -> Result<()>
     }
     let env = &mut existing["env"];
     env["ANTHROPIC_BASE_URL"] = json!(config.base_url);
-    env["ANTHROPIC_AUTH_TOKEN"] = json!(preserve_env_ref(&config.api_key, &config.auth_token));
+    env["ANTHROPIC_AUTH_TOKEN"] = json!(config.auth_token);
     env["ANTHROPIC_MODEL"] = json!(config.opus_model);
     env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = json!(config.opus_model);
     env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = json!(config.sonnet_model);

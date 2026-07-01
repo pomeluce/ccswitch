@@ -62,6 +62,11 @@ impl App {
                     self.handle_key(key.code);
                 }
             }
+            // Handle terminal reinit for providers tab (edit)
+            if self.providers_tab.needs_reinit {
+                *terminal = ratatui::init();
+                self.providers_tab.needs_reinit = false;
+            }
             // Handle terminal suspend for external process (claude)
             if self.history_tab.needs_terminal_reinit {
                 ratatui::restore();

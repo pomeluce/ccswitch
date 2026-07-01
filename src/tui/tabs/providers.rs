@@ -29,6 +29,7 @@ pub struct ProvidersTab {
     pub confirm_action: Option<ProviderAction>,
     confirm_button: usize,
     pub message: Option<String>,
+    pub needs_reinit: bool,
 }
 
 impl ProvidersTab {
@@ -51,7 +52,7 @@ impl ProvidersTab {
             search_query: String::new(), is_searching: false,
             active_provider, active_profile,
             confirm_action: None, confirm_button: 0,
-            message: None,
+            message: None, needs_reinit: false,
         }
     }
 
@@ -96,26 +97,24 @@ impl ProvidersTab {
             (prov.id.clone(), prof.id.clone(), prof.name.clone(),
              prof.opus.clone(), prof.sonnet.clone(), prof.haiku.clone(), prof.subagent.clone())
         };
-        // Suspend TUI for interactive editing
+        self.needs_reinit = true;
         ratatui::restore();
         use dialoguer::Input;
-        let name: String = Input::new().with_prompt("Name").with_initial_text(&prof_name).interact_text().unwrap_or(prof_name);
-        let opus: String = Input::new().with_prompt("Opus model").with_initial_text(&opus).interact_text().unwrap_or(opus);
-        let sonnet: String = Input::new().with_prompt("Sonnet model").with_initial_text(&sonnet).interact_text().unwrap_or(sonnet);
-        let haiku: String = Input::new().with_prompt("Haiku model").with_initial_text(&haiku).interact_text().unwrap_or(haiku);
-        let subagent: String = Input::new().with_prompt("SubAgent model").with_initial_text(&subagent).interact_text().unwrap_or(subagent);
-        ratatui::init();
-        let pr = crate::core::models::Profile {
-            id: prof_id, name, opus: opus.clone(), sonnet: sonnet.clone(), haiku: haiku.clone(),
-            subagent: subagent.clone(), default: false, source: crate::core::models::Source::User,
-        };
-        self.mgr.db().insert_user_profile(&prov_id, &pr).ok();
-        // Update in-memory
-        if let Some((_, p)) = self.all_profiles.iter_mut().find(|(prov, prof)| prov.id == prov_id && prof.id == pr.id) {
-            p.opus = opus;
-            p.sonnet = sonnet;
-            p.haiku = haiku;
-            p.subagent = subagent;
+        let name: String = Input::new().with_prompt("Name").with_initial_text(&prof_name).interact_text().unwrap_or_default();
+        let opus: String = Input::new().with_prompt("Opus model").with_initial_text(&opus).interact_text().unwrap_or_default();
+        let sonnet: String = Input::new().with_prompt("Sonnet model").with_initial_text(&sonnet).interact_text().unwrap_or_default();
+        let haiku: String = Input::new().with_prompt("Haiku model").with_initial_text(&haiku).interact_text().unwrap_or_default();
+        let subagent: String = Input::new().with_prompt("SubAgent model").with_initial_text(&subagent).interact_text().unwrap_or_default();
+        {
+            let pr = crate::core::models::Profile {
+                id: prof_id, name: name.clone(), opus: opus.clone(), sonnet: sonnet.clone(), haiku: haiku.clone(),
+                subagent: subagent.clone(), default: false, source: crate::core::models::Source::User,
+            };
+            self.mgr.db().insert_user_profile(&prov_id, &pr).ok();
+            if let Some((_, p)) = self.all_profiles.iter_mut().find(|(prov, prof)| prov.id == prov_id && prof.id == pr.id) {
+                p.opus = opus; p.sonnet = sonnet; p.haiku = haiku; p.subagent = subagent;
+            }
+            self.refresh_filter();
         }
     }
 
