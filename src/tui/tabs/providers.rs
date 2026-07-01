@@ -137,7 +137,7 @@ impl ProvidersTab {
             let val = &form.fields[i];
             let cursor = if i == form.focused { " ▌" } else { "" };
             let style = if i == form.focused { Style::default().fg(Theme::CYAN) } else { Style::default().fg(Theme::FG) };
-            lines.push(Line::from(Span::styled(format!(" {}: {}{}", label, val, cursor), style)));
+            lines.push(Line::from(Span::styled(format!(" {}: {}{}", label, val, cursor), style)).centered());
             lines.push(Line::from(""));
         }
         // Hints (colored text, no background)
