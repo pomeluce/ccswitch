@@ -60,10 +60,15 @@ impl UsageTab {
 
 impl TabContent for UsageTab {
     fn render(&mut self, f: &mut Frame, area: Rect) {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(3), Constraint::Length(3)])
+            .split(area);
+
         let main = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(area);
+            .split(chunks[0]);
 
         let left = Layout::default()
             .direction(Direction::Vertical)
@@ -72,13 +77,16 @@ impl TabContent for UsageTab {
 
         // Search box
         self.render_search_box(f, left[0]);
-        // Summary cards (all profiles)
+        // Summary cards
         self.render_summary_cards(f, left[1]);
         // Profile ranking
         self.render_profile_list(f, left[2]);
 
-        // Right: daily chart with profile summary inline
+        // Right: daily chart
         self.render_daily_chart(f, main[1]);
+
+        // Bottom shortcut bar
+        self.render_shortcut_bar(f, chunks[1]);
     }
 
     fn handle_key(&mut self, code: KeyCode) -> bool {
@@ -141,6 +149,48 @@ impl TabContent for UsageTab {
 }
 
 impl UsageTab {
+    fn render_shortcut_bar(&self, f: &mut Frame, area: Rect) {
+        let key = |t: &str, c| -> Span {
+            Span::styled(t.to_string(), Style::default().fg(c))
+        };
+        let lbl = |t: &str| -> Span {
+            Span::styled(format!(" {} ", t), Style::default().fg(Theme::COMMENT))
+        };
+        let sep = || Span::styled("  ".to_string(), Style::default());
+
+        let groups: Vec<Vec<Span>> = vec![
+            vec![key(" J/K ", Theme::CYAN), lbl("Nav")],
+            vec![key(" / ", Theme::CYAN), lbl("Search")],
+            vec![key(" t ", Theme::GREEN), lbl("Toggle")],
+            vec![key(" PgUp/Dn ", Theme::PURPLE), lbl("Scroll")],
+            vec![key(" Q ", Theme::ORANGE), lbl("Quit")],
+        ];
+
+        let width = area.width.max(10) as usize;
+        let mut rows = Vec::new();
+        let mut current: Vec<Span> = Vec::new();
+        let mut cur_w = 0usize;
+
+        for group in &groups {
+            let g_w: usize = group.iter().map(|s| s.width()).sum::<usize>();
+            if cur_w + g_w > width && !current.is_empty() {
+                rows.push(Line::from(std::mem::take(&mut current)));
+                cur_w = 0;
+            }
+            if !current.is_empty() { current.push(sep()); cur_w += 2; }
+            current.extend(group.clone());
+            cur_w += g_w;
+        }
+        if !current.is_empty() { rows.push(Line::from(current)); }
+        if rows.is_empty() { rows.push(Line::default()); }
+
+        let p = Paragraph::new(rows)
+            .centered()
+            .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
+                .border_style(Style::default().fg(Theme::DIM)));
+        f.render_widget(p, area);
+    }
+
     fn render_search_box(&self, f: &mut Frame, area: Rect) {
         let cursor = if self.is_searching { "\u{258c}" } else { "" };
         let text = if self.search_query.is_empty() && !self.is_searching {
