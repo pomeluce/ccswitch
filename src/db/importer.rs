@@ -192,10 +192,10 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
             if created_at.is_none() { created_at = parse_timestamp(ts); }
         }
         if let Some(ref ct) = parsed.custom_title {
-            if custom_title.is_none() && !ct.is_empty() { custom_title = Some(ct.clone()); }
+            if !ct.is_empty() { custom_title = Some(ct.clone()); }
         }
         if let Some(ref at) = parsed.ai_title {
-            if ai_title.is_none() && !at.is_empty() { ai_title = Some(at.clone()); }
+            if !at.is_empty() { ai_title = Some(at.clone()); }
         }
         if let Some(ref lp) = parsed.last_prompt {
             if !lp.is_empty() { last_prompt = Some(truncate_title(lp)); }
