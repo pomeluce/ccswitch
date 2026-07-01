@@ -14,47 +14,118 @@ Claude Code 模型配置管理器 — Rust TUI + CLI 工具。
 
 ## 安装
 
-### Nix
+### NixOS
+
+#### Home Manager（推荐，按用户配置）
+
+在 `home.nix` 中：
 
 ```nix
-# Home Manager (推荐)
-programs.ccswitch = {
-  enable = true;
-  defaults = {
-    version = 1;
-    providers = [
-      {
-        id = "deepseek";
-        name = "DeepSeek";
-        api_url = "https://api.deepseek.com/anthropic";
-        api_key = "env:DEEPSEEK_API_KEY";
-        profiles = [
-          {
-            id = "v4"; name = "V4";
-            opus = "deepseek-v4-pro[1m]";
-            sonnet = "deepseek-v4-pro[1m]";
-            haiku = "deepseek-v4-flash";
-            subagent = "deepseek-v4-flash";
-            default = true;
-          }
-        ];
-      }
-    ];
+{
+  inputs.ccswitch.url = "github:your/ccswitch";
+
+  homeConfigurations = {
+    your-user = home-manager.lib.homeManagerConfiguration {
+      modules = [
+        ccswitch.homeModules.default
+        {
+          programs.ccswitch = {
+            enable = true;
+            defaults = {
+              version = 1;
+              providers = [
+                {
+                  id = "deepseek";
+                  name = "DeepSeek";
+                  api_url = "https://api.deepseek.com/anthropic";
+                  api_key = "env:DEEPSEEK_API_KEY";
+                  profiles = [
+                    {
+                      id = "v4"; name = "V4";
+                      opus = "deepseek-v4-pro[1m]";
+                      sonnet = "deepseek-v4-pro[1m]";
+                      haiku = "deepseek-v4-flash";
+                      subagent = "deepseek-v4-flash";
+                      default = true;
+                    }
+                  ];
+                }
+              ];
+            };
+          };
+        }
+      ];
+    };
   };
-};
+}
 ```
+
+Home Manager 会自动将配置写入 `~/.config/ccswitch/defaults.toml`，并安装 systemd user service。
+
+#### NixOS 全局安装
+
+在 `configuration.nix` 中：
 
 ```nix
-# NixOS (全局安装)
-services.ccswitch.enable = true;
-services.ccswitch.defaults = { ... };
+{
+  inputs.ccswitch.url = "github:your/ccswitch";
+
+  outputs = { nixpkgs, ccswitch, ... }: {
+    nixosConfigurations.your-host = nixpkgs.lib.nixosSystem {
+      modules = [
+        ccswitch.nixosModules.default
+        {
+          services.ccswitch = {
+            enable = true;
+            defaults = {
+              version = 1;
+              providers = [ ... ];
+            };
+          };
+        }
+      ];
+    };
+  };
+}
 ```
 
-### Cargo
+NixOS 模块将配置写入 `/etc/ccswitch/defaults.toml`，并安装二进制包。
+
+#### 命令行直接使用
 
 ```bash
-cargo install --git https://github.com/your/ccswitch
+# 临时启动
+nix run github:your/ccswitch
+
+# 安装到 profile
+nix profile install github:your/ccswitch
 ```
+
+### Cargo（Linux / macOS / Windows WSL2）
+
+```bash
+# 安装
+cargo install --git https://github.com/your/ccswitch
+
+# 或者从源码构建
+git clone https://github.com/your/ccswitch
+cd ccswitch
+cargo build --release
+cp target/release/ccs ~/.local/bin/
+```
+
+首次运行会自动创建 `~/.config/ccswitch/` 目录（包含数据库和配置文件）。
+
+### 手动安装（任意平台）
+
+从 [Releases] 下载预编译二进制，放到 `$PATH` 中即可：
+
+```bash
+chmod +x ccs
+mv ccs ~/.local/bin/
+```
+
+首次使用建议手动创建 `~/.config/ccswitch/defaults.toml` 配置文件。
 
 ## 使用
 
@@ -215,4 +286,3 @@ nix build .#   # Nix 打包
 ## License
 
 GPL-3.0
-
