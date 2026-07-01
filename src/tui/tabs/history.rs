@@ -128,7 +128,7 @@ impl TabContent for HistoryTab {
     fn render(&mut self, f: &mut Frame, area: Rect) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(3), Constraint::Length(1)])
+            .constraints([Constraint::Min(3), Constraint::Length(3)])
             .split(area);
 
         let main = Layout::default()
@@ -408,8 +408,13 @@ impl HistoryTab {
             Span::styled(" Search  ", Style::default().fg(Theme::COMMENT)),
             Span::styled(" q ", Style::default().fg(Color::Black).bg(Theme::CYAN)),
             Span::styled(" Quit", Style::default().fg(Theme::COMMENT)),
-        ]);
-        f.render_widget(Paragraph::new(line), area);
+        ]).centered();
+        let p = Paragraph::new(line)
+            .block(
+                Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
+                    .border_style(Style::default().fg(Theme::DIM)),
+            );
+        f.render_widget(p, area);
     }
 
     fn render_search_box(&self, f: &mut Frame, area: Rect) {
