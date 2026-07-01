@@ -407,7 +407,7 @@ impl HistoryTab {
             Span::styled(" Delete  ", Style::default().fg(Theme::COMMENT)),
             Span::styled(" / ", Style::default().fg(Color::Black).bg(Theme::CYAN)),
             Span::styled(" Search  ", Style::default().fg(Theme::COMMENT)),
-            Span::styled(" q ", Style::default().fg(Color::Black).bg(Theme::CYAN)),
+            Span::styled(" Q ", Style::default().fg(Color::Black).bg(Theme::CYAN)),
             Span::styled(" Quit", Style::default().fg(Theme::COMMENT)),
         ]).centered();
         let p = Paragraph::new(line)
