@@ -1,6 +1,6 @@
 [package]
 name = "ccswitch"
-version = "1.1.27"
+version = "1.1.28"
 edition = "2021"
 rust-version = "1.80"
 
@@ -43,7 +43,6 @@ chrono = "0.4"
 thiserror = "2"
 anyhow = "1"
 
-ctrlc = "3.4"
 
 # Logging
 tracing = "0.1"
