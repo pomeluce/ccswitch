@@ -131,14 +131,14 @@ impl ProvidersTab {
 
     fn render_edit_form(&self, f: &mut Frame, area: Rect) {
         let Some(ref form) = self.edit_form else { return };
-        let popup = centered_rect(52, 18, area);
+        let popup = centered_rect(60, 20, area);
         let mut lines: Vec<Line> = Vec::new();
         lines.push(Line::from("")); // top padding
         for (i, label) in EDIT_LABELS.iter().enumerate() {
             let val = &form.fields[i];
             let cursor = if i == form.focused { " ▌" } else { "" };
             let style = if i == form.focused { Style::default().fg(Theme::CYAN) } else { Style::default().fg(Theme::FG) };
-            let label_padded = format!(" {:>14}: ", label);
+            let label_padded = format!("   {:<15}", label);
             lines.push(Line::from(Span::styled(format!("{}{}{}", label_padded, val, cursor), style)));
             lines.push(Line::from(""));
         }
