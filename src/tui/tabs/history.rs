@@ -420,7 +420,7 @@ impl HistoryTab {
 
     fn render_shortcut_bar(&self, f: &mut Frame, area: Rect) {
         let key = |t: &str, c| -> Span {
-            Span::styled(t.to_string(), Style::default().fg(Color::Black).bg(c))
+            Span::styled(t.to_string(), Style::default().fg(c))
         };
         let lbl = |t: &str| -> Span {
             Span::styled(format!(" {} ", t), Style::default().fg(Theme::COMMENT))

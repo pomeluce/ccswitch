@@ -136,7 +136,7 @@ impl App {
 
     fn render_tab_bar(&self, f: &mut Frame, area: ratatui::layout::Rect) {
         use ratatui::{
-            style::{Color, Style},
+            style::Style,
             text::{Line, Span},
             widgets::{Block, Paragraph},
         };
@@ -154,7 +154,7 @@ impl App {
             .flat_map(|(tab, label)| {
                 if *tab == self.active_tab {
                     vec![
-                        Span::styled(*label, Style::default().fg(Color::Black).bg(Theme::CYAN)),
+                        Span::styled(*label, Style::default().fg(Theme::CYAN)),
                     ]
                 } else {
                     vec![
