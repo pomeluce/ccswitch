@@ -161,7 +161,7 @@ impl UsageTab {
                 ]),
                 Line::from(vec![
                     Span::styled("  ", Style::default()),
-                    Span::styled(bar_text, Style::default().fg(Theme::CYAN)),
+                    Span::styled(bar_text, Style::default().fg(Theme::PURPLE)),
                 ]),
                 Line::from(""),
             ])
