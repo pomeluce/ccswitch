@@ -76,7 +76,7 @@
         };
 
       flake = {
-        # NixOS system-level module — installs package only (per-user config via home-manager)
+        # NixOS system-level module — installs package + generates defaults.toml
         nixosModules.default =
           {
             config,
@@ -86,13 +86,21 @@
           }:
           let
             cfg = config.services.ccswitch;
+            format = pkgs.formats.toml { };
           in
           {
             options.services.ccswitch = {
               enable = lib.mkEnableOption "CCSwitch model configuration manager";
+              defaults = lib.mkOption {
+                type = lib.types.attrs;
+                default = { };
+                description = "Provider configurations (written to /etc/ccswitch/defaults.toml)";
+              };
             };
             config = lib.mkIf cfg.enable {
               environment.systemPackages = [ self.packages.${pkgs.system}.default ];
+              environment.etc."ccswitch/defaults.toml".source =
+                format.generate "ccswitch-system-defaults.toml" cfg.defaults;
             };
           };
 
