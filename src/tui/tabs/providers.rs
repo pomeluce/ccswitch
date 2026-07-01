@@ -39,7 +39,6 @@ struct EditForm {
     focused: usize,        // 0..4
     prov_id: String,
     prof_id: String,
-    last_blink: std::time::Instant, // for cursor blink timing
 }
 
 const EDIT_LABELS: [&str; 5] = ["Profile Name", "Opus model", "Sonnet model", "Haiku model", "SubAgent model"];
@@ -111,7 +110,6 @@ impl ProvidersTab {
         ];
         self.edit_form = Some(EditForm {
             fields, cursors, focused: 0,
-            last_blink: std::time::Instant::now(),
             prov_id: prov.id.clone(),
             prof_id: prof.id.clone(),
         });
@@ -139,9 +137,10 @@ impl ProvidersTab {
         let Some(ref mut form) = self.edit_form else { return };
         let popup = centered_rect(60, 20, area);
         let inner_w = popup.width.saturating_sub(2) as usize;
-        let pad = " ".repeat(inner_w.saturating_sub(40) / 2);
-        let value_w = inner_w.saturating_sub(pad.len() + 17); // label + ": " + cursor
-        let show_cursor = form.last_blink.elapsed().as_millis() % 1000 < 530;
+        // Equal left/right padding, label(15) + ": " (2) → value_w = inner - pad*2 - 17
+        let pad_w = (inner_w.saturating_sub(40)) / 2;
+        let pad = " ".repeat(pad_w);
+        let value_w = inner_w.saturating_sub(pad_w * 2 + 17);
 
         let mut lines: Vec<Line> = Vec::new();
         // Top padding (3 lines)
@@ -152,13 +151,14 @@ impl ProvidersTab {
             let vis = slice_value(val, pos, value_w);
             let cur = (pos - vis.skip).min(vis.text.len());
             let (left, right) = vis.text.split_at(cur);
-            let blink = if show_cursor && i == form.focused { "▌" } else { "" };
+            let cursor = if i == form.focused { "▌" } else { "" };
             let style = if i == form.focused { Style::default().fg(Theme::CYAN) } else { Style::default().fg(Theme::FG) };
             lines.push(Line::from(vec![
                 Span::styled(format!("{}{:<15}: ", pad, label), Style::default().fg(Theme::FG)),
                 Span::styled(left.to_string(), style),
-                Span::styled(blink.to_string(), style),
+                Span::styled(cursor.to_string(), style),
                 Span::styled(right.to_string(), style),
+                Span::styled(pad.clone(), Style::default()), // right padding
             ]));
             lines.push(Line::from(""));
         }
