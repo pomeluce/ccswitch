@@ -140,7 +140,7 @@ impl TabContent for HistoryTab {
         // Right panel: detail preview + shortcut bar
         let right_chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(3), Constraint::Min(3)])
+            .constraints([Constraint::Min(3), Constraint::Length(5)])
             .split(main[1]);
 
         // Search box
