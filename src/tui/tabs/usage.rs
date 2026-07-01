@@ -1,11 +1,12 @@
 use super::super::theme::Theme;
+use super::super::widgets::shared::{render_shortcut_bar as shared_shortcuts, render_search_box as shared_search};
 use super::TabContent;
 use crate::core::config::ConfigManager;
 use crate::db::usage::UsageSummary;
 use crossterm::event::KeyCode;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::Style,
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, List, ListItem, ListState, Paragraph},
     Frame,
@@ -120,7 +121,7 @@ impl TabContent for UsageTab {
                     self.state.select(Some(self.selected_index));
                 }
             }
-            KeyCode::Char('t') => {
+            KeyCode::Char('t') | KeyCode::Char('T') => {
                 self.range = match self.range.as_str() {
                     "day" => "week",
                     "week" => "month",
@@ -147,63 +148,18 @@ impl TabContent for UsageTab {
 
 impl UsageTab {
     fn render_shortcut_bar(&self, f: &mut Frame, area: Rect) {
-        let key = |t: &str, c| -> Span {
-            Span::styled(t.to_string(), Style::default().fg(c))
-        };
-        let lbl = |t: &str| -> Span {
-            Span::styled(format!(" {} ", t), Style::default().fg(Theme::COMMENT))
-        };
-        let sep = || Span::styled("  ".to_string(), Style::default());
-
-        let groups: Vec<Vec<Span>> = vec![
-            vec![key(" J/K ", Theme::CYAN), lbl("Nav")],
-            vec![key(" / ", Theme::CYAN), lbl("Search")],
-            vec![key(" T ", Theme::GREEN), lbl("Toggle")],
-            vec![key(" PgUp/Dn ", Theme::PURPLE), lbl("Scroll")],
-            vec![key(" Q ", Theme::ORANGE), lbl("Quit")],
+        let groups: Vec<Vec<(String, Color)>> = vec![
+            vec![(" J/K ".into(), Theme::CYAN), ("Nav".into(), Theme::COMMENT)],
+            vec![(" / ".into(), Theme::CYAN), ("Search".into(), Theme::COMMENT)],
+            vec![(" T ".into(), Theme::GREEN), ("Toggle".into(), Theme::COMMENT)],
+            vec![(" PgUp/Dn ".into(), Theme::PURPLE), ("Scroll".into(), Theme::COMMENT)],
+            vec![(" Q ".into(), Theme::ORANGE), ("Quit".into(), Theme::COMMENT)],
         ];
-
-        let width = area.width.max(10) as usize;
-        let mut rows = Vec::new();
-        let mut current: Vec<Span> = Vec::new();
-        let mut cur_w = 0usize;
-
-        for group in &groups {
-            let g_w: usize = group.iter().map(|s| s.width()).sum::<usize>();
-            if cur_w + g_w > width && !current.is_empty() {
-                rows.push(Line::from(std::mem::take(&mut current)));
-                cur_w = 0;
-            }
-            if !current.is_empty() { current.push(sep()); cur_w += 2; }
-            current.extend(group.clone());
-            cur_w += g_w;
-        }
-        if !current.is_empty() { rows.push(Line::from(current)); }
-        if rows.is_empty() { rows.push(Line::default()); }
-
-        let p = Paragraph::new(rows)
-            .centered()
-            .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                .border_style(Style::default().fg(Theme::DIM)));
-        f.render_widget(p, area);
+        shared_shortcuts(f, area, &groups);
     }
 
     fn render_search_box(&self, f: &mut Frame, area: Rect) {
-        let cursor = if self.is_searching { "\u{258c}" } else { "" };
-        let text = if self.search_query.is_empty() && !self.is_searching {
-            "\u{2315} Search (/ to focus)".to_string()
-        } else if !self.search_query.is_empty() && !self.is_searching {
-            format!("\u{2315} {} (/) — Esc to clear", self.search_query)
-        } else {
-            format!("\u{2315} {}{}", self.search_query, cursor)
-        };
-        let color = if self.is_searching { Theme::CYAN } else { Theme::COMMENT };
-        let p = Paragraph::new(Line::from(Span::styled(text, Style::default().fg(color)))).block(
-            Block::bordered()
-                .border_set(ratatui::symbols::border::ROUNDED)
-                .border_style(Style::default().fg(Theme::DIM)),
-        );
-        f.render_widget(p, area);
+        shared_search(f, area, &self.search_query, self.is_searching);
     }
 
     fn render_summary_cards(&self, f: &mut Frame, area: Rect) {
@@ -285,7 +241,6 @@ impl UsageTab {
 
             // Build days with actual usage data (skip zero-token days, max 7)
             let days: Vec<(String, i64, i64, i64, i64, bool)> = (0..7)
-                .rev()
                 .filter_map(|offset| {
                     let d = chrono::Local::now() - chrono::Duration::days(offset);
                     let date_str = d.format("%Y-%m-%d").to_string();
@@ -311,7 +266,7 @@ impl UsageTab {
                     let w = if max_val > 0 { (total as f64 / max_val as f64 * 30.0) as usize } else { 0 };
                     let w = if total > 0 { w.max(1) } else { 0 };
                     let bar = "\u{2500}".repeat(w.min(35));
-                    let color = if *is_today { Theme::CYAN } else { Theme::PURPLE };
+                    let color = if *is_today { Theme::ORANGE } else { Theme::PURPLE };
                     let indent = "       ";
                     let detail_lines: Vec<Line> = if total > 0 {
                         let text = format!(
@@ -341,7 +296,7 @@ impl UsageTab {
                         Span::styled("  ", Style::default()),
                         Span::styled(format!("{}  ", date), Style::default().fg(Theme::COMMENT)),
                         Span::styled(bar, Style::default().fg(color)),
-                        Span::styled(format!(" {}", format_tokens(total)), Style::default().fg(if *is_today { Theme::CYAN } else { Theme::DIM })),
+                        Span::styled(format!(" {}", format_tokens(total)), Style::default().fg(if *is_today { Theme::ORANGE } else { Theme::DIM })),
                     ])];
                     day_lines.extend(detail_lines);
                     day_lines.push(Line::from(""));
