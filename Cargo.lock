@@ -223,7 +223,7 @@ dependencies = [
 
 [[package]]
 name = "ccswitch"
-version = "0.1.0"
+version = "1.0.13"
 dependencies = [
  "anyhow",
  "axum",

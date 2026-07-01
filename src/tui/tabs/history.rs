@@ -13,24 +13,24 @@ use crate::db::sessions::SessionRecord;
 use super::super::theme::Theme;
 use super::TabContent;
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum ConfirmAction { Open, Delete }
+
 pub struct HistoryTab {
     all_sessions: Vec<SessionRecord>,
     pub sessions: Vec<SessionRecord>,
     pub state: ListState,
     pub search_query: String,
     pub is_searching: bool,
-    pub detail_mode: bool,
-    pub confirm_delete: bool,
+    pub confirm_action: Option<ConfirmAction>,
     pub needs_terminal_reinit: bool,
     pub launch_project: Option<String>,
-    selected_button: usize,   // 0=Open, 1=Delete
-    confirm_button: usize,    // 0=Confirm, 1=Cancel (independent)
+    confirm_button: usize, // 0=Confirm, 1=Cancel
     mgr: Arc<ConfigManager>,
 }
 
 impl HistoryTab {
     pub fn new(mgr: Arc<ConfigManager>) -> Self {
-        // Auto-import Claude Code sessions
         match mgr.db().import_claude_sessions() {
             Ok(n) if n > 0 => tracing::info!("Imported {} Claude Code sessions", n),
             Err(e) => tracing::warn!("Failed to import sessions: {}", e),
@@ -44,20 +44,16 @@ impl HistoryTab {
             .collect::<Vec<_>>();
         let sessions = all.clone();
         let mut state = ListState::default();
-        if !sessions.is_empty() {
-            state.select(Some(0));
-        }
+        if !sessions.is_empty() { state.select(Some(0)); }
         HistoryTab {
             all_sessions: all,
             sessions,
             state,
             search_query: String::new(),
             is_searching: false,
-            detail_mode: false,
-            confirm_delete: false,
+            confirm_action: None,
             needs_terminal_reinit: false,
             launch_project: None,
-            selected_button: 0,
             confirm_button: 0,
             mgr,
         }
@@ -113,7 +109,6 @@ impl HistoryTab {
                 } else {
                     self.state.select(Some(idx));
                 }
-                self.detail_mode = false;
             }
         }
     }
@@ -131,16 +126,15 @@ impl HistoryTab {
 
 impl TabContent for HistoryTab {
     fn render(&mut self, f: &mut Frame, area: Rect) {
-        // Detail mode: full-width detail panel
-        if self.detail_mode {
-            self.render_detail_full(f, area);
-            return;
-        }
-
         let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(3), Constraint::Length(1)])
+            .split(area);
+
+        let main = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
-            .split(area);
+            .split(chunks[0]);
 
         // Left panel: search box + session list
         let left_chunks = Layout::default()
@@ -261,34 +255,44 @@ impl TabContent for HistoryTab {
                             .border_style(Style::default().fg(Theme::DIM)),
                     )
                     .style(Style::default());
-                f.render_widget(p, chunks[1]);
+                f.render_widget(p, main[1]);
             } else {
-                render_empty_detail(f, chunks[1], "No session selected");
+                render_empty_detail(f, main[1], "No session selected");
             }
         } else {
-            render_empty_detail(f, chunks[1], "No sessions available");
+            render_empty_detail(f, main[1], "No sessions available");
+        }
+
+        // Bottom shortcut bar
+        self.render_shortcut_bar(f, chunks[1]);
+
+        // Confirmation popup
+        if self.confirm_action.is_some() {
+            self.render_confirm_popup(f, area);
         }
     }
 
     fn handle_key(&mut self, code: KeyCode) -> bool {
-        // Delete confirmation mode
-        if self.confirm_delete {
+        // Confirm popup mode (open or delete)
+        if self.confirm_action.is_some() {
             match code {
-                KeyCode::Char('j') | KeyCode::Char('l') | KeyCode::Right => {
-                    self.confirm_button ^= 1;
-                }
+                KeyCode::Char('j') | KeyCode::Char('l') | KeyCode::Right |
                 KeyCode::Char('k') | KeyCode::Char('h') | KeyCode::Left => {
                     self.confirm_button ^= 1;
                 }
                 KeyCode::Enter => {
                     if self.confirm_button == 0 {
-                        self.delete_selected();
+                        match self.confirm_action {
+                            Some(ConfirmAction::Open) => self.open_session(),
+                            Some(ConfirmAction::Delete) => self.delete_selected(),
+                            _ => {}
+                        }
                     }
-                    self.confirm_delete = false;
+                    self.confirm_action = None;
                     self.confirm_button = 0;
                 }
                 KeyCode::Esc | KeyCode::Char('q') => {
-                    self.confirm_delete = false;
+                    self.confirm_action = None;
                     self.confirm_button = 0;
                 }
                 _ => {}
@@ -320,37 +324,6 @@ impl TabContent for HistoryTab {
             return true;
         }
 
-        // Detail mode
-        if self.detail_mode {
-            match code {
-                KeyCode::Esc | KeyCode::Char('q') => {
-                    self.detail_mode = false;
-                }
-                KeyCode::Char('j') | KeyCode::Char('l') | KeyCode::Right => {
-                    self.selected_button = (self.selected_button + 1) % 2;
-                }
-                KeyCode::Char('k') | KeyCode::Char('h') | KeyCode::Left => {
-                    self.selected_button = if self.selected_button == 0 { 1 } else { 0 };
-                }
-                KeyCode::Enter => {
-                    match self.selected_button {
-                        0 => self.open_session(),
-                        1 => {
-                            self.confirm_delete = true;
-                            self.confirm_button = 0;
-                        }
-                        _ => {}
-                    }
-                }
-                KeyCode::Char('d') => {
-                    self.confirm_delete = true;
-                    self.confirm_button = 0;
-                }
-                _ => { return false; }
-            }
-            return true;
-        }
-
         // List mode
         match code {
             KeyCode::Char('j') | KeyCode::Down => {
@@ -366,15 +339,15 @@ impl TabContent for HistoryTab {
                 self.state.select(Some(if i > 0 { i - 1 } else { len - 1 }));
             }
             KeyCode::Enter => {
-                self.detail_mode = true;
-                self.selected_button = 0;
+                self.confirm_action = Some(ConfirmAction::Open);
+                self.confirm_button = 0;
+            }
+            KeyCode::Char('d') => {
+                self.confirm_action = Some(ConfirmAction::Delete);
+                self.confirm_button = 0;
             }
             KeyCode::Char('/') => {
                 self.is_searching = true;
-            }
-            KeyCode::Char('d') => {
-                self.confirm_delete = true;
-                self.confirm_button = 0;
             }
             _ => { return false; }
         }
@@ -383,99 +356,15 @@ impl TabContent for HistoryTab {
 }
 
 impl HistoryTab {
-    fn render_detail_full(&mut self, f: &mut Frame, area: Rect) {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(3), Constraint::Length(3)])
-            .split(area);
-
-        if let Some(idx) = self.state.selected() {
-            if let Some(s) = self.sessions.get(idx) {
-                let padding = "  ";
-                let lines = vec![
-                    Line::from(Span::styled(
-                        s.title.as_deref().unwrap_or(&s.id),
-                        Style::default().fg(Theme::CYAN),
-                    )),
-                    Line::from(""),
-                    Line::from(vec![
-                        Span::styled(format!("{}Project:  ", padding), Style::default().fg(Theme::PURPLE)),
-                        Span::styled(&s.project_path, Style::default().fg(Theme::YELLOW)),
-                    ]),
-                    Line::from(vec![
-                        Span::styled(format!("{}Profile:  ", padding), Style::default().fg(Theme::PURPLE)),
-                        Span::styled(s.profile_id.as_deref().unwrap_or("-"), Style::default().fg(Theme::FG)),
-                    ]),
-                    Line::from(vec![
-                        Span::styled(format!("{}Mode:     ", padding), Style::default().fg(Theme::PURPLE)),
-                        Span::styled(&s.mode, Style::default().fg(Theme::GREEN)),
-                    ]),
-                    Line::from(vec![
-                        Span::styled(format!("{}Tokens:   ", padding), Style::default().fg(Theme::PURPLE)),
-                        Span::styled(
-                            format!("{} prompt / {} completion", s.prompt_tokens, s.completion_tokens),
-                            Style::default().fg(Theme::FG),
-                        ),
-                    ]),
-                    Line::from(vec![
-                        Span::styled(format!("{}Started:  ", padding), Style::default().fg(Theme::PURPLE)),
-                        Span::styled(&s.start_time, Style::default().fg(Theme::DIM)),
-                    ]),
-                    Line::from(vec![
-                        Span::styled(format!("{}Messages: ", padding), Style::default().fg(Theme::PURPLE)),
-                        Span::styled(format!("{}", s.message_count), Style::default().fg(Theme::FG)),
-                    ]),
-                    Line::from(vec![
-                        Span::styled(format!("{}Size:     ", padding), Style::default().fg(Theme::PURPLE)),
-                        Span::styled(format_size(s.size_bytes), Style::default().fg(Theme::FG)),
-                    ]),
-                ];
-
-                let p = Paragraph::new(lines)
-                    .block(
-                        Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                            .title(format!("Session Detail — Esc back"))
-                            .border_style(Style::default().fg(Theme::DIM)),
-                    );
-                f.render_widget(p, chunks[0]);
-
-                // Buttons
-                self.render_buttons(f, chunks[1]);
-            }
-        }
-
-        // Delete confirmation popup
-        if self.confirm_delete {
-            self.render_confirm_popup(f, area);
-        }
-    }
-
-    fn render_buttons(&self, f: &mut Frame, area: Rect) {
-        let open_style = if self.selected_button == 0 {
-            Style::default().fg(Color::Black).bg(Theme::CYAN)
-        } else {
-            Style::default().fg(Theme::DIM)
-        };
-        let del_style = if self.selected_button == 1 {
-            Style::default().fg(Color::Black).bg(Theme::RED)
-        } else {
-            Style::default().fg(Theme::DIM)
-        };
-
-        let line = Line::from(vec![
-            Span::styled(" Open ", open_style),
-            Span::styled("  ", Style::default()),
-            Span::styled(" Delete ", del_style),
-            Span::styled("  ", Style::default()),
-            Span::styled("j/l ←/→ switch  ⏎ confirm", Style::default().fg(Theme::COMMENT)),
-        ]);
-        f.render_widget(Paragraph::new(line), area);
-    }
-
     fn render_confirm_popup(&self, f: &mut Frame, area: Rect) {
-        let popup_area = centered_rect(44, 6, area);
+        let is_delete = self.confirm_action == Some(ConfirmAction::Delete);
+        let title = if is_delete { " Confirm Delete " } else { " Open Session " };
+        let msg = if is_delete { " Delete this session? " } else { " Open this session in Claude Code? " };
+        let border_color = if is_delete { Theme::RED } else { Theme::CYAN };
+
+        let popup_area = centered_rect(46, 6, area);
         let confirm_style = if self.confirm_button == 0 {
-            Style::default().fg(Color::Black).bg(Theme::RED)
+            Style::default().fg(Color::Black).bg(if is_delete { Theme::RED } else { Theme::CYAN })
         } else {
             Style::default().fg(Theme::DIM)
         };
@@ -486,7 +375,7 @@ impl HistoryTab {
         };
 
         let p = Paragraph::new(vec![
-            Line::from(" Delete this session? ").centered(),
+            Line::from(msg).centered(),
             Line::from(""),
             Line::from(vec![
                 Span::styled("  Confirm  ", confirm_style),
@@ -496,11 +385,32 @@ impl HistoryTab {
         ])
         .block(
             Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                .title(" Confirm Delete ")
-                .border_style(Style::default().fg(Theme::RED)),
+                .title(title)
+                .border_style(Style::default().fg(border_color)),
         );
         f.render_widget(Clear, popup_area);
         f.render_widget(p, popup_area);
+    }
+
+    fn render_shortcut_bar(&self, f: &mut Frame, area: Rect) {
+        let line = Line::from(vec![
+            Span::styled(" J/K ", Style::default().fg(Color::Black).bg(Theme::CYAN)),
+            Span::styled(" Nav  ", Style::default().fg(Theme::COMMENT)),
+            Span::styled(" ⏎ ", Style::default().fg(Color::Black).bg(Theme::CYAN)),
+            Span::styled(" Open  ", Style::default().fg(Theme::COMMENT)),
+            Span::styled(" Ctrl+D ", Style::default().fg(Color::Black).bg(Theme::RED)),
+            Span::styled(" Delete  ", Style::default().fg(Theme::COMMENT)),
+            Span::styled(" / ", Style::default().fg(Color::Black).bg(Theme::CYAN)),
+            Span::styled(" Search  ", Style::default().fg(Theme::COMMENT)),
+            Span::styled(" q ", Style::default().fg(Color::Black).bg(Theme::CYAN)),
+            Span::styled(" Quit", Style::default().fg(Theme::COMMENT)),
+        ]);
+        let p = Paragraph::new(line)
+            .block(
+                Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
+                    .border_style(Style::default().fg(Theme::DIM)),
+            );
+        f.render_widget(p, area);
     }
 
     fn render_search_box(&self, f: &mut Frame, area: Rect) {
