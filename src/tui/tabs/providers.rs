@@ -90,6 +90,35 @@ impl ProvidersTab {
         self.all_profiles.get(ai)
     }
 
+    fn do_edit(&mut self) {
+        let (prov_id, prof_id, prof_name, opus, sonnet, haiku, subagent) = {
+            let Some((prov, prof)) = self.selected_profile() else { return };
+            (prov.id.clone(), prof.id.clone(), prof.name.clone(),
+             prof.opus.clone(), prof.sonnet.clone(), prof.haiku.clone(), prof.subagent.clone())
+        };
+        // Suspend TUI for interactive editing
+        ratatui::restore();
+        use dialoguer::Input;
+        let name: String = Input::new().with_prompt("Name").with_initial_text(&prof_name).interact_text().unwrap_or(prof_name);
+        let opus: String = Input::new().with_prompt("Opus model").with_initial_text(&opus).interact_text().unwrap_or(opus);
+        let sonnet: String = Input::new().with_prompt("Sonnet model").with_initial_text(&sonnet).interact_text().unwrap_or(sonnet);
+        let haiku: String = Input::new().with_prompt("Haiku model").with_initial_text(&haiku).interact_text().unwrap_or(haiku);
+        let subagent: String = Input::new().with_prompt("SubAgent model").with_initial_text(&subagent).interact_text().unwrap_or(subagent);
+        ratatui::init();
+        let pr = crate::core::models::Profile {
+            id: prof_id, name, opus: opus.clone(), sonnet: sonnet.clone(), haiku: haiku.clone(),
+            subagent: subagent.clone(), default: false, source: crate::core::models::Source::User,
+        };
+        self.mgr.db().insert_user_profile(&prov_id, &pr).ok();
+        // Update in-memory
+        if let Some((_, p)) = self.all_profiles.iter_mut().find(|(prov, prof)| prov.id == prov_id && prof.id == pr.id) {
+            p.opus = opus;
+            p.sonnet = sonnet;
+            p.haiku = haiku;
+            p.subagent = subagent;
+        }
+    }
+
     fn do_switch(&mut self) {
         let (prov_id, prof_id) = {
             let Some((prov, prof)) = self.selected_profile() else { return };
@@ -211,7 +240,7 @@ impl TabContent for ProvidersTab {
             match code {
                 KeyCode::Tab | KeyCode::Right | KeyCode::Char('j') | KeyCode::Char('l') => self.confirm_button = (self.confirm_button + 1) % 2,
                 KeyCode::BackTab | KeyCode::Left | KeyCode::Char('k') | KeyCode::Char('h') => self.confirm_button = if self.confirm_button == 0 { 1 } else { 0 },
-                KeyCode::Enter => { if self.confirm_button == 0 { match self.confirm_action { Some(ProviderAction::Switch) => self.do_switch(), Some(ProviderAction::Delete) => self.do_delete(), _ => {} } } self.confirm_action = None; self.confirm_button = 0; }
+                KeyCode::Enter => { if self.confirm_button == 0 { match self.confirm_action { Some(ProviderAction::Switch) => self.do_switch(), Some(ProviderAction::Delete) => self.do_delete(), Some(ProviderAction::Edit) => self.do_edit(), _ => {} } } self.confirm_action = None; self.confirm_button = 0; }
                 KeyCode::Esc | KeyCode::Char('q') => { self.confirm_action = None; self.confirm_button = 0; }
                 _ => {}
             }
