@@ -184,7 +184,8 @@ impl UsageTab {
                 let color = if is_today { Theme::CYAN } else { Theme::PURPLE };
                 vec![
                     Line::from(vec![
-                        Span::styled(format!(" {}  ", day), Style::default().fg(Theme::COMMENT)),
+                        Span::styled("  ", Style::default()),
+                        Span::styled(format!("{}  ", day), Style::default().fg(Theme::COMMENT)),
                         Span::styled(bar, Style::default().fg(color)),
                         Span::styled(format!(" {}", format_tokens(val)), Style::default().fg(if is_today { Theme::CYAN } else { Theme::DIM })),
                     ]),
