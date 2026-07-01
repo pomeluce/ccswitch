@@ -140,7 +140,7 @@ impl TabContent for HistoryTab {
         // Right panel: detail preview + shortcut bar
         let right_chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(3), Constraint::Length(5)])
+            .constraints([Constraint::Min(3), Constraint::Length(3)])
             .split(main[1]);
 
         // Search box
@@ -250,7 +250,6 @@ impl TabContent for HistoryTab {
                 ];
 
                 let p = Paragraph::new(lines)
-                    .wrap(ratatui::widgets::Wrap { trim: false })
                     .block(
                         Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
                             .title("Session Detail")
