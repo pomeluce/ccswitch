@@ -140,7 +140,7 @@ impl TabContent for HistoryTab {
         let left_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(3), Constraint::Min(0)])
-            .split(chunks[0]);
+            .split(main[0]);
 
         // Search box
         self.render_search_box(f, left_chunks[0]);
@@ -276,9 +276,13 @@ impl TabContent for HistoryTab {
         // Confirm popup mode (open or delete)
         if self.confirm_action.is_some() {
             match code {
-                KeyCode::Char('j') | KeyCode::Char('l') | KeyCode::Right |
-                KeyCode::Char('k') | KeyCode::Char('h') | KeyCode::Left => {
-                    self.confirm_button ^= 1;
+                KeyCode::Tab | KeyCode::Right |
+                KeyCode::Char('j') | KeyCode::Char('l') => {
+                    self.confirm_button = (self.confirm_button + 1) % 2;
+                }
+                KeyCode::BackTab | KeyCode::Left |
+                KeyCode::Char('k') | KeyCode::Char('h') => {
+                    self.confirm_button = if self.confirm_button == 0 { 1 } else { 0 };
                 }
                 KeyCode::Enter => {
                     if self.confirm_button == 0 {
@@ -385,7 +389,7 @@ impl HistoryTab {
         ])
         .block(
             Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                .title(title)
+                .title(Line::from(title).centered())
                 .border_style(Style::default().fg(border_color)),
         );
         f.render_widget(Clear, popup_area);
@@ -405,12 +409,7 @@ impl HistoryTab {
             Span::styled(" q ", Style::default().fg(Color::Black).bg(Theme::CYAN)),
             Span::styled(" Quit", Style::default().fg(Theme::COMMENT)),
         ]);
-        let p = Paragraph::new(line)
-            .block(
-                Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                    .border_style(Style::default().fg(Theme::DIM)),
-            );
-        f.render_widget(p, area);
+        f.render_widget(Paragraph::new(line), area);
     }
 
     fn render_search_box(&self, f: &mut Frame, area: Rect) {

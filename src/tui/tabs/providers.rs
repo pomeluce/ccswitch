@@ -152,6 +152,7 @@ impl TabContent for ProvidersTab {
 
     fn handle_key(&mut self, code: KeyCode) -> bool {
         match code {
+            KeyCode::Tab | KeyCode::BackTab => return false,
             KeyCode::Char('j') | KeyCode::Down => self.tree.move_down(),
             KeyCode::Char('k') | KeyCode::Up => self.tree.move_up(),
             KeyCode::Char('h') | KeyCode::Left => {
