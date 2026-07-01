@@ -15,7 +15,6 @@
       nixpkgs,
       flake-parts,
       rust-overlay,
-      home-manager,
       ...
     }@inputs:
     flake-parts.lib.mkFlake { inherit inputs; } {
