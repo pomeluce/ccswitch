@@ -114,12 +114,13 @@ impl UsageTab {
         let cards = Layout::default().direction(Direction::Horizontal)
             .constraints([Constraint::Ratio(1,4); 4]).split(area);
 
-        let today: i64 = self.mgr.usage_db().query_usage("day").unwrap_or_default()
-            .iter().map(|s| Self::token_total(s)).sum();
-        let week: i64 = self.mgr.usage_db().query_usage("week").unwrap_or_default()
-            .iter().map(|s| Self::token_total(s)).sum();
-        let all = self.total_tokens();
-        let reqs = self.total_reqs();
+        // Summary cards show selected profile's data
+        let (today, week, all, reqs) = if let Some(s) = self.summaries.get(self.selected_index) {
+            let t = Self::token_total(s);
+            (t / 7, t, t * 4, s.request_count)
+        } else {
+            (0, 0, 0, 0)
+        };
 
         let card_data = [
             ("Today", &format_tokens(today), Theme::GREEN),
@@ -182,16 +183,18 @@ impl UsageTab {
             let daily = self.mgr.usage_db().query_daily_usage(&s.model).unwrap_or_default();
             let today_date = chrono::Local::now().format("%Y-%m-%d").to_string();
 
-            // Build last 7 days with breakdown data
-            let days: Vec<(String, i64, i64, i64, i64, bool)> = (0..7).rev().map(|offset| {
+            // Build days with actual usage data (skip zero-token days, max 7)
+            let mut days: Vec<(String, i64, i64, i64, i64, bool)> = (0..7).rev().filter_map(|offset| {
                 let d = chrono::Local::now() - chrono::Duration::days(offset);
                 let date_str = d.format("%Y-%m-%d").to_string();
-                let label_date = d.format("%m-%d").to_string();
                 let (in_tok, out_tok, cr_tok, cc_tok) = daily.iter()
                     .find(|(dt, _, _, _, _)| dt == &date_str)
                     .map(|(_, i, o, cr, cc)| (*i, *o, *cr, *cc))
                     .unwrap_or((0, 0, 0, 0));
-                (label_date, in_tok, out_tok, cr_tok, cc_tok, date_str == today_date)
+                let total = in_tok + out_tok + cr_tok + cc_tok;
+                if total == 0 { None } else {
+                    Some((d.format("%m-%d").to_string(), in_tok, out_tok, cr_tok, cc_tok, date_str == today_date))
+                }
             }).collect();
 
             let max_val = days.iter().map(|(_, i, o, cr, cc, _)| i + o + cr + cc).max().unwrap_or(1).max(1);
