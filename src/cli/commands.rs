@@ -227,7 +227,7 @@ fn handle_proxy(action: ProxyAction) -> Result<()> {
 }
 
 fn handle_usage(mgr: &ConfigManager, range: &str, profile: Option<&str>) -> Result<()> {
-    let summaries = mgr.db().query_usage(range)?;
+    let summaries = mgr.usage_db().query_usage(range)?;
     let total_tokens: i64 = summaries.iter().map(|s| s.total_prompt + s.total_completion).sum();
     println!("Token Usage ({})", range);
     println!("{:<30} {:>10} {:>10} {:>8}", "Model", "Prompt", "Completion", "Reqs");
@@ -251,7 +251,7 @@ fn project_name(s: &crate::db::sessions::SessionRecord) -> Option<String> {
 
 fn handle_history(mgr: &ConfigManager, project: Option<&str>, search: Option<&str>) -> Result<()> {
     // Auto-import Claude Code sessions before listing
-    match mgr.db().import_claude_sessions() {
+    match mgr.session_db().import_claude_sessions() {
         Ok(n) if n > 0 => eprintln!("Imported {} new session(s)", n),
         Err(e) => eprintln!("Warning: failed to import sessions: {}", e),
         _ => {}

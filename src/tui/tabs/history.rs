@@ -32,13 +32,13 @@ pub struct HistoryTab {
 
 impl HistoryTab {
     pub fn new(mgr: Arc<ConfigManager>) -> Self {
-        match mgr.db().import_claude_sessions() {
+        match mgr.session_db().import_claude_sessions() {
             Ok(n) if n > 0 => tracing::info!("Imported {} Claude Code sessions", n),
             Err(e) => tracing::warn!("Failed to import sessions: {}", e),
             _ => {}
         }
 
-        let all = mgr.db().query_sessions(None, None, 200)
+        let all = mgr.session_db().query_sessions(None, None, 200)
             .unwrap_or_default()
             .into_iter()
             .filter(|s| s.size_bytes > 0)
@@ -96,7 +96,7 @@ impl HistoryTab {
                         tracing::warn!("Failed to delete session file {:?}: {}", jsonl_path, e);
                     }
 
-                    if let Err(e) = self.mgr.db().delete_session(&session.id) {
+                    if let Err(e) = self.mgr.session_db().delete_session(&session.id) {
                         tracing::warn!("Failed to delete session from database: {}", e);
                     }
                     self.all_sessions.retain(|s| s.id != session.id);
