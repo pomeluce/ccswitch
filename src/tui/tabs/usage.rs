@@ -343,7 +343,7 @@ fn title_case(s: &str) -> String {
 }
 
 fn usage_shortcut_lines(available_width: u16) -> usize {
-    let group_widths = [8, 9, 8, 13, 7]; // J/K, /, T, PgUp/Dn, Q with labels
+    let group_widths = [9, 10, 10, 17, 8]; // J/K+Nav, /+Search, T+Toggle, PgUp/Dn+Scroll, Q+Quit
     let sep = 2usize;
     let w = available_width.max(10) as usize;
     let mut lines = 1usize;
