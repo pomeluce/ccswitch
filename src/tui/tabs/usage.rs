@@ -206,7 +206,7 @@ impl UsageTab {
                     let text = format!("input {}  output {}  cache read {}  cache create {}",
                         format_tokens(*in_tok), format_tokens(*out_tok),
                         format_tokens(*cr_tok), format_tokens(*cc_tok));
-                    let max_w = (area.width as usize).saturating_sub(indent.len()).max(10);
+                    let max_w = (area.width as usize).saturating_sub(indent.len() + 1).max(10);
                     let mut result = vec![Line::from(vec![
                         Span::styled(indent, Style::default()),
                         Span::styled(text.chars().take(max_w).collect::<String>(), Style::default().fg(Theme::COMMENT)),
