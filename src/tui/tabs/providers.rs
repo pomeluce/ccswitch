@@ -39,7 +39,7 @@ struct EditForm {
     focused: usize,        // 0..4
     prov_id: String,
     prof_id: String,
-    blink: bool,           // cursor visibility toggle
+    last_blink: std::time::Instant, // for cursor blink timing
 }
 
 const EDIT_LABELS: [&str; 5] = ["Profile Name", "Opus model", "Sonnet model", "Haiku model", "SubAgent model"];
@@ -110,7 +110,8 @@ impl ProvidersTab {
             fields[0].len(), fields[1].len(), fields[2].len(), fields[3].len(), fields[4].len(),
         ];
         self.edit_form = Some(EditForm {
-            fields, cursors, focused: 0, blink: true,
+            fields, cursors, focused: 0,
+            last_blink: std::time::Instant::now(),
             prov_id: prov.id.clone(),
             prof_id: prof.id.clone(),
         });
@@ -135,26 +136,28 @@ impl ProvidersTab {
     }
 
     fn render_edit_form(&mut self, f: &mut Frame, area: Rect) {
-        if let Some(ref mut form) = self.edit_form {
-            form.blink = !form.blink; // toggle blink per frame
-        }
-        let Some(ref form) = self.edit_form else { return };
+        let Some(ref mut form) = self.edit_form else { return };
         let popup = centered_rect(60, 20, area);
-        let inner_w = popup.width.saturating_sub(2) as usize; // minus borders
-        let pad = " ".repeat(inner_w.saturating_sub(40) / 2); // center ~40-char lines
+        let inner_w = popup.width.saturating_sub(2) as usize;
+        let pad = " ".repeat(inner_w.saturating_sub(40) / 2);
+        let value_w = inner_w.saturating_sub(pad.len() + 17); // label + ": " + cursor
+        let show_cursor = form.last_blink.elapsed().as_millis() % 1000 < 530;
+
         let mut lines: Vec<Line> = Vec::new();
         // Top padding (3 lines)
         lines.push(Line::from("")); lines.push(Line::from("")); lines.push(Line::from(""));
         for (i, label) in EDIT_LABELS.iter().enumerate() {
             let val = &form.fields[i];
             let pos = form.cursors[i].min(val.len());
-            let (left, right) = val.split_at(pos);
-            let blink_char = if form.blink && i == form.focused { "▌" } else { "" };
+            let vis = slice_value(val, pos, value_w);
+            let cur = (pos - vis.skip).min(vis.text.len());
+            let (left, right) = vis.text.split_at(cur);
+            let blink = if show_cursor && i == form.focused { "▌" } else { "" };
             let style = if i == form.focused { Style::default().fg(Theme::CYAN) } else { Style::default().fg(Theme::FG) };
             lines.push(Line::from(vec![
                 Span::styled(format!("{}{:<15}: ", pad, label), Style::default().fg(Theme::FG)),
                 Span::styled(left.to_string(), style),
-                Span::styled(blink_char, style),
+                Span::styled(blink.to_string(), style),
                 Span::styled(right.to_string(), style),
             ]));
             lines.push(Line::from(""));
@@ -370,6 +373,24 @@ impl TabContent for ProvidersTab {
         }
         true
     }
+}
+
+struct VisSlice { text: String, skip: usize }
+
+/// Show a windowed slice of text centered around cursor position
+fn slice_value(text: &str, cursor: usize, max_w: usize) -> VisSlice {
+    if text.len() <= max_w || max_w < 4 {
+        return VisSlice { text: text.to_string(), skip: 0 };
+    }
+    // Try to center cursor
+    let half = max_w / 2;
+    let mut start = if cursor > half { cursor - half } else { 0 };
+    let end = (start + max_w).min(text.len());
+    // Adjust if we hit the end
+    if end == text.len() && end > max_w {
+        start = end - max_w;
+    }
+    VisSlice { text: text[start..end].to_string(), skip: start }
 }
 
 fn centered_rect(w: u16, h: u16, r: Rect) -> Rect {
