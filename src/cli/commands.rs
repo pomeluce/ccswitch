@@ -22,6 +22,16 @@ pub fn run_cli(args: CliArgs) -> Result<()> {
         std::process::exit(0);
     });
 
+    // Handle completions and man page generation before opening the database —
+    // these are pure CLI introspection commands that don't need a DB connection.
+    // This also ensures they work inside Nix build sandboxes where $HOME is
+    // /homeless-shelter and the database directory cannot be created.
+    match &command {
+        Commands::Completions { shell } => return handle_completions(shell),
+        Commands::Man => return handle_man(),
+        _ => {}
+    }
+
     let db_path = get_db_path();
     let defaults_path = get_defaults_path();
     let mgr = ConfigManager::new(&db_path, defaults_path.as_deref())?;
@@ -52,12 +62,8 @@ pub fn run_cli(args: CliArgs) -> Result<()> {
         Commands::History { project, search } => {
             handle_history(&mgr, project.as_deref(), search.as_deref())?;
         }
-        Commands::Completions { shell } => {
-            handle_completions(&shell)?;
-        }
-        Commands::Man => {
-            handle_man()?;
-        }
+        // Completions and Man are handled before DB init — see run_cli()
+        Commands::Completions { .. } | Commands::Man => unreachable!(),
     }
     Ok(())
 }
