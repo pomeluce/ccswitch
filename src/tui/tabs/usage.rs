@@ -29,12 +29,12 @@ impl UsageTab {
             Ok(n) if n > 0 => tracing::info!("Imported usage from {} sessions", n),
             _ => {}
         }
-        let summaries = mgr.usage_db().query_usage("week").unwrap_or_default();
+        let summaries = mgr.usage_db().query_usage("all").unwrap_or_default();
         let mut state = ListState::default();
         if !summaries.is_empty() { state.select(Some(0)); }
         UsageTab {
             mgr, summaries, state,
-            selected_index: 0, range: "week".into(),
+            selected_index: 0, range: "all".into(),
             search_query: String::new(), is_searching: false,
         }
     }
