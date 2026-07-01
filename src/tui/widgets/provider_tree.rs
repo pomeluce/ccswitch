@@ -100,7 +100,7 @@ impl ProviderTree {
             .iter()
             .filter_map(|item| match item {
                 TreeItem::Provider { provider, .. } => {
-                    let expand = if self.collapsed.contains(&provider.id) { "❯ " } else { "❯ " };
+                    let expand = if self.collapsed.contains(&provider.id) { "❯ " } else { "▼ " };
                     Some(ListItem::new(Line::from(vec![
                         Span::styled(
                             format!("{}{}", expand, provider.name),
