@@ -128,7 +128,7 @@ impl TabContent for HistoryTab {
     fn render(&mut self, f: &mut Frame, area: Rect) {
         let main = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(area);
 
         // Left panel: search box + session list
@@ -419,22 +419,19 @@ impl HistoryTab {
     }
 
     fn render_shortcut_bar(&self, f: &mut Frame, area: Rect) {
-        let shortcuts = vec![
-            (vec![("J/K", Theme::CYAN), (" Nav", Theme::COMMENT)], ""),
-            (vec![("/", Theme::CYAN), (" Search", Theme::COMMENT)], "  "),
-            (vec![("⏎", Theme::GREEN), (" Open", Theme::COMMENT)], "  "),
-            (vec![("Ctrl+D", Theme::RED), (" Delete", Theme::COMMENT)], "  "),
-            (vec![("Q", Theme::ORANGE), (" Quit", Theme::COMMENT)], ""),
-        ];
+        let key = |t: &str, c| -> Span { Span::styled(t.to_string(), Style::default().fg(Color::Black).bg(c)) };
+        let label = |t: &str| -> Span { Span::styled(t.to_string(), Style::default().fg(Theme::COMMENT)) };
+        let sep = || Span::styled("  ".to_string(), Style::default());
 
-        let sep = Span::styled("  ", Style::default());
-        let all_spans: Vec<Span> = shortcuts.iter().flat_map(|(grp, _)| {
-            grp.iter().map(|(txt, color)| {
-                Span::styled(format!(" {} ", txt), Style::default().fg(Color::Black).bg(*color))
-            }).chain(std::iter::once(sep.clone()))
-        }).collect();
+        let line = Line::from(vec![
+            key(" J/K ", Theme::CYAN), label("Nav  "), sep(),
+            key(" / ", Theme::CYAN), label("Search  "), sep(),
+            key(" ⏎ ", Theme::GREEN), label("Open  "), sep(),
+            key(" Ctrl+D ", Theme::RED), label("Delete  "), sep(),
+            key(" Q ", Theme::ORANGE), label("Quit"),
+        ]);
 
-        let p = Paragraph::new(Line::from(all_spans))
+        let p = Paragraph::new(line)
             .wrap(ratatui::widgets::Wrap { trim: false })
             .centered()
             .block(
