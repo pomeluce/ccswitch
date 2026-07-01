@@ -78,12 +78,13 @@ impl TabContent for UsageTab {
         // Profile ranking
         self.render_profile_list(f, left[2]);
 
-        // Right: daily chart + shortcut bar
+        // Right: daily chart + shortcut bar (dynamic height like providers tab)
+        let sc_lines = usage_shortcut_lines(main[1].width);
         let right = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(3),
-                Constraint::Min(3),
+                Constraint::Length(2 + sc_lines as u16),
             ])
             .split(main[1]);
         self.render_daily_chart(f, right[0]);
@@ -339,6 +340,24 @@ fn title_case(s: &str) -> String {
         }
     }
     result
+}
+
+/// Pre-calculate shortcut bar lines to match shared_shortcuts actual rendering
+fn usage_shortcut_lines(available_width: u16) -> usize {
+    // Match the actual Span widths in render_shortcut_bar:
+    // key " J/K "(5) + label " Nav"(4)=9, " / "(3)+" Search"(7)=10, " T "(3)+" Toggle"(7)=10,
+    // " PgUp/Dn "(10)+" Scroll"(7)=17, " Q "(3)+" Quit"(5)=8
+    let widths = [9usize, 10, 10, 17, 8];
+    let sep = 2usize;
+    let w = available_width.max(10) as usize;
+    let mut lines = 1usize;
+    let mut cur = 0usize;
+    for gw in &widths {
+        if cur + gw > w && cur > 0 { lines += 1; cur = 0; }
+        if cur > 0 { cur += sep; }
+        cur += gw;
+    }
+    lines
 }
 
 fn format_tokens(n: i64) -> String {
