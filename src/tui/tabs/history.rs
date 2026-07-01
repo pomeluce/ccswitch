@@ -401,13 +401,13 @@ impl HistoryTab {
         let line = Line::from(vec![
             Span::styled(" J/K ", Style::default().fg(Color::Black).bg(Theme::CYAN)),
             Span::styled(" Nav  ", Style::default().fg(Theme::COMMENT)),
-            Span::styled(" ⏎ ", Style::default().fg(Color::Black).bg(Theme::CYAN)),
+            Span::styled(" / ", Style::default().fg(Color::Black).bg(Theme::CYAN)),
+            Span::styled(" Search  ", Style::default().fg(Theme::COMMENT)),
+            Span::styled(" ⏎ ", Style::default().fg(Color::Black).bg(Theme::GREEN)),
             Span::styled(" Open  ", Style::default().fg(Theme::COMMENT)),
             Span::styled(" Ctrl+D ", Style::default().fg(Color::Black).bg(Theme::RED)),
             Span::styled(" Delete  ", Style::default().fg(Theme::COMMENT)),
-            Span::styled(" / ", Style::default().fg(Color::Black).bg(Theme::CYAN)),
-            Span::styled(" Search  ", Style::default().fg(Theme::COMMENT)),
-            Span::styled(" Q ", Style::default().fg(Color::Black).bg(Theme::CYAN)),
+            Span::styled(" Q ", Style::default().fg(Color::Black).bg(Theme::RED)),
             Span::styled(" Quit", Style::default().fg(Theme::COMMENT)),
         ]).centered();
         let p = Paragraph::new(line)
