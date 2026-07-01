@@ -102,13 +102,9 @@ impl DetailPanel {
     }
 }
 
-/// Mask literal API keys: show first 6 chars + ***
+/// Mask literal API keys: show first 4 chars, replace rest with same-length ***
 fn mask_api_key(key: &str) -> String {
-    if key.starts_with("env:") || key.is_empty() {
-        key.to_string()
-    } else if key.len() <= 6 {
-        "***".to_string()
-    } else {
-        format!("{}***", &key[..6])
-    }
+    if key.starts_with("env:") || key.is_empty() { return key.to_string(); }
+    if key.len() <= 4 { return "*".repeat(key.len()); }
+    format!("{}{}", &key[..4], "*".repeat(key.len() - 4))
 }
