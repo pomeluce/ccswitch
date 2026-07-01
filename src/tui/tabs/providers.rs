@@ -82,6 +82,28 @@ impl ProvidersTab {
         }
     }
 
+    fn render_shortcut_bar(&self, f: &mut Frame, area: Rect) {
+        let line = Line::from(vec![
+            Span::styled(" J/K ", Style::default().fg(Theme::CYAN)),
+            Span::styled("Nav  ", Style::default().fg(Theme::COMMENT)),
+            Span::styled(" / ", Style::default().fg(Theme::CYAN)),
+            Span::styled("Search  ", Style::default().fg(Theme::COMMENT)),
+            Span::styled(" ⏎  ", Style::default().fg(Theme::GREEN)),
+            Span::styled("Switch  ", Style::default().fg(Theme::COMMENT)),
+            Span::styled(" d ", Style::default().fg(Theme::RED)),
+            Span::styled("Delete  ", Style::default().fg(Theme::COMMENT)),
+            Span::styled(" e ", Style::default().fg(Theme::CYAN)),
+            Span::styled("Edit  ", Style::default().fg(Theme::COMMENT)),
+            Span::styled(" Q ", Style::default().fg(Theme::ORANGE)),
+            Span::styled("Quit", Style::default().fg(Theme::COMMENT)),
+        ]).centered();
+        f.render_widget(
+            Paragraph::new(line).block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
+                .border_style(Style::default().fg(Theme::DIM))),
+            area,
+        );
+    }
+
     fn render_search_box(&self, f: &mut Frame, area: Rect) {
         let cursor = if self.is_searching { "\u{258c}" } else { "" };
         let text = if self.search_query.is_empty() && !self.is_searching {
@@ -248,6 +270,9 @@ impl TabContent for ProvidersTab {
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)]).split(area);
         let left = Layout::default().direction(Direction::Vertical)
             .constraints([Constraint::Length(3), Constraint::Min(3)]).split(main[0]);
+        // Right panel: detail + shortcut bar
+        let right = Layout::default().direction(Direction::Vertical)
+            .constraints([Constraint::Min(3), Constraint::Length(3)]).split(main[1]);
         self.render_search_box(f, left[0]);
 
         let items: Vec<ListItem> = self.filtered.iter().enumerate().map(|(fi, &ai)| {
@@ -283,9 +308,12 @@ impl TabContent for ProvidersTab {
             if let Some(&ai) = self.filtered.get(idx) {
                 let (prov, prof) = &self.all_profiles[ai];
                 let active = self.active_provider == prov.id && self.active_profile == prof.id;
-                DetailPanel::render_profile_detail(f, main[1], &prov.name, prof, &prov.api_url, &prov.api_key, active, prov.source.can_delete());
+                DetailPanel::render_profile_detail(f, right[0], &prov.name, prof, &prov.api_url, &prov.api_key, active, prov.source.can_delete());
             }
-        } else { DetailPanel::render_empty(f, main[1], "No profiles available"); }
+        } else { DetailPanel::render_empty(f, right[0], "No profiles available"); }
+
+        // Shortcut bar
+        self.render_shortcut_bar(f, right[1]);
 
         if self.confirm_action.is_some() { self.render_confirm_popup(f, area); }
         if self.message.is_some() { self.render_message_popup(f, area); }
