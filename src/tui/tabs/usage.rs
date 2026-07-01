@@ -2,7 +2,7 @@ use super::super::theme::Theme;
 use super::super::widgets::shared::{render_shortcut_bar as shared_shortcuts, render_search_box as shared_search};
 use super::TabContent;
 use crate::core::config::ConfigManager;
-use crate::db::usage::UsageSummary;
+use crate::db::usage::{ScanContext, ScanEvent, UsageSummary};
 use crossterm::event::KeyCode;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -11,7 +11,18 @@ use ratatui::{
     widgets::{Block, List, ListItem, ListState, Paragraph},
     Frame,
 };
+use std::sync::mpsc;
 use std::sync::Arc;
+
+/// Background scan state, updated by poll_scan_events()
+enum ScanState {
+    Idle,
+    Scanning {
+        files_done: usize,
+        files_total: usize,
+        records: usize,
+    },
+}
 
 pub struct UsageTab {
     mgr: Arc<ConfigManager>,
@@ -22,15 +33,50 @@ pub struct UsageTab {
     pub search_query: String,
     pub is_searching: bool,
     chart_scroll: usize,
+    /// Background scan receiver + state
+    scan_rx: Option<mpsc::Receiver<ScanEvent>>,
+    scan_state: ScanState,
 }
 
 impl UsageTab {
     pub fn new(mgr: Arc<ConfigManager>) -> Self {
-        // Scan local files for usage
-        match mgr.usage_db().scan_local_usage() {
-            Ok(n) if n > 0 => tracing::info!("Imported usage from {} sessions", n),
-            _ => {}
+        let scan_state;
+        let scan_rx;
+
+        // Check if this is first launch (no usage data yet)
+        let is_first_launch = {
+            let db = mgr.usage_db();
+            let count: i64 = db.conn()
+                .query_row("SELECT COUNT(*) FROM usage_logs", [], |r| r.get(0))
+                .unwrap_or(0);
+            count == 0
+        };
+
+        // Prepare scan context on main thread (DB access only, fast) then spawn background parser
+        {
+            let (tx, rx) = mpsc::channel();
+            let ctx = match mgr.usage_db().prepare_scan_context() {
+                Ok(c) => {
+                    tracing::info!("Scan prep: {} known msg IDs, {} files in index", c.known_msg_ids.len(), c.file_index.len());
+                    c
+                }
+                Err(e) => {
+                    tracing::error!("Failed to prepare scan context: {}", e);
+                    ScanContext { known_msg_ids: Vec::new(), file_index: std::collections::HashMap::new() }
+                }
+            };
+            // Always spawn background thread — it does its own file collection
+            std::thread::spawn(move || {
+                crate::db::usage::parse_files_in_background(ctx, 10, tx);
+            });
+            scan_rx = Some(rx);
+            if is_first_launch {
+                scan_state = ScanState::Scanning { files_done: 0, files_total: 0, records: 0 };
+            } else {
+                scan_state = ScanState::Idle;
+            }
         }
+
         let summaries = mgr.usage_db().query_usage("all").unwrap_or_default();
         let mut state = ListState::default();
         if !summaries.is_empty() {
@@ -45,6 +91,8 @@ impl UsageTab {
             search_query: String::new(),
             is_searching: false,
             chart_scroll: 0,
+            scan_rx,
+            scan_state,
         }
     }
 
@@ -56,6 +104,55 @@ impl UsageTab {
     }
     fn max_tokens(&self) -> i64 {
         self.summaries.iter().map(|s| Self::token_total(s)).max().unwrap_or(1)
+    }
+
+    /// Called every event-loop tick — process at most one Batch to stay responsive.
+    /// Progress and Done events drain eagerly (they're instant, no DB writes).
+    pub fn poll_scan_events(&mut self) {
+        let mut processed_batch = false;
+        loop {
+            // Extract one event, ending the borrow on self.scan_rx before mutating self
+            let event = match &self.scan_rx {
+                Some(rx) => match rx.try_recv() {
+                    Ok(e) => e,
+                    Err(mpsc::TryRecvError::Empty) => break,
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        self.scan_state = ScanState::Idle;
+                        self.scan_rx = None;
+                        break;
+                    }
+                },
+                None => return,
+            };
+
+            // Now `event` is owned — no borrow on self
+            match event {
+                ScanEvent::Batch { .. } if processed_batch => break,
+                ScanEvent::Batch { sid, file_path, records } => {
+                    processed_batch = true;
+                    if !records.is_empty() {
+                        if let Err(e) = self.mgr.usage_db().insert_usage_batch(&sid, &file_path, &records) {
+                            tracing::error!("Failed to insert usage batch: {}", e);
+                        }
+                    }
+                }
+                ScanEvent::Progress { files_done, files_total, records } => {
+                    if matches!(self.scan_state, ScanState::Scanning { .. }) {
+                        self.scan_state = ScanState::Scanning { files_done, files_total, records };
+                    }
+                }
+                ScanEvent::Done {} => {
+                    tracing::info!("Usage scan complete");
+                    self.scan_state = ScanState::Idle;
+                    self.scan_rx = None;
+                    self.summaries = self.mgr.usage_db().query_usage(&self.range).unwrap_or_default();
+                    if !self.summaries.is_empty() && self.state.selected().is_none() {
+                        self.state.select(Some(0));
+                    }
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -78,7 +175,7 @@ impl TabContent for UsageTab {
         // Profile ranking
         self.render_profile_list(f, left[2]);
 
-        // Right: daily chart + shortcut bar (dynamic height like providers tab)
+        // Right: daily chart (or scan progress) + shortcut bar
         let sc_lines = usage_shortcut_lines(main[1].width);
         let right = Layout::default()
             .direction(Direction::Vertical)
@@ -87,7 +184,15 @@ impl TabContent for UsageTab {
                 Constraint::Length(2 + sc_lines as u16),
             ])
             .split(main[1]);
-        self.render_daily_chart(f, right[0]);
+
+        match &self.scan_state {
+            ScanState::Scanning { files_done, files_total, records } => {
+                self.render_scan_progress(f, right[0], *files_done, *files_total, *records);
+            }
+            ScanState::Idle => {
+                self.render_daily_chart(f, right[0]);
+            }
+        }
         self.render_shortcut_bar(f, right[1]);
     }
 
@@ -137,7 +242,6 @@ impl TabContent for UsageTab {
             KeyCode::Char('/') => {
                 self.is_searching = true;
             }
-            // PageUp/Down = scroll chart
             KeyCode::PageUp => {
                 self.chart_scroll = self.chart_scroll.saturating_sub(5);
             }
@@ -169,7 +273,6 @@ impl UsageTab {
     fn render_summary_cards(&self, f: &mut Frame, area: Rect) {
         let cards = Layout::default().direction(Direction::Horizontal).constraints([Constraint::Ratio(1, 4); 4]).split(area);
 
-        // Summary cards show selected profile's data
         let (today, week, all, reqs) = if let Some(s) = self.summaries.get(self.selected_index) {
             let t = Self::token_total(s);
             (t / 7, t, t * 4, s.request_count)
@@ -243,7 +346,6 @@ impl UsageTab {
             let daily = self.mgr.usage_db().query_daily_usage(&s.model).unwrap_or_default();
             let today_date = chrono::Local::now().format("%Y-%m-%d").to_string();
 
-            // Build days with actual usage data (skip zero-token days, max 7)
             let days: Vec<(String, i64, i64, i64, i64, bool)> = (0..7)
                 .filter_map(|offset| {
                     let d = chrono::Local::now() - chrono::Duration::days(offset);
@@ -308,7 +410,6 @@ impl UsageTab {
                 })
                 .collect();
 
-            // Apply scroll offset (g=top, G=bottom)
             let visible = (area.height as usize).saturating_sub(2);
             let max_scroll = lines.len().saturating_sub(visible);
             self.chart_scroll = self.chart_scroll.min(max_scroll);
@@ -321,7 +422,59 @@ impl UsageTab {
                     .border_style(Style::default().fg(Theme::DIM)),
             );
             f.render_widget(p, area);
+        } else {
+            let p = Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled("  No usage data yet", Style::default().fg(Theme::COMMENT))).centered(),
+                Line::from(""),
+                Line::from(Span::styled("  Scan starts automatically on first launch", Style::default().fg(Theme::DIM))).centered(),
+            ]).block(
+                Block::bordered()
+                    .border_set(ratatui::symbols::border::ROUNDED)
+                    .title(" Usage ")
+                    .border_style(Style::default().fg(Theme::DIM)),
+            );
+            f.render_widget(p, area);
         }
+    }
+
+    /// Render scan progress in the right panel（扫描进度视图）
+    fn render_scan_progress(&self, f: &mut Frame, area: Rect, files_done: usize, files_total: usize, records: usize) {
+        let pct = if files_total > 0 {
+            (files_done as f64 / files_total as f64 * 100.0) as usize
+        } else {
+            0
+        };
+        let bar_w = if files_total > 0 {
+            ((files_done as f64 / files_total.max(1) as f64) * 30.0) as usize
+        } else {
+            0
+        };
+        let bar_w = bar_w.min(30);
+        let filled = "\u{2588}".repeat(bar_w);
+        let empty = "\u{2591}".repeat(30usize.saturating_sub(bar_w));
+        let bar = format!("{}{}", filled, empty);
+
+        let spinner = ["\u{280b}", "\u{2819}", "\u{2839}", "\u{2833}", "\u{2827}", "\u{280f}", "\u{281f}", "\u{283f}"][files_done % 8];
+
+        let lines = vec![
+            Line::from(""),
+            Line::from(Span::styled(format!("    {}  Scanning Claude Code sessions...", spinner), Style::default().fg(Theme::CYAN))).centered(),
+            Line::from(""),
+            Line::from(Span::styled(format!("    {} {}  {} / {} files", bar, pct, files_done, files_total), Style::default().fg(Theme::PURPLE))).centered(),
+            Line::from(""),
+            Line::from(Span::styled(format!("    {} records imported", records), Style::default().fg(Theme::COMMENT))).centered(),
+            Line::from(""),
+            Line::from(Span::styled("    Data refreshes automatically when complete", Style::default().fg(Theme::DIM))).centered(),
+        ];
+
+        let p = Paragraph::new(lines).block(
+            Block::bordered()
+                .border_set(ratatui::symbols::border::ROUNDED)
+                .title(" Scanning ")
+                .border_style(Style::default().fg(Theme::PURPLE)),
+        );
+        f.render_widget(p, area);
     }
 }
 
@@ -344,12 +497,9 @@ fn title_case(s: &str) -> String {
 
 /// Pre-calculate shortcut bar lines to match shared_shortcuts actual rendering
 fn usage_shortcut_lines(available_width: u16) -> usize {
-    // Match the actual Span widths in render_shortcut_bar:
-    // key " J/K "(5) + label " Nav"(4)=9, " / "(3)+" Search"(7)=10, " T "(3)+" Toggle"(7)=10,
-    // " PgUp/Dn "(10)+" Scroll"(7)=17, " Q "(3)+" Quit"(5)=8
     let widths = [9usize, 10, 10, 17, 8];
     let sep = 2usize;
-    let w = available_width.saturating_sub(2).max(10) as usize; // account for border
+    let w = available_width.saturating_sub(2).max(10) as usize;
     let mut lines = 1usize;
     let mut cur = 0usize;
     for gw in &widths {

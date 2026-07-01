@@ -1,5 +1,6 @@
 use crate::core::models::{Profile, Provider, Source};
 use crate::db::Db;
+use anyhow::Context;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
@@ -52,9 +53,12 @@ pub struct ConfigManager {
 impl ConfigManager {
     pub fn new(db_path: &Path, defaults_path: Option<&Path>) -> Result<Self, anyhow::Error> {
         let dir = db_path.parent().unwrap_or_else(|| Path::new("."));
-        let db = Db::open(&dir.join("model.db"))?;
-        let usage_db = Db::open(&dir.join("usage.db"))?;
-        let session_db = Db::open(&dir.join("session.db"))?;
+        let db = Db::open(&dir.join("model.db"))
+            .context("Failed to open model.db")?;
+        let usage_db = Db::open(&dir.join("usage.db"))
+            .context("Failed to open usage.db")?;
+        let session_db = Db::open(&dir.join("session.db"))
+            .context("Failed to open session.db")?;
 
         let default_path = default_config_path();
         let defaults_path = defaults_path.unwrap_or_else(|| &default_path);

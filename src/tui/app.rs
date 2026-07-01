@@ -56,14 +56,20 @@ impl App {
         terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     ) -> anyhow::Result<()> {
         while !self.should_quit {
+            // Poll background scan events every tick (for smooth progress bar)
+            self.usage_tab.poll_scan_events();
+
             terminal.draw(|f| self.render(f))?;
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    // Ignore Ctrl+key combos (tabs use plain key bindings)
-                    if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
-                        continue;
+
+            // Non-blocking poll: 100ms timeout so scan progress updates without keypresses
+            if event::poll(std::time::Duration::from_millis(100))? {
+                if let Event::Key(key) = event::read()? {
+                    if key.kind == KeyEventKind::Press {
+                        if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+                            continue;
+                        }
+                        self.handle_key(key.code);
                     }
-                    self.handle_key(key.code);
                 }
             }
             // Handle terminal suspend for external process (claude)

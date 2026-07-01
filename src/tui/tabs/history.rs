@@ -32,12 +32,8 @@ pub struct HistoryTab {
 
 impl HistoryTab {
     pub fn new(mgr: Arc<ConfigManager>) -> Self {
-        match mgr.session_db().import_claude_sessions() {
-            Ok(n) if n > 0 => tracing::info!("Imported {} Claude Code sessions", n),
-            Err(e) => tracing::warn!("Failed to import sessions: {}", e),
-            _ => {}
-        }
-
+        // Session import is handled before TUI launch (in main.rs with progress bar).
+        // Just load whatever is already in the DB.
         let all = mgr.session_db().query_sessions(None, None, 200)
             .unwrap_or_default()
             .into_iter()

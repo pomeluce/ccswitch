@@ -134,18 +134,23 @@ fn ts_to_iso(ts_ms: i64) -> String {
 }
 
 impl Db {
-    /// Scan ~/.claude/projects/ recursively for Claude Code session JSONL files
-    /// and import them into session_history.
-    pub fn import_claude_sessions(&self) -> Result<usize, anyhow::Error> {
+    /// Import with progress callback. Called once per file (before filtering).
+    /// Returns total number of new sessions imported.
+    pub fn import_claude_sessions_with_progress(
+        &self,
+        on_progress: impl Fn(usize, usize, usize), // files_done, files_total, imported
+    ) -> Result<usize, anyhow::Error> {
         let projects_dir = projects_dir();
         if !projects_dir.exists() {
             return Ok(0);
         }
 
         let jsonl_files = collect_jsonl_files(&projects_dir);
+        let total = jsonl_files.len();
         let mut imported = 0usize;
+        let mut last_report = 0usize;
 
-        for path in &jsonl_files {
+        for (idx, path) in jsonl_files.iter().enumerate() {
             // Skip sub-agent sessions
             if let Some(name) = path.file_stem().and_then(|n| n.to_str()) {
                 if name.starts_with("agent-") {
@@ -155,7 +160,6 @@ impl Db {
 
             match parse_session_file(path) {
                 Ok(Some(record)) => {
-                    // Skip if already in DB (preserves deletions)
                     let exists: bool = self.conn().query_row(
                         "SELECT COUNT(*) FROM session_history WHERE id = ?1",
                         [&record.id],
@@ -165,12 +169,25 @@ impl Db {
                     self.insert_session(&record)?;
                     imported += 1;
                 }
-                Ok(None) => {} // Empty or unparseable
-                Err(_) => {}    // Skip corrupt files
+                Ok(None) => {}
+                Err(_) => {}
+            }
+
+            let files_done = idx + 1;
+            // Report every file or every 5 files for smoother progress
+            if files_done - last_report >= 5 || files_done == total {
+                on_progress(files_done, total, imported);
+                last_report = files_done;
             }
         }
 
         Ok(imported)
+    }
+
+    /// Scan ~/.claude/projects/ recursively for Claude Code session JSONL files
+    /// and import them into session_history (no progress callback).
+    pub fn import_claude_sessions(&self) -> Result<usize, anyhow::Error> {
+        self.import_claude_sessions_with_progress(|_, _, _| {})
     }
 }
 
