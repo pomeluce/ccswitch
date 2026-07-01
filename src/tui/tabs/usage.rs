@@ -178,7 +178,6 @@ impl UsageTab {
     fn render_daily_chart(&self, f: &mut Frame, area: Rect) {
         if let Some(s) = self.summaries.get(self.selected_index) {
             let label = title_case(&s.model);
-            let total = Self::token_total(s);
             let daily = self.mgr.usage_db().query_daily_usage(&s.model).unwrap_or_default();
             let today_date = chrono::Local::now().format("%Y-%m-%d").to_string();
 
@@ -229,22 +228,8 @@ impl UsageTab {
                     ]),
                 ];
                 day_lines.extend(detail_lines);
-                day_lines.push(Line::from(""));
                 day_lines
             }).collect();
-            // Summary line at bottom of chart
-            lines.push(Line::from(""));
-            lines.push(Line::from(vec![
-                Span::styled("  ", Style::default()),
-                Span::styled("Today ", Style::default().fg(Theme::COMMENT)),
-                Span::styled(format_tokens(total / 7), Style::default().fg(Theme::GREEN)),
-                Span::styled("   Week ", Style::default().fg(Theme::COMMENT)),
-                Span::styled(format_tokens(total), Style::default().fg(Theme::CYAN)),
-                Span::styled("   Total ", Style::default().fg(Theme::COMMENT)),
-                Span::styled(format_tokens(total * 4), Style::default().fg(Theme::PURPLE)),
-                Span::styled("   Reqs ", Style::default().fg(Theme::COMMENT)),
-                Span::styled(format!("{}", s.request_count), Style::default().fg(Theme::YELLOW)),
-            ]));
 
             let p = Paragraph::new(lines)
                 .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
