@@ -126,21 +126,22 @@ impl HistoryTab {
 
 impl TabContent for HistoryTab {
     fn render(&mut self, f: &mut Frame, area: Rect) {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(3), Constraint::Length(3)])
-            .split(area);
-
         let main = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
-            .split(chunks[0]);
+            .split(area);
 
         // Left panel: search box + session list
         let left_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(3), Constraint::Min(0)])
             .split(main[0]);
+
+        // Right panel: detail preview + shortcut bar
+        let right_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(3), Constraint::Length(3)])
+            .split(main[1]);
 
         // Search box
         self.render_search_box(f, left_chunks[0]);
@@ -205,7 +206,7 @@ impl TabContent for HistoryTab {
 
         f.render_stateful_widget(list, left_chunks[1], &mut self.state);
 
-        // Right: detail for selected session (always render bordered block)
+        // Right: detail preview + shortcut bar
         if let Some(idx) = self.state.selected() {
             if let Some(s) = self.sessions.get(idx) {
                 let pad = "  ";
@@ -255,16 +256,16 @@ impl TabContent for HistoryTab {
                             .border_style(Style::default().fg(Theme::DIM)),
                     )
                     .style(Style::default());
-                f.render_widget(p, main[1]);
+                f.render_widget(p, right_chunks[0]);
             } else {
-                render_empty_detail(f, main[1], "No session selected");
+                render_empty_detail(f, right_chunks[0], "No session selected");
             }
         } else {
-            render_empty_detail(f, main[1], "No sessions available");
+            render_empty_detail(f, right_chunks[0], "No sessions available");
         }
 
-        // Bottom shortcut bar
-        self.render_shortcut_bar(f, chunks[1]);
+        // Shortcut bar under detail preview
+        self.render_shortcut_bar(f, right_chunks[1]);
 
         // Confirmation popup
         if self.confirm_action.is_some() {
