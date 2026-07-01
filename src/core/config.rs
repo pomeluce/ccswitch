@@ -4,13 +4,13 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
 fn default_config_path() -> PathBuf {
-    // Priority: /etc/ccswitch (NixOS) > ~/.config/ccswitch (XDG) > ~/.ccswitch (legacy)
-    let etc = PathBuf::from("/etc/ccswitch/defaults.toml");
-    if etc.exists() { return etc; }
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    // Priority: ~/.config/ccswitch (XDG/hm) > ~/.ccswitch (legacy) > /etc (system fallback)
     let xdg = PathBuf::from(&home).join(".config/ccswitch/defaults.toml");
     if xdg.exists() { return xdg; }
-    PathBuf::from(&home).join(".ccswitch").join("defaults.toml")
+    let legacy = PathBuf::from(&home).join(".ccswitch/defaults.toml");
+    if legacy.exists() { return legacy; }
+    PathBuf::from("/etc/ccswitch/defaults.toml")
 }
 
 #[derive(Debug, Deserialize)]
