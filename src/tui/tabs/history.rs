@@ -4,13 +4,14 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::{Block, List, ListItem, ListState, Paragraph},
+    widgets::{Block, List, ListItem, ListState},
     Frame,
 };
 use crossterm::event::KeyCode;
 use crate::core::config::ConfigManager;
 use crate::db::sessions::SessionRecord;
 use super::super::theme::Theme;
+use super::super::widgets::session_detail::{render_session_detail, render_empty_detail};
 use super::super::widgets::shared::{render_search_box as shared_search, render_shortcut_bar as shared_shortcuts, render_confirm_popup as shared_confirm, shortcut_lines, truncate, relative_time, format_size};
 use super::TabContent;
 
@@ -214,70 +215,7 @@ impl TabContent for HistoryTab {
         // Right: detail preview + shortcut bar
         if let Some(idx) = self.state.selected() {
             if let Some(s) = self.sessions.get(idx) {
-                let pad = "  ";
-                let home = std::env::var("HOME").unwrap_or_default();
-                let path_short = s.project_path.replace(&home, "~");
-                let label = format!("{}Project:  ", pad);
-                let path_start_len = (right_chunks[0].width as usize).saturating_sub(14);
-                let (first_part, rest_lines) = split_path(&path_short, path_start_len);
-
-                let mut lines = vec![
-                    Line::from(vec![
-                        Span::styled(pad, Style::default()),
-                        Span::styled(
-                            s.title.as_deref().unwrap_or(&s.id),
-                            Style::default().fg(Theme::CYAN),
-                        ),
-                    ]),
-                    Line::from(""),
-                    Line::from(vec![
-                        Span::styled(label, Style::default().fg(Theme::PURPLE)),
-                        Span::styled(&first_part, Style::default().fg(Theme::YELLOW)),
-                    ]),
-                ];
-                // Continuation lines for long paths
-                let cont_indent = format!("{}           ", pad);
-                for rest in rest_lines {
-                    lines.push(Line::from(Span::styled(
-                        format!("{}{}", cont_indent, rest),
-                        Style::default().fg(Theme::YELLOW),
-                    )));
-                }
-                lines.extend(vec![
-                    Line::from(vec![
-                        Span::styled(format!("{}Profile:  ", pad), Style::default().fg(Theme::PURPLE)),
-                        Span::styled(s.profile_id.as_deref().unwrap_or("-"), Style::default().fg(Theme::FG)),
-                    ]),
-                    Line::from(vec![
-                        Span::styled(format!("{}Mode:     ", pad), Style::default().fg(Theme::PURPLE)),
-                        Span::styled(&s.mode, Style::default().fg(Theme::GREEN)),
-                    ]),
-                    Line::from(vec![
-                        Span::styled(format!("{}Tokens:   ", pad), Style::default().fg(Theme::PURPLE)),
-                        Span::styled(format!("{} prompt / {} completion", s.prompt_tokens, s.completion_tokens), Style::default().fg(Theme::FG)),
-                    ]),
-                    Line::from(vec![
-                        Span::styled(format!("{}Started:  ", pad), Style::default().fg(Theme::PURPLE)),
-                        Span::styled(&s.start_time, Style::default().fg(Theme::DIM)),
-                    ]),
-                    Line::from(vec![
-                        Span::styled(format!("{}Messages: ", pad), Style::default().fg(Theme::PURPLE)),
-                        Span::styled(format!("{}", s.message_count), Style::default().fg(Theme::FG)),
-                    ]),
-                    Line::from(vec![
-                        Span::styled(format!("{}Size:     ", pad), Style::default().fg(Theme::PURPLE)),
-                        Span::styled(format_size(s.size_bytes), Style::default().fg(Theme::FG)),
-                    ]),
-                ]);
-
-                let p = Paragraph::new(lines)
-                    .block(
-                        Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                            .title("Session Detail")
-                            .border_style(Style::default().fg(Theme::DIM)),
-                    )
-                    .style(Style::default());
-                f.render_widget(p, right_chunks[0]);
+                render_session_detail(f, right_chunks[0], s);
             } else {
                 render_empty_detail(f, right_chunks[0], "No session selected");
             }
@@ -410,36 +348,3 @@ impl HistoryTab {
 }
 
 
-
-/// How many content lines the shortcut bar needs at this width
-
-
-/// Split path: first `max_width` chars on first line, remainder on continuation lines
-fn split_path(path: &str, max_width: usize) -> (String, Vec<String>) {
-    let max = max_width.max(10);
-    if path.len() <= max { return (path.to_string(), vec![]); }
-    let first: String = path.chars().take(max).collect();
-    let remainder: String = path.chars().skip(max).collect();
-    let cont_width = max.max(10);
-    let rest = remainder.chars().collect::<Vec<_>>()
-        .chunks(cont_width)
-        .map(|c| c.iter().collect::<String>())
-        .collect();
-    (first, rest)
-}
-
-
-fn render_empty_detail(f: &mut Frame, area: Rect, hint: &str) {
-    use ratatui::{style::Style, text::Line, widgets::Block};
-    let p = Paragraph::new(Line::from(Span::styled(
-        hint,
-        Style::default().fg(Theme::COMMENT),
-    )))
-    .block(
-        Block::bordered()
-            .border_set(ratatui::symbols::border::ROUNDED)
-            .title("Session Detail")
-            .border_style(Style::default().fg(Theme::DIM)),
-    );
-    f.render_widget(p, area);
-}

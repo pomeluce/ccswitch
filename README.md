@@ -175,7 +175,16 @@ ccs man                          # 输出 roff 格式 man page
 
 - `~/.config/ccswitch/defaults.toml` — XDG 标准（Home Manager 生成）
 - `/etc/ccswitch/defaults.toml` — 系统全局默认（NixOS 生成）
-- 数据库 `~/.config/ccswitch/ccswitch.db` — 用户配置 + 用量数据
+- `~/.config/ccswitch/model.db` — 用户模型配置
+- `~/.config/ccswitch/usage.db` — Token 用量统计（含增量索引）
+- `~/.config/ccswitch/session.db` — 会话历史记录
+- `~/.config/ccswitch/ccs.log` — TUI 运行日志
+
+### 首次启动
+
+首次启动 `ccs` 时会先显示终端进度条导入 Claude Code 历史会话数据（从 `~/.claude/projects/` 扫描 JSONL 文件）。导入完成后自动进入 TUI。后续启动跳过导入直接进入。
+
+用量数据在进入 TUI 后通过后台异步扫描，首次扫描后在用量标签页右侧面板显示进度条。后续启动使用文件修改时间增量扫描，仅扫描有变更的文件。
 
 ### defaults.toml
 
@@ -253,10 +262,14 @@ subagent = "anthropic/claude-haiku-4"
 
 ### 用量标签页
 
-| 键          | 功能                     |
-| ----------- | ------------------------ |
-| `j/k` `↑/↓` | 上下导航                 |
-| `t`         | 切换时间范围（天/周/月） |
+| 键            | 功能                                               |
+| ------------- | -------------------------------------------------- |
+| `j/k` `↑/↓`   | 导航模型列表                                       |
+| `t`           | 切换时间范围（天/周/全部）                         |
+| `/`           | 搜索模型                                           |
+| `PgUp`/`PgDn` | 滚动右侧日用量图表                                 |
+
+左侧显示选中模型的今日/本周/总计/请求数统计卡片及模型排名。右侧显示选中模型的近 7 天用量柱状图。首次启动时用量数据在后台异步扫描，右侧面板显示扫描进度条。
 
 ## 模式
 

@@ -36,12 +36,15 @@ pub struct UsageTab {
     /// Background scan receiver + state
     scan_rx: Option<mpsc::Receiver<ScanEvent>>,
     scan_state: ScanState,
+    /// Handle for graceful shutdown of the background scan thread
+    scan_handle: Option<std::thread::JoinHandle<()>>,
 }
 
 impl UsageTab {
     pub fn new(mgr: Arc<ConfigManager>) -> Self {
         let scan_state;
         let scan_rx;
+        let scan_handle;
 
         // Check if this is first launch (no usage data yet)
         let is_first_launch = {
@@ -66,10 +69,11 @@ impl UsageTab {
                 }
             };
             // Always spawn background thread — it does its own file collection
-            std::thread::spawn(move || {
+            let handle = std::thread::spawn(move || {
                 crate::db::usage::parse_files_in_background(ctx, 10, tx);
             });
             scan_rx = Some(rx);
+            scan_handle = Some(handle);
             if is_first_launch {
                 scan_state = ScanState::Scanning { files_done: 0, files_total: 0, records: 0 };
             } else {
@@ -93,6 +97,17 @@ impl UsageTab {
             chart_scroll: 0,
             scan_rx,
             scan_state,
+            scan_handle,
+        }
+    }
+
+    /// Gracefully wait for background scan thread to finish.
+    pub fn shutdown(&mut self) {
+        if let Some(handle) = self.scan_handle.take() {
+            // Drop the sender side (scan_rx) so the background thread's
+            // channel send will fail, causing it to exit quickly.
+            self.scan_rx = None;
+            let _ = handle.join();
         }
     }
 
@@ -273,9 +288,19 @@ impl UsageTab {
     fn render_summary_cards(&self, f: &mut Frame, area: Rect) {
         let cards = Layout::default().direction(Direction::Horizontal).constraints([Constraint::Ratio(1, 4); 4]).split(area);
 
-        let (today, week, all, reqs) = if let Some(s) = self.summaries.get(self.selected_index) {
-            let t = Self::token_total(s);
-            (t / 7, t, t * 4, s.request_count)
+        let (today, week, total, reqs) = if let Some(s) = self.summaries.get(self.selected_index) {
+            // Query actual daily breakdown for today/week calculation
+            let daily = self.mgr.usage_db().query_daily_usage(&s.model).unwrap_or_default();
+            let today_date = chrono::Local::now().format("%Y-%m-%d").to_string();
+            let today_tokens = daily.iter()
+                .find(|(dt, _, _, _, _)| dt == &today_date)
+                .map(|(_, i, o, cr, cc)| i + o + cr + cc)
+                .unwrap_or(0);
+            let week_tokens = daily.iter()
+                .map(|(_, i, o, cr, cc)| i + o + cr + cc)
+                .sum::<i64>();
+            let total_tokens = Self::token_total(s);
+            (today_tokens, week_tokens, total_tokens, s.request_count)
         } else {
             (0, 0, 0, 0)
         };
@@ -283,7 +308,7 @@ impl UsageTab {
         let card_data = [
             ("Today", &format_tokens(today), Theme::GREEN),
             ("Week", &format_tokens(week), Theme::CYAN),
-            ("Total", &format_tokens(all), Theme::PURPLE),
+            ("Total", &format_tokens(total), Theme::PURPLE),
             ("Reqs", &format!("{}", reqs), Theme::YELLOW),
         ];
 

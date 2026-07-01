@@ -11,7 +11,7 @@ use crate::core::models::Provider;
 use super::super::widgets::detail_panel::DetailPanel;
 use super::TabContent;
 use super::super::theme::Theme;
-use super::super::widgets::shared::{render_shortcut_bar as shared_shortcuts, render_confirm_popup as shared_confirm, render_message_popup as shared_msg};
+use super::super::widgets::shared::{render_shortcut_bar as shared_shortcuts, render_confirm_popup as shared_confirm, render_message_popup as shared_msg, centered_rect};
 
 use std::sync::Arc;
 
@@ -47,7 +47,7 @@ const EDIT_LABELS: [&str; 5] = ["Profile Name", "Opus model", "Sonnet model", "H
 impl ProvidersTab {
     pub fn new(mgr: Arc<ConfigManager>) -> Self {
         // Sync active state from settings.json's last_switch.source
-        sync_active_from_settings(&mgr);
+        crate::core::sync::sync_active_from_settings(&mgr);
 
         let providers = mgr.list_providers().unwrap_or_default();
         let mut all_profiles = Vec::new();
@@ -142,7 +142,9 @@ impl ProvidersTab {
             subagent: form.fields[4].clone(),
             default: false, source: crate::core::models::Source::User,
         };
-        self.mgr.db().insert_user_profile(&form.prov_id, &pr).ok();
+        if let Err(e) = self.mgr.db().insert_user_profile(&form.prov_id, &pr) {
+            tracing::error!("Failed to insert user profile: {}", e);
+        }
         if let Some((_, p)) = self.all_profiles.iter_mut().find(|(prov, prof)| prov.id == form.prov_id && prof.id == form.prof_id) {
             p.name = pr.name; p.opus = pr.opus; p.sonnet = pr.sonnet; p.haiku = pr.haiku; p.subagent = pr.subagent;
         }
@@ -212,8 +214,12 @@ impl ProvidersTab {
         }
         self.active_provider = prov_id;
         self.active_profile = prof_id;
-        self.mgr.db().set_setting("active_provider", &self.active_provider).ok();
-        self.mgr.db().set_setting("active_profile", &self.active_profile).ok();
+        if let Err(e) = self.mgr.db().set_setting("active_provider", &self.active_provider) {
+            tracing::error!("Failed to save active_provider: {}", e);
+        }
+        if let Err(e) = self.mgr.db().set_setting("active_profile", &self.active_profile) {
+            tracing::error!("Failed to save active_profile: {}", e);
+        }
     }
 
     fn do_delete(&mut self) {
@@ -222,7 +228,9 @@ impl ProvidersTab {
             if !prov.source.can_delete() { return; }
             prof.id.clone()
         };
-        self.mgr.db().delete_user_profile(&prof_id).ok();
+        if let Err(e) = self.mgr.db().delete_user_profile(&prof_id) {
+            tracing::error!("Failed to delete user profile: {}", e);
+        }
         self.all_profiles.retain(|(_, p)| p.id != prof_id);
         self.refresh_filter();
     }
@@ -414,26 +422,5 @@ fn provider_shortcut_lines(available_width: u16) -> usize {
         cur += gw;
     }
     lines
-}
-
-fn centered_rect(w: u16, h: u16, r: Rect) -> Rect {
-    Rect { x: r.x + (r.width.saturating_sub(w)) / 2, y: r.y + (r.height.saturating_sub(h)) / 2, width: w.min(r.width), height: h.min(r.height) }
-}
-
-/// Sync active provider/profile from settings.json's last_switch.source
-fn sync_active_from_settings(mgr: &ConfigManager) {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    let settings_path = std::path::PathBuf::from(&home).join(".claude/settings.json");
-    if !settings_path.exists() { return; }
-    let content = match std::fs::read_to_string(&settings_path) { Ok(c) => c, Err(_) => return };
-    let parsed: serde_json::Value = match serde_json::from_str(&content) { Ok(v) => v, Err(_) => return };
-    let source = parsed.get("last_switch").and_then(|v| v.get("source")).and_then(|v| v.as_str()).unwrap_or("");
-    if let Some((pid, pfid)) = source.split_once('/') {
-        let providers = mgr.list_providers().unwrap_or_default();
-        if providers.iter().any(|p| p.id == pid && p.profiles.iter().any(|pr| pr.id == pfid)) {
-            mgr.db().set_setting("active_provider", pid).ok();
-            mgr.db().set_setting("active_profile", pfid).ok();
-        }
-    }
 }
 

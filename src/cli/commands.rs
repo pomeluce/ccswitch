@@ -16,11 +16,14 @@ fn get_defaults_path() -> Option<PathBuf> {
 }
 
 pub fn run_cli(args: CliArgs) -> Result<()> {
-    let command = args.command.unwrap_or_else(|| {
-        // No args → launch TUI
-        crate::tui::run_tui().expect("TUI failed");
-        std::process::exit(0);
-    });
+    let command = match args.command {
+        Some(cmd) => cmd,
+        None => {
+            // No subcommand — TUI is launched from main.rs, this branch is unreachable
+            eprintln!("Usage: ccs <command>. Run 'ccs' without arguments to launch TUI.");
+            std::process::exit(0);
+        }
+    };
 
     // Handle completions and man page generation before opening the database —
     // these are pure CLI introspection commands that don't need a DB connection.
@@ -256,7 +259,7 @@ fn handle_history(mgr: &ConfigManager, project: Option<&str>, search: Option<&st
         Err(e) => eprintln!("Warning: failed to import sessions: {}", e),
         _ => {}
     }
-    let sessions = mgr.db().query_sessions(project, search, 200)?;
+    let sessions = mgr.session_db().query_sessions(project, search, 200)?;
     println!("Session History");
     println!("{:<6} {:<40} {:<12} {:>8} {:>6} Profile", "Date", "Title", "Project", "Tokens", "Msgs");
     println!("{}", "-".repeat(100));

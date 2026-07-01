@@ -48,6 +48,8 @@ impl App {
         let mut terminal = ratatui::init();
         let result = self.event_loop(&mut terminal);
         ratatui::restore();
+        // Gracefully wait for background threads
+        self.usage_tab.shutdown();
         result
     }
 
