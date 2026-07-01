@@ -164,7 +164,6 @@ impl UsageTab {
                     Span::styled(bar_text, Style::default().fg(Theme::CYAN)),
                 ]),
                 Line::from(""),
-                Line::from(""),
             ])
         }).collect();
 
