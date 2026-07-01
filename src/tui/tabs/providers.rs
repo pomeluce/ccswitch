@@ -35,12 +35,14 @@ pub struct ProvidersTab {
 
 struct EditForm {
     fields: [String; 5],   // name, opus, sonnet, haiku, subagent
+    cursors: [usize; 5],   // cursor position in each field
     focused: usize,        // 0..4
     prov_id: String,
     prof_id: String,
+    blink: bool,           // cursor visibility toggle
 }
 
-const EDIT_LABELS: [&str; 5] = ["Name", "Opus model", "Sonnet model", "Haiku model", "SubAgent model"];
+const EDIT_LABELS: [&str; 5] = ["Profile Name", "Opus model", "Sonnet model", "Haiku model", "SubAgent model"];
 
 impl ProvidersTab {
     pub fn new(mgr: Arc<ConfigManager>) -> Self {
@@ -103,9 +105,12 @@ impl ProvidersTab {
 
     fn do_edit(&mut self) {
         let Some((prov, prof)) = self.selected_profile() else { return };
+        let fields = [prof.name.clone(), prof.opus.clone(), prof.sonnet.clone(), prof.haiku.clone(), prof.subagent.clone()];
+        let cursors = [
+            fields[0].len(), fields[1].len(), fields[2].len(), fields[3].len(), fields[4].len(),
+        ];
         self.edit_form = Some(EditForm {
-            fields: [prof.name.clone(), prof.opus.clone(), prof.sonnet.clone(), prof.haiku.clone(), prof.subagent.clone()],
-            focused: 0,
+            fields, cursors, focused: 0, blink: true,
             prov_id: prov.id.clone(),
             prof_id: prof.id.clone(),
         });
@@ -129,7 +134,10 @@ impl ProvidersTab {
         self.refresh_filter();
     }
 
-    fn render_edit_form(&self, f: &mut Frame, area: Rect) {
+    fn render_edit_form(&mut self, f: &mut Frame, area: Rect) {
+        if let Some(ref mut form) = self.edit_form {
+            form.blink = !form.blink; // toggle blink per frame
+        }
         let Some(ref form) = self.edit_form else { return };
         let popup = centered_rect(60, 20, area);
         let inner_w = popup.width.saturating_sub(2) as usize; // minus borders
@@ -139,11 +147,16 @@ impl ProvidersTab {
         lines.push(Line::from("")); lines.push(Line::from("")); lines.push(Line::from(""));
         for (i, label) in EDIT_LABELS.iter().enumerate() {
             let val = &form.fields[i];
-            let cursor = if i == form.focused { " ▌" } else { "" };
+            let pos = form.cursors[i].min(val.len());
+            let (left, right) = val.split_at(pos);
+            let blink_char = if form.blink && i == form.focused { "▌" } else { "" };
             let style = if i == form.focused { Style::default().fg(Theme::CYAN) } else { Style::default().fg(Theme::FG) };
-            lines.push(Line::from(Span::styled(
-                format!("{}{:<15}: {}{}", pad, label, val, cursor), style,
-            )));
+            lines.push(Line::from(vec![
+                Span::styled(format!("{}{:<15}: ", pad, label), Style::default().fg(Theme::FG)),
+                Span::styled(left.to_string(), style),
+                Span::styled(blink_char, style),
+                Span::styled(right.to_string(), style),
+            ]));
             lines.push(Line::from(""));
         }
         // Padding before hints
@@ -278,21 +291,26 @@ impl TabContent for ProvidersTab {
 
     fn handle_key(&mut self, code: KeyCode) -> bool {
         // Edit form mode
-        if self.edit_form.is_some() {
+        if let Some(ref mut f) = self.edit_form {
+            let field = &mut f.fields[f.focused];
+            let cur = &mut f.cursors[f.focused];
             match code {
                 KeyCode::Esc => { self.edit_form = None; }
                 KeyCode::Enter => { self.commit_edit(); }
-                KeyCode::Tab => {
-                    if let Some(ref mut f) = self.edit_form { f.focused = (f.focused + 1) % 5; }
+                KeyCode::Tab => { f.focused = (f.focused + 1) % 5; }
+                KeyCode::BackTab => { f.focused = if f.focused == 0 { 4 } else { f.focused - 1 }; }
+                KeyCode::Left => { *cur = cur.saturating_sub(1); }
+                KeyCode::Right => { *cur = (*cur + 1).min(field.len()); }
+                KeyCode::Home => { *cur = 0; }
+                KeyCode::End => { *cur = field.len(); }
+                KeyCode::Backspace => {
+                    if *cur > 0 { *cur -= 1; field.remove(*cur); }
                 }
-                KeyCode::BackTab => {
-                    if let Some(ref mut f) = self.edit_form { f.focused = if f.focused == 0 { 4 } else { f.focused - 1 }; }
-                }
-                KeyCode::Backspace | KeyCode::Delete => {
-                    if let Some(ref mut f) = self.edit_form { f.fields[f.focused].pop(); }
+                KeyCode::Delete => {
+                    if *cur < field.len() { field.remove(*cur); }
                 }
                 KeyCode::Char(c) => {
-                    if let Some(ref mut f) = self.edit_form { f.fields[f.focused].push(c); }
+                    field.insert(*cur, c); *cur += 1;
                 }
                 _ => {}
             }
