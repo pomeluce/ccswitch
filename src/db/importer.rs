@@ -175,7 +175,7 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
     let mut ai_title: Option<String> = None;
     let mut last_prompt: Option<String> = None;
 
-    // Parse head + tail lines only (fast path for large files)
+    // Parse head + tail for metadata, all lines for titles
     for line in lines.iter().take(head_count).chain(lines.iter().rev().take(tail_count)) {
         let parsed: JsonlLine = match serde_json::from_str(line) {
             Ok(l) => l,
@@ -191,6 +191,11 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
         if let Some(ref ts) = parsed.timestamp {
             if created_at.is_none() { created_at = parse_timestamp(ts); }
         }
+    }
+
+    // Scan ALL lines for titles (they can appear anywhere in the file)
+    for line in lines.iter() {
+        let parsed: JsonlLine = match serde_json::from_str(line) { Ok(l) => l, Err(_) => continue };
         if let Some(ref ct) = parsed.custom_title {
             if !ct.is_empty() { custom_title = Some(ct.clone()); }
         }
