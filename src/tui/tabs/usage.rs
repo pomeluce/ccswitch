@@ -142,15 +142,18 @@ impl UsageTab {
 
     fn render_profile_list(&mut self, f: &mut Frame, area: Rect) {
         let max = self.max_tokens();
-        let items: Vec<ListItem> = self.summaries.iter().enumerate().map(|(i, s)| {
+        let items: Vec<ListItem> = self.summaries.iter()
+            .filter(|s| Self::token_total(s) > 0)
+            .enumerate().map(|(i, s)| {
             let total = Self::token_total(s);
             let pct = if max > 0 { (total as f64 / max as f64 * 100.0) as usize } else { 0 };
-            let bar = "\u{2588}".repeat((pct / 4).min(20));
+            let bar_len = if total > 0 { (pct / 4).max(1).min(20) } else { 0 };
+            let bar = "\u{2588}".repeat(bar_len);
             let label = s.model.clone();
             let is_sel = i == self.selected_index;
             let arrow = if is_sel { "\u{276f} " } else { "  " };
             let tc = if is_sel { Theme::CYAN } else { Theme::FG };
-            let bar_text = if pct > 0 { format!("{} {}%", bar, pct) } else { String::new() };
+            let bar_text = if total > 0 { format!("{} {}%", bar, pct) } else { String::new() };
             ListItem::new(vec![
                 Line::from(vec![
                     Span::styled(format!("{}{}", arrow, label), Style::default().fg(tc)),
@@ -160,6 +163,8 @@ impl UsageTab {
                     Span::styled("  ", Style::default()),
                     Span::styled(bar_text, Style::default().fg(Theme::CYAN)),
                 ]),
+                Line::from(""),
+                Line::from(""),
             ])
         }).collect();
 
@@ -197,7 +202,7 @@ impl UsageTab {
                 let bar = "\u{2588}".repeat(w.min(35));
                 let color = if *is_today { Theme::CYAN } else { Theme::PURPLE };
                 let breakdown_str = if total > 0 {
-                    format!("in {}  out {}  cache-read {}  cache-create {}",
+                    format!("input {}  output {}  cache read {}  cache create {}",
                         format_tokens(*in_tok), format_tokens(*out_tok),
                         format_tokens(*cr_tok), format_tokens(*cc_tok))
                 } else { String::new() };
