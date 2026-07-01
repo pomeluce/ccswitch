@@ -140,15 +140,15 @@ impl ProvidersTab {
             lines.push(Line::from(Span::styled(format!(" {}: {}{}", label, val, cursor), style)));
             lines.push(Line::from(""));
         }
-        // Hints
+        // Hints (colored text, no background)
         lines.push(Line::from(vec![
-            Span::styled(" Enter ", Style::default().fg(Color::Black).bg(Theme::GREEN)),
+            Span::styled(" Enter ", Style::default().fg(Theme::GREEN)),
             Span::styled(" Save  ", Style::default().fg(Theme::COMMENT)),
-            Span::styled(" Esc ", Style::default().fg(Color::Black).bg(Theme::DIM)),
+            Span::styled(" Esc ", Style::default().fg(Theme::DIM)),
             Span::styled(" Cancel  ", Style::default().fg(Theme::COMMENT)),
-            Span::styled(" Tab ", Style::default().fg(Color::Black).bg(Theme::CYAN)),
+            Span::styled(" Tab ", Style::default().fg(Theme::CYAN)),
             Span::styled(" Next field", Style::default().fg(Theme::COMMENT)),
-        ]));
+        ]).centered());
 
         let p = Paragraph::new(lines)
             .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
