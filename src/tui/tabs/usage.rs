@@ -148,7 +148,7 @@ impl UsageTab {
             let total = Self::token_total(s);
             let pct = if max > 0 { (total as f64 / max as f64 * 100.0) as usize } else { 0 };
             let bar_len = if total > 0 { (pct / 4).max(1).min(20) } else { 0 };
-            let bar = "\u{2588}".repeat(bar_len);
+            let bar = "\u{258c}".repeat(bar_len);
             let label = s.model.clone();
             let is_sel = i == self.selected_index;
             let arrow = if is_sel { "\u{276f} " } else { "  " };
@@ -198,7 +198,7 @@ impl UsageTab {
             let mut lines: Vec<Line> = days.iter().flat_map(|(date, in_tok, out_tok, cr_tok, cc_tok, is_today)| {
                 let total = in_tok + out_tok + cr_tok + cc_tok;
                 let w = if max_val > 0 { (total as f64 / max_val as f64 * 30.0) as usize } else { 0 };
-                let bar = "\u{2588}".repeat(w.min(35));
+                let bar = "\u{258c}".repeat(w.min(35));
                 let color = if *is_today { Theme::CYAN } else { Theme::PURPLE };
                 let breakdown_str = if total > 0 {
                     format!("input {}  output {}  cache read {}  cache create {}",
