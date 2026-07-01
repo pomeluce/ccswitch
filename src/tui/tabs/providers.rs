@@ -15,7 +15,7 @@ use super::super::theme::Theme;
 use std::sync::Arc;
 
 #[derive(Clone, Copy, PartialEq)]
-pub enum ProviderAction { Switch, Delete, Edit }
+pub enum ProviderAction { Switch, Delete }
 
 pub struct ProvidersTab {
     mgr: Arc<ConfigManager>,
@@ -29,8 +29,18 @@ pub struct ProvidersTab {
     pub confirm_action: Option<ProviderAction>,
     confirm_button: usize,
     pub message: Option<String>,
-    pub needs_reinit: bool,
+    /// Edit form state
+    edit_form: Option<EditForm>,
 }
+
+struct EditForm {
+    fields: [String; 5],   // name, opus, sonnet, haiku, subagent
+    focused: usize,        // 0..4
+    prov_id: String,
+    prof_id: String,
+}
+
+const EDIT_LABELS: [&str; 5] = ["Name", "Opus model", "Sonnet model", "Haiku model", "SubAgent model"];
 
 impl ProvidersTab {
     pub fn new(mgr: Arc<ConfigManager>) -> Self {
@@ -52,7 +62,7 @@ impl ProvidersTab {
             search_query: String::new(), is_searching: false,
             active_provider, active_profile,
             confirm_action: None, confirm_button: 0,
-            message: None, needs_reinit: false,
+            message: None, edit_form: None,
         }
     }
 
@@ -92,29 +102,60 @@ impl ProvidersTab {
     }
 
     fn do_edit(&mut self) {
-        let (prov_id, prof_id, prof_name, opus, sonnet, haiku, subagent) = {
-            let Some((prov, prof)) = self.selected_profile() else { return };
-            (prov.id.clone(), prof.id.clone(), prof.name.clone(),
-             prof.opus.clone(), prof.sonnet.clone(), prof.haiku.clone(), prof.subagent.clone())
+        let Some((prov, prof)) = self.selected_profile() else { return };
+        self.edit_form = Some(EditForm {
+            fields: [prof.name.clone(), prof.opus.clone(), prof.sonnet.clone(), prof.haiku.clone(), prof.subagent.clone()],
+            focused: 0,
+            prov_id: prov.id.clone(),
+            prof_id: prof.id.clone(),
+        });
+    }
+
+    fn commit_edit(&mut self) {
+        let Some(form) = self.edit_form.take() else { return };
+        let pr = crate::core::models::Profile {
+            id: form.prof_id.clone(),
+            name: form.fields[0].clone(),
+            opus: form.fields[1].clone(),
+            sonnet: form.fields[2].clone(),
+            haiku: form.fields[3].clone(),
+            subagent: form.fields[4].clone(),
+            default: false, source: crate::core::models::Source::User,
         };
-        self.needs_reinit = true;
-        ratatui::restore();
-        // Signal-safe: catch SIGINT via dialoguer's error handling
-        let mut edited = false;
-        if let Ok(mut profile) = edit_profile_interactive(&prof_name, &opus, &sonnet, &haiku, &subagent) {
-            profile.id = prof_id;
-            self.mgr.db().insert_user_profile(&prov_id, &profile).ok();
-            if let Some((_, p)) = self.all_profiles.iter_mut().find(|(prov, prof)| prov.id == prov_id && prof.id == profile.id) {
-                p.name = profile.name.clone();
-                p.opus = profile.opus; p.sonnet = profile.sonnet;
-                p.haiku = profile.haiku; p.subagent = profile.subagent;
-            }
-            edited = true;
-            self.refresh_filter();
+        self.mgr.db().insert_user_profile(&form.prov_id, &pr).ok();
+        if let Some((_, p)) = self.all_profiles.iter_mut().find(|(prov, prof)| prov.id == form.prov_id && prof.id == form.prof_id) {
+            p.name = pr.name; p.opus = pr.opus; p.sonnet = pr.sonnet; p.haiku = pr.haiku; p.subagent = pr.subagent;
         }
-        if !edited {
-            // Ctrl+C or error — just restore and continue
+        self.refresh_filter();
+    }
+
+    fn render_edit_form(&self, f: &mut Frame, area: Rect) {
+        let Some(ref form) = self.edit_form else { return };
+        let popup = centered_rect(50, 14, area);
+        let mut lines: Vec<Line> = Vec::new();
+        for (i, label) in EDIT_LABELS.iter().enumerate() {
+            let val = &form.fields[i];
+            let cursor = if i == form.focused { " ▌" } else { "" };
+            let style = if i == form.focused { Style::default().fg(Theme::CYAN) } else { Style::default().fg(Theme::FG) };
+            lines.push(Line::from(Span::styled(format!(" {}: {}{}", label, val, cursor), style)));
+            lines.push(Line::from(""));
         }
+        // Hints
+        lines.push(Line::from(vec![
+            Span::styled(" Enter ", Style::default().fg(Color::Black).bg(Theme::GREEN)),
+            Span::styled(" Save  ", Style::default().fg(Theme::COMMENT)),
+            Span::styled(" Esc ", Style::default().fg(Color::Black).bg(Theme::DIM)),
+            Span::styled(" Cancel  ", Style::default().fg(Theme::COMMENT)),
+            Span::styled(" Tab ", Style::default().fg(Color::Black).bg(Theme::CYAN)),
+            Span::styled(" Next field", Style::default().fg(Theme::COMMENT)),
+        ]));
+
+        let p = Paragraph::new(lines)
+            .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
+                .title(Line::from(" Edit Profile ").centered())
+                .border_style(Style::default().fg(Theme::CYAN)));
+        f.render_widget(Clear, popup);
+        f.render_widget(p, popup);
     }
 
     fn do_switch(&mut self) {
@@ -150,7 +191,6 @@ impl ProvidersTab {
         let (title, msg, c) = match self.confirm_action {
             Some(ProviderAction::Switch) => (" Switch Model ", " Switch to this profile? ", Theme::CYAN),
             Some(ProviderAction::Delete) => (" Delete Profile ", " Delete this profile? ", Theme::RED),
-            Some(ProviderAction::Edit) => (" Edit Profile ", " Edit this profile? ", Theme::CYAN),
             _ => return,
         };
         let popup = centered_rect(44, 6, area);
@@ -225,9 +265,31 @@ impl TabContent for ProvidersTab {
 
         if self.confirm_action.is_some() { self.render_confirm_popup(f, area); }
         if self.message.is_some() { self.render_message_popup(f, area); }
+        if self.edit_form.is_some() { self.render_edit_form(f, area); }
     }
 
     fn handle_key(&mut self, code: KeyCode) -> bool {
+        // Edit form mode
+        if self.edit_form.is_some() {
+            match code {
+                KeyCode::Esc => { self.edit_form = None; }
+                KeyCode::Enter => { self.commit_edit(); }
+                KeyCode::Tab => {
+                    if let Some(ref mut f) = self.edit_form { f.focused = (f.focused + 1) % 5; }
+                }
+                KeyCode::BackTab => {
+                    if let Some(ref mut f) = self.edit_form { f.focused = if f.focused == 0 { 4 } else { f.focused - 1 }; }
+                }
+                KeyCode::Backspace | KeyCode::Delete => {
+                    if let Some(ref mut f) = self.edit_form { f.fields[f.focused].pop(); }
+                }
+                KeyCode::Char(c) => {
+                    if let Some(ref mut f) = self.edit_form { f.fields[f.focused].push(c); }
+                }
+                _ => {}
+            }
+            return true;
+        }
         if self.message.is_some() {
             if matches!(code, KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q')) {
                 self.message = None;
@@ -238,7 +300,7 @@ impl TabContent for ProvidersTab {
             match code {
                 KeyCode::Tab | KeyCode::Right | KeyCode::Char('j') | KeyCode::Char('l') => self.confirm_button = (self.confirm_button + 1) % 2,
                 KeyCode::BackTab | KeyCode::Left | KeyCode::Char('k') | KeyCode::Char('h') => self.confirm_button = if self.confirm_button == 0 { 1 } else { 0 },
-                KeyCode::Enter => { if self.confirm_button == 0 { match self.confirm_action { Some(ProviderAction::Switch) => self.do_switch(), Some(ProviderAction::Delete) => self.do_delete(), Some(ProviderAction::Edit) => self.do_edit(), _ => {} } } self.confirm_action = None; self.confirm_button = 0; }
+                KeyCode::Enter => { if self.confirm_button == 0 { match self.confirm_action { Some(ProviderAction::Switch) => self.do_switch(), Some(ProviderAction::Delete) => self.do_delete(), _ => {} } } self.confirm_action = None; self.confirm_button = 0; }
                 KeyCode::Esc | KeyCode::Char('q') => { self.confirm_action = None; self.confirm_button = 0; }
                 _ => {}
             }
@@ -275,7 +337,7 @@ impl TabContent for ProvidersTab {
                         return true;
                     }
                 }
-                self.confirm_action = Some(ProviderAction::Edit); self.confirm_button = 0;
+                self.do_edit();
             }
             KeyCode::Char('/') => { self.is_searching = true; }
             _ => return false,
@@ -288,25 +350,3 @@ fn centered_rect(w: u16, h: u16, r: Rect) -> Rect {
     Rect { x: r.x + (r.width.saturating_sub(w)) / 2, y: r.y + (r.height.saturating_sub(h)) / 2, width: w.min(r.width), height: h.min(r.height) }
 }
 
-fn edit_profile_interactive(
-    name: &str, opus: &str, sonnet: &str, haiku: &str, subagent: &str,
-) -> Result<crate::core::models::Profile, ()> {
-    // Ignore SIGINT + clear screen before editing
-    let _ = ctrlc::set_handler(|| {});
-    print!("\x1B[2J\x1B[H");
-    let result = (|| -> Result<crate::core::models::Profile, anyhow::Error> {
-        use dialoguer::Input;
-        let name: String = Input::new().with_prompt("Name").with_initial_text(name).interact_text()?;
-        let opus: String = Input::new().with_prompt("Opus model").with_initial_text(opus).interact_text()?;
-        let sonnet: String = Input::new().with_prompt("Sonnet model").with_initial_text(sonnet).interact_text()?;
-        let haiku: String = Input::new().with_prompt("Haiku model").with_initial_text(haiku).interact_text()?;
-        let subagent: String = Input::new().with_prompt("SubAgent model").with_initial_text(subagent).interact_text()?;
-        Ok(crate::core::models::Profile {
-            id: String::new(), name, opus, sonnet, haiku, subagent,
-            default: false, source: crate::core::models::Source::User,
-        })
-    })();
-    // Restore default SIGINT
-    let _ = ctrlc::set_handler(|| std::process::exit(0));
-    result.map_err(|_| ())
-}
