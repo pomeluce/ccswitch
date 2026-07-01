@@ -29,7 +29,7 @@ impl UsageTab {
             Ok(n) if n > 0 => tracing::info!("Imported usage from {} sessions", n),
             _ => {}
         }
-        let summaries = mgr.db().query_usage("week").unwrap_or_default();
+        let summaries = mgr.usage_db().query_usage("week").unwrap_or_default();
         let mut state = ListState::default();
         if !summaries.is_empty() { state.select(Some(0)); }
         UsageTab {
@@ -86,7 +86,7 @@ impl TabContent for UsageTab {
             }
             KeyCode::Char('t') => {
                 self.range = match self.range.as_str() { "day" => "week", "week" => "month", _ => "day" }.into();
-                self.summaries = self.mgr.db().query_usage(&self.range).unwrap_or_default();
+                self.summaries = self.mgr.usage_db().query_usage(&self.range).unwrap_or_default();
             }
             KeyCode::Char('/') => { self.is_searching = true; }
             _ => return false,
@@ -114,9 +114,9 @@ impl UsageTab {
         let cards = Layout::default().direction(Direction::Horizontal)
             .constraints([Constraint::Ratio(1,4); 4]).split(area);
 
-        let today: i64 = self.mgr.db().query_usage("day").unwrap_or_default()
+        let today: i64 = self.mgr.usage_db().query_usage("day").unwrap_or_default()
             .iter().map(|s| Self::token_total(s)).sum();
-        let week: i64 = self.mgr.db().query_usage("week").unwrap_or_default()
+        let week: i64 = self.mgr.usage_db().query_usage("week").unwrap_or_default()
             .iter().map(|s| Self::token_total(s)).sum();
         let all = self.total_tokens();
         let reqs = self.total_reqs();

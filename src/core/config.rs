@@ -44,12 +44,17 @@ struct ProfileToml {
 
 pub struct ConfigManager {
     db: Db,
+    usage_db: Db,
+    session_db: Db,
     system_providers: Vec<Provider>,
 }
 
 impl ConfigManager {
     pub fn new(db_path: &Path, defaults_path: Option<&Path>) -> Result<Self, anyhow::Error> {
-        let db = Db::open(db_path)?;
+        let dir = db_path.parent().unwrap_or_else(|| Path::new("."));
+        let db = Db::open(&dir.join("model.db"))?;
+        let usage_db = Db::open(&dir.join("usage.db"))?;
+        let session_db = Db::open(&dir.join("session.db"))?;
 
         let default_path = default_config_path();
         let defaults_path = defaults_path.unwrap_or_else(|| &default_path);
@@ -85,8 +90,12 @@ impl ConfigManager {
             vec![]
         };
 
-        Ok(ConfigManager { db, system_providers })
+        Ok(ConfigManager { db, usage_db, session_db, system_providers })
     }
+
+    pub fn db(&self) -> &Db { &self.db }
+    pub fn usage_db(&self) -> &Db { &self.usage_db }
+    pub fn session_db(&self) -> &Db { &self.session_db }
 
     /// Return merged list: user providers override system by id,
     /// user profiles merge into their parent provider
@@ -137,8 +146,5 @@ impl ConfigManager {
         Ok(None)
     }
 
-    pub fn db(&self) -> &Db {
-        &self.db
-    }
 }
 
