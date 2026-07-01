@@ -196,7 +196,7 @@ impl UsageTab {
             }).collect();
 
             let max_val = days.iter().map(|(_, i, o, cr, cc, _)| i + o + cr + cc).max().unwrap_or(1).max(1);
-            let mut lines: Vec<Line> = days.iter().flat_map(|(date, in_tok, out_tok, cr_tok, cc_tok, is_today)| {
+            let lines: Vec<Line> = days.iter().flat_map(|(date, in_tok, out_tok, cr_tok, cc_tok, is_today)| {
                 let total = in_tok + out_tok + cr_tok + cc_tok;
                 let w = if max_val > 0 { (total as f64 / max_val as f64 * 30.0) as usize } else { 0 };
                 let bar = "\u{2500}".repeat(w.min(35));
