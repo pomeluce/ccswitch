@@ -74,6 +74,20 @@ impl Db {
         rows.collect()
     }
 
+    /// Query per-day usage for a specific profile
+    pub fn query_daily_usage(&self, provider: &str, profile: &str) -> Result<Vec<(String, i64)>, rusqlite::Error> {
+        let sql = "SELECT date(timestamp) as day, SUM(prompt_tokens + completion_tokens)
+                   FROM usage_logs
+                   WHERE provider_id = ?1 AND profile_id = ?2
+                     AND date(timestamp) >= date('now', '-6 days')
+                   GROUP BY day ORDER BY day";
+        let mut stmt = self.conn().prepare(sql)?;
+        let rows = stmt.query_map(params![provider, profile], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        rows.collect()
+    }
+
     /// Scan Claude Code session JSONL files for assistant message usage data.
     /// Only imports sessions not already in usage_logs.
     pub fn scan_local_usage(&self) -> Result<usize, anyhow::Error> {
