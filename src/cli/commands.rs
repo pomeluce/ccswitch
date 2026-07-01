@@ -8,7 +8,7 @@ use crate::core::switcher::switch_profile;
 
 fn get_db_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    PathBuf::from(home).join(".ccswitch").join("ccswitch.db")
+    PathBuf::from(home).join(".config/ccswitch").join("ccswitch.db")
 }
 
 fn get_defaults_path() -> Option<PathBuf> {
