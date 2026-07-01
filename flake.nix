@@ -46,11 +46,11 @@
             postInstall = ''
               installShellCompletion --zsh --name _ccs \
                 <($out/bin/ccs completions zsh)
-              installShellCompletion --bash ccs \
+              installShellCompletion --bash --cmd ccs \
                 <($out/bin/ccs completions bash)
-              installShellCompletion --fish ccs \
+              installShellCompletion --fish --cmd ccs \
                 <($out/bin/ccs completions fish)
-              installManPage <($out/bin/ccs man)
+              installManPage --name ccs.1 <($out/bin/ccs man)
             '';
           };
 
