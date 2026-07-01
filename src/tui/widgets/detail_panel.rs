@@ -22,11 +22,14 @@ impl DetailPanel {
         is_active: bool,
         can_delete: bool,
     ) {
+        let pad = "  ";
         let active_tag = if is_active { " \u{2605} active" } else { "" };
         let source_tag = if can_delete { "user" } else { "system" };
+        let masked_key = mask_api_key(api_key);
 
         let lines = vec![
             Line::from(vec![
+                Span::styled(pad, Style::default()),
                 Span::styled(
                     format!("{} / {}", provider_name, profile.name),
                     Style::default().fg(Theme::CYAN),
@@ -39,44 +42,38 @@ impl DetailPanel {
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled("Opus:     ", Style::default().fg(Theme::PURPLE)),
+                Span::styled(format!("{}Opus:     ", pad), Style::default().fg(Theme::PURPLE)),
                 Span::styled(&profile.opus, Style::default().fg(Theme::FG)),
             ]),
             Line::from(vec![
-                Span::styled("Sonnet:   ", Style::default().fg(Theme::PURPLE)),
+                Span::styled(format!("{}Sonnet:   ", pad), Style::default().fg(Theme::PURPLE)),
                 Span::styled(&profile.sonnet, Style::default().fg(Theme::FG)),
             ]),
             Line::from(vec![
-                Span::styled("Haiku:    ", Style::default().fg(Theme::PURPLE)),
+                Span::styled(format!("{}Haiku:    ", pad), Style::default().fg(Theme::PURPLE)),
                 Span::styled(&profile.haiku, Style::default().fg(Theme::FG)),
             ]),
             Line::from(vec![
-                Span::styled("SubAgent: ", Style::default().fg(Theme::PURPLE)),
+                Span::styled(format!("{}SubAgent: ", pad), Style::default().fg(Theme::PURPLE)),
                 Span::styled(&profile.subagent, Style::default().fg(Theme::FG)),
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled("URL:      ", Style::default().fg(Theme::PURPLE)),
+                Span::styled(format!("{}URL:      ", pad), Style::default().fg(Theme::PURPLE)),
                 Span::styled(api_url, Style::default().fg(Theme::DIM)),
             ]),
             Line::from(vec![
-                Span::styled("Key:      ", Style::default().fg(Theme::PURPLE)),
-                Span::styled(api_key, Style::default().fg(Theme::GREEN)),
+                Span::styled(format!("{}Key:      ", pad), Style::default().fg(Theme::PURPLE)),
+                Span::styled(&masked_key, Style::default().fg(Theme::GREEN)),
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled(
-                    " \u{23ce} Apply  ",
-                    Style::default().add_modifier(Modifier::REVERSED),
-                ),
-                Span::styled(
-                    " e Edit  ",
-                    Style::default().add_modifier(Modifier::REVERSED),
-                ),
-                Span::styled(
-                    " d Delete",
-                    Style::default().fg(Theme::RED),
-                ),
+                Span::styled(" \u{23ce} Apply  ",
+                    Style::default().add_modifier(Modifier::REVERSED)),
+                Span::styled(" e Edit  ",
+                    Style::default().add_modifier(Modifier::REVERSED)),
+                Span::styled(" d Delete",
+                    Style::default().fg(Theme::RED)),
             ]),
         ];
 
@@ -102,5 +99,16 @@ impl DetailPanel {
                 .border_style(Style::default().fg(Theme::DIM)),
         );
         f.render_widget(p, area);
+    }
+}
+
+/// Mask literal API keys: show first 6 chars + ***
+fn mask_api_key(key: &str) -> String {
+    if key.starts_with("env:") || key.is_empty() {
+        key.to_string()
+    } else if key.len() <= 6 {
+        "***".to_string()
+    } else {
+        format!("{}***", &key[..6])
     }
 }

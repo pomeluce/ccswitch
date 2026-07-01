@@ -100,19 +100,10 @@ impl ProviderTree {
             .iter()
             .filter_map(|item| match item {
                 TreeItem::Provider { provider, .. } => {
-                    let icon = if provider.source.can_delete() {
-                        "\u{1f464}"
-                    } else {
-                        "\u{1f512}"
-                    };
-                    let expand = if self.collapsed.contains(&provider.id) {
-                        "\u{25b8}"
-                    } else {
-                        "\u{25be}"
-                    };
+                    let expand = if self.collapsed.contains(&provider.id) { "❯ " } else { "❯ " };
                     Some(ListItem::new(Line::from(vec![
                         Span::styled(
-                            format!("{} {} {}", icon, expand, provider.name),
+                            format!("{}{}", expand, provider.name),
                             Style::default().fg(Theme::YELLOW),
                         ),
                         Span::styled(
