@@ -131,16 +131,18 @@ impl ProvidersTab {
 
     fn render_edit_form(&self, f: &mut Frame, area: Rect) {
         let Some(ref form) = self.edit_form else { return };
-        let popup = centered_rect(50, 14, area);
+        let popup = centered_rect(52, 18, area);
         let mut lines: Vec<Line> = Vec::new();
+        lines.push(Line::from("")); // top padding
         for (i, label) in EDIT_LABELS.iter().enumerate() {
             let val = &form.fields[i];
             let cursor = if i == form.focused { " ▌" } else { "" };
             let style = if i == form.focused { Style::default().fg(Theme::CYAN) } else { Style::default().fg(Theme::FG) };
-            lines.push(Line::from(Span::styled(format!(" {}: {}{}", label, val, cursor), style)).centered());
+            let label_padded = format!(" {:>14}: ", label);
+            lines.push(Line::from(Span::styled(format!("{}{}{}", label_padded, val, cursor), style)));
             lines.push(Line::from(""));
         }
-        // Hints (colored text, no background)
+        lines.push(Line::from("")); // spacing before hints
         lines.push(Line::from(vec![
             Span::styled(" Enter ", Style::default().fg(Theme::GREEN)),
             Span::styled(" Save  ", Style::default().fg(Theme::COMMENT)),
@@ -149,6 +151,7 @@ impl ProvidersTab {
             Span::styled(" Tab ", Style::default().fg(Theme::CYAN)),
             Span::styled(" Next field", Style::default().fg(Theme::COMMENT)),
         ]).centered());
+        lines.push(Line::from("")); // bottom padding
 
         let p = Paragraph::new(lines)
             .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
