@@ -20,6 +20,7 @@ pub struct UsageTab {
     pub range: String,
     pub search_query: String,
     pub is_searching: bool,
+    chart_scroll: usize,
 }
 
 impl UsageTab {
@@ -42,6 +43,7 @@ impl UsageTab {
             range: "all".into(),
             search_query: String::new(),
             is_searching: false,
+            chart_scroll: 0,
         }
     }
 
@@ -124,6 +126,12 @@ impl TabContent for UsageTab {
             }
             KeyCode::Char('/') => {
                 self.is_searching = true;
+            }
+            KeyCode::Char('g') => {
+                self.chart_scroll = 0;
+            }
+            KeyCode::Char('G') => {
+                self.chart_scroll = usize::MAX; // will be clamped in render
             }
             _ => return false,
         }
@@ -221,7 +229,7 @@ impl UsageTab {
         f.render_stateful_widget(list, area, &mut self.state);
     }
 
-    fn render_daily_chart(&self, f: &mut Frame, area: Rect) {
+    fn render_daily_chart(&mut self, f: &mut Frame, area: Rect) {
         if let Some(s) = self.summaries.get(self.selected_index) {
             let label = title_case(&s.model);
             let daily = self.mgr.usage_db().query_daily_usage(&s.model).unwrap_or_default();
@@ -292,6 +300,12 @@ impl UsageTab {
                     day_lines
                 })
                 .collect();
+
+            // Apply scroll offset (g=top, G=bottom)
+            let visible = (area.height as usize).saturating_sub(2);
+            let max_scroll = lines.len().saturating_sub(visible);
+            self.chart_scroll = self.chart_scroll.min(max_scroll);
+            let lines: Vec<Line> = lines.into_iter().skip(self.chart_scroll).take(visible).collect();
 
             let p = Paragraph::new(lines).block(
                 Block::bordered()
