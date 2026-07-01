@@ -18,10 +18,14 @@ struct UsageLine {
     #[serde(rename = "type")]
     msg_type: Option<String>,
     message: Option<UsageMessage>,
+    timestamp: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct UsageMessage {
+    #[allow(dead_code)]
+    role: Option<String>,
+    model: Option<String>,
     usage: Option<UsageData>,
 }
 
@@ -29,6 +33,10 @@ struct UsageMessage {
 struct UsageData {
     input_tokens: Option<i64>,
     output_tokens: Option<i64>,
+    #[allow(dead_code)]
+    cache_read_input_tokens: Option<i64>,
+    #[allow(dead_code)]
+    cache_creation_input_tokens: Option<i64>,
 }
 
 impl Db {
@@ -89,46 +97,87 @@ impl Db {
     }
 
     /// Scan Claude Code session JSONL files for assistant message usage data.
-    /// Only imports sessions not already in usage_logs.
+    /// Matches model names to provider/profile mapping.
     pub fn scan_local_usage(&self) -> Result<usize, anyhow::Error> {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
         let projects_dir = PathBuf::from(&home).join(".claude/projects");
         if !projects_dir.exists() { return Ok(0); }
 
         let jsonl_files = collect_jsonl_files(&projects_dir);
-        // Track which sessions we've already imported
         let existing: std::collections::HashSet<String> = {
             let mut stmt = self.conn().prepare("SELECT DISTINCT session_id FROM usage_logs WHERE mode = 'local'")?;
             let rows = stmt.query_map([], |r| r.get::<_, Option<String>>(0))?;
             rows.filter_map(|r| r.ok().flatten()).collect()
         };
 
+        // Build model → (provider_id, profile_id) mapping from DB
+        let model_map = self.build_model_profile_map();
+
         let mut imported = 0usize;
         for path in &jsonl_files {
             let sid = path.file_stem().and_then(|n| n.to_str()).unwrap_or("");
             if existing.contains(sid) { continue; }
             let content = match std::fs::read_to_string(path) { Ok(c) => c, Err(_) => continue };
-            let mut prompt = 0i64;
-            let mut completion = 0i64;
-            for line in content.lines().take(200) { // head only for performance
+
+            // Aggregate by (provider, profile, date)
+            let mut entries: Vec<(String, String, String, i64, i64)> = Vec::new(); // (pid, pfid, date, input, output)
+
+            for line in content.lines() {
                 let parsed: UsageLine = match serde_json::from_str(line) { Ok(l) => l, Err(_) => continue };
                 if parsed.msg_type.as_deref() == Some("assistant") {
                     if let Some(ref msg) = parsed.message {
                         if let Some(ref u) = msg.usage {
-                            prompt += u.input_tokens.unwrap_or(0);
-                            completion += u.output_tokens.unwrap_or(0);
+                            let model = msg.model.as_deref().unwrap_or("unknown");
+                            let (pid, pfid) = model_map.get(model).cloned().unwrap_or(("Claude Code".into(), "local".into()));
+                            let date = parsed.timestamp.as_deref().unwrap_or("").get(0..10).unwrap_or("today").to_string();
+                            entries.push((pid, pfid, date, u.input_tokens.unwrap_or(0), u.output_tokens.unwrap_or(0)));
                         }
                     }
                 }
             }
-            if prompt > 0 || completion > 0 {
-                self.insert_usage_log(
-                    "Claude Code", "local", "local", Some(sid), prompt, completion,
-                )?;
-                imported += 1;
+
+            for (pid, pfid, date, input, output) in &entries {
+                if *input > 0 || *output > 0 {
+                    self.conn().execute(
+                        "INSERT INTO usage_logs (provider_id, profile_id, mode, session_id, prompt_tokens, completion_tokens, timestamp)
+                         VALUES (?1, ?2, 'local', ?3, ?4, ?5, ?6)",
+                    params![pid, pfid, sid, input, output, format!("{} 00:00:00", date)],
+                    )?;
+                }
             }
+            if !entries.is_empty() { imported += 1; }
         }
         Ok(imported)
+    }
+
+    /// Build a mapping from model name to (provider_id, profile_id) by reading settings
+    fn build_model_profile_map(&self) -> std::collections::HashMap<String, (String, String)> {
+        let mut map = std::collections::HashMap::new();
+        // Try to get from configuration
+        if let Ok(providers) = self.conn().prepare("SELECT id, name FROM user_providers")
+            .and_then(|mut s| s.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?.collect::<Result<Vec<_>, _>>())
+        {
+            for (pid, _) in &providers {
+                if let Ok(profiles) = self.conn().prepare(
+                    "SELECT id, opus_model, sonnet_model, haiku_model, subagent_model FROM user_profiles WHERE provider_id = ?1"
+                ).and_then(|mut s| s.query_map(params![pid], |r| Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                )))?.collect::<Result<Vec<_>, _>>())
+                {
+                    for (pfid, opus, sonnet, haiku, subagent) in &profiles {
+                        map.insert(opus.clone(), (pid.clone(), pfid.clone()));
+                        map.insert(sonnet.clone(), (pid.clone(), pfid.clone()));
+                        map.insert(haiku.clone(), (pid.clone(), pfid.clone()));
+                        map.insert(subagent.clone(), (pid.clone(), pfid.clone()));
+                    }
+                }
+            }
+        }
+        map
     }
 }
 
