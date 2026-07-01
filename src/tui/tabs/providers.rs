@@ -405,7 +405,7 @@ fn slice_value(text: &str, cursor: usize, max_w: usize) -> VisSlice {
 fn provider_shortcut_lines(available_width: u16) -> usize {
     let group_widths = [8, 9, 12, 8, 7, 7]; // J/K, /, enter, D, E, Q with labels
     let sep = 2usize;
-    let w = available_width.max(10) as usize;
+    let w = available_width.saturating_sub(2).max(10) as usize; // account for border
     let mut lines = 1usize;
     let mut cur = 0usize;
     for gw in &group_widths {

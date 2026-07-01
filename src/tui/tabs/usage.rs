@@ -349,7 +349,7 @@ fn usage_shortcut_lines(available_width: u16) -> usize {
     // " PgUp/Dn "(10)+" Scroll"(7)=17, " Q "(3)+" Quit"(5)=8
     let widths = [9usize, 10, 10, 17, 8];
     let sep = 2usize;
-    let w = available_width.max(10) as usize;
+    let w = available_width.saturating_sub(2).max(10) as usize; // account for border
     let mut lines = 1usize;
     let mut cur = 0usize;
     for gw in &widths {

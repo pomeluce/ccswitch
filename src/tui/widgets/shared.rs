@@ -54,7 +54,7 @@ pub fn render_shortcut_bar(
         ]
     }).collect();
 
-    let width = area.width.max(10) as usize;
+    let width = area.width.saturating_sub(2).max(10) as usize; // account for border
     let mut rows: Vec<Line> = Vec::new();
     let mut cur: Vec<Span> = Vec::new();
     let mut cur_w = 0usize;
