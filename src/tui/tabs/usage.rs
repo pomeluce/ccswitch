@@ -127,11 +127,11 @@ impl TabContent for UsageTab {
             KeyCode::Char('/') => {
                 self.is_searching = true;
             }
-            // Ctrl+U = page up in chart, Ctrl+D = page down
-            KeyCode::Char('\x15') => {
+            // PageUp/Down = scroll chart
+            KeyCode::PageUp => {
                 self.chart_scroll = self.chart_scroll.saturating_sub(5);
             }
-            KeyCode::Char('\x04') => {
+            KeyCode::PageDown => {
                 self.chart_scroll = self.chart_scroll.saturating_add(5);
             }
             _ => return false,
