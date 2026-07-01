@@ -432,7 +432,7 @@ impl HistoryTab {
             vec![key(" J/K ", Theme::CYAN), lbl("Nav")],
             vec![key(" / ", Theme::CYAN), lbl("Search")],
             vec![key(" ⏎  ", Theme::GREEN), lbl("Open")],
-            vec![key(" Ctrl+D ", Theme::RED), lbl("Delete")],
+            vec![key(" D ", Theme::RED), lbl("Delete")],
             vec![key(" Q ", Theme::ORANGE), lbl("Quit")],
         ];
 
@@ -515,7 +515,7 @@ fn relative_time(iso: &str) -> String {
 
 /// How many content lines the shortcut bar needs at this width
 fn shortcut_needed_lines(available_width: u16) -> usize {
-    // Group widths (approx): J/K+Nav=8, /+Search=9, ⏎+Open=12, Ctrl+D+Delete=12, Q+Quit=6
+    // Group widths (approx): J/K+Nav=8, /+Search=9, ⏎+Open=12, D+Delete=7, Q+Quit=6
     // Plus separators "  " between groups
     let group_widths = [8usize, 9, 12, 12, 6];
     let sep = 2usize;
