@@ -234,7 +234,7 @@ impl UsageTab {
                 Span::styled(format_tokens(total * 4), Style::default().fg(Theme::PURPLE)),
                 Span::styled("   Reqs ", Style::default().fg(Theme::COMMENT)),
                 Span::styled(format!("{}", s.request_count), Style::default().fg(Theme::YELLOW)),
-            ]).centered());
+            ]));
 
             let p = Paragraph::new(lines)
                 .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
