@@ -48,7 +48,7 @@ struct UsageData {
 /// Parsed usage record awaiting DB insert
 struct UsageRecord {
     sid: String, msg_id: String, model: String,
-    pid: String, pfid: String, date: String,
+    date: String,
     input: i64, output: i64, cr: i64, cc: i64,
 }
 
@@ -117,41 +117,26 @@ impl Db {
         rows.collect()
     }
 
-    /// Scan local JSONL files, store each assistant message as a row,
-    /// dedup by message.id, track file mtime for incremental updates.
+    /// Scan all local JSONL files, dedup by message.id only.
+    /// Full scan on every startup — fast because known IDs are skipped.
     pub fn scan_local_usage(&self) -> Result<usize, anyhow::Error> {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
         let projects_dir = PathBuf::from(&home).join(".claude/projects");
         if !projects_dir.exists() { return Ok(0); }
 
         let jsonl_files = collect_jsonl_files(&projects_dir);
-        let model_map = self.build_model_profile_map();
 
         // Pre-load existing message IDs for dedup
         let known_msg_ids: std::collections::HashSet<String> = {
-            let mut stmt = self.conn().prepare("SELECT message_id FROM usage_logs WHERE message_id IS NOT NULL")?;
+            let mut stmt = self.conn().prepare("SELECT message_id FROM usage_logs WHERE message_id IS NOT NULL AND message_id != ''")?;
             let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
             rows.filter_map(|r| r.ok()).collect()
         };
 
-        // Collect files that need scanning (mtime changed)
-        let to_scan: Vec<(PathBuf, i64)> = jsonl_files.into_iter().filter_map(|path| {
-            let sid = path.file_stem().and_then(|n| n.to_str()).unwrap_or("");
-            let mtime = std::fs::metadata(&path).and_then(|m| m.modified())
-                .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64)
-                .unwrap_or(0);
-            if mtime == 0 { return None; }
-            let last: i64 = self.conn().query_row(
-                "SELECT file_mtime FROM session_usage_track WHERE session_id = ?1",
-                params![sid], |r| r.get(0),
-            ).unwrap_or(0);
-            if last >= mtime { None } else { Some((path, mtime)) }
-        }).collect();
+        if jsonl_files.is_empty() { return Ok(0); }
 
-        if to_scan.is_empty() { return Ok(0); }
-
-        // Parallel parse all files, collect records
-        let all_records: Vec<(i64, Vec<UsageRecord>)> = to_scan.par_iter().filter_map(|(path, mtime)| {
+        // Parallel parse all files
+        let all_records: Vec<Vec<UsageRecord>> = jsonl_files.par_iter().filter_map(|path| {
             let content = std::fs::read_to_string(path).ok()?;
             let sid = path.file_stem().and_then(|n| n.to_str()).unwrap_or("");
             let records: Vec<UsageRecord> = content.lines().filter_map(|line| {
@@ -161,71 +146,34 @@ impl Db {
                 let usage = msg.usage.as_ref()?;
                 let msg_id = msg.id.as_deref().unwrap_or("").to_string();
                 if !msg_id.is_empty() && known_msg_ids.contains(&msg_id) { return None; }
-                let model = msg.model.as_deref().unwrap_or("unknown");
-                let (pid, pfid) = model_map.get(model).cloned().unwrap_or(("Claude Code".into(), "local".into()));
+                let model = msg.model.as_deref().unwrap_or("unknown").replace("[1m]", "");
                 let date = parsed.timestamp.as_deref().unwrap_or("").get(0..10).unwrap_or("today").to_string();
                 Some(UsageRecord {
-                    sid: sid.to_string(), msg_id, model: model.to_string(),
-                    pid, pfid, date,
+                    sid: sid.to_string(), msg_id, model: model.to_string(), date,
                     input: usage.input_tokens.unwrap_or(0),
                     output: usage.output_tokens.unwrap_or(0),
                     cr: usage.cache_read_input_tokens.unwrap_or(0),
                     cc: usage.cache_creation_input_tokens.unwrap_or(0),
                 })
             }).collect();
-            if records.is_empty() { None } else { Some((*mtime, records)) }
+            if records.is_empty() { None } else { Some(records) }
         }).collect();
 
-        // Serial DB insert + mtime update
+        // Serial DB insert
         let mut imported = 0usize;
-        for (mtime, records) in &all_records {
-            let sid = &records.first().map(|r| r.sid.clone()).unwrap_or_default();
+        for records in &all_records {
             for r in records {
                 self.conn().execute(
-                    "INSERT INTO usage_logs (model, provider_id, profile_id, mode, session_id, message_id, prompt_tokens, completion_tokens, cache_read_tokens, cache_create_tokens, total_tokens, timestamp)
+                    "INSERT OR IGNORE INTO usage_logs (model, provider_id, profile_id, mode, session_id, message_id, prompt_tokens, completion_tokens, cache_read_tokens, cache_create_tokens, total_tokens, timestamp)
                      VALUES (?1, ?2, ?3, 'local', ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-                    params![r.model, r.pid, r.pfid, r.sid, r.msg_id, r.input, r.output, r.cr, r.cc, r.input + r.output + r.cr + r.cc, format!("{} 00:00:00", r.date)],
+                    params![r.model, "", "", r.sid, r.msg_id, r.input, r.output, r.cr, r.cc, r.input + r.output + r.cr + r.cc, format!("{} 00:00:00", r.date)],
                 )?;
                 imported += 1;
             }
-            self.conn().execute(
-                "INSERT OR REPLACE INTO session_usage_track (session_id, file_mtime) VALUES (?1, ?2)",
-                params![sid, *mtime],
-            )?;
         }
         Ok(imported)
     }
 
-    /// Build a mapping from model name to (provider_id, profile_id) by reading settings
-    fn build_model_profile_map(&self) -> std::collections::HashMap<String, (String, String)> {
-        let mut map = std::collections::HashMap::new();
-        // Try to get from configuration
-        if let Ok(providers) = self.conn().prepare("SELECT id, name FROM user_providers")
-            .and_then(|mut s| s.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?.collect::<Result<Vec<_>, _>>())
-        {
-            for (pid, _) in &providers {
-                if let Ok(profiles) = self.conn().prepare(
-                    "SELECT id, opus_model, sonnet_model, haiku_model, subagent_model FROM user_profiles WHERE provider_id = ?1"
-                ).and_then(|mut s| s.query_map(params![pid], |r| Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, String>(2)?,
-                    r.get::<_, String>(3)?,
-                    r.get::<_, String>(4)?,
-                )))?.collect::<Result<Vec<_>, _>>())
-                {
-                    for (pfid, opus, sonnet, haiku, subagent) in &profiles {
-                        for m in [opus, sonnet, haiku, subagent] {
-                            let clean = m.replace("[1m]", "");
-                            map.insert(clean, (pid.clone(), pfid.clone()));
-                            map.insert(m.clone(), (pid.clone(), pfid.clone())); // also keep original
-                        }
-                    }
-                }
-            }
-        }
-        map
-    }
 }
 
 /// Recursively collect all .jsonl files under a directory
