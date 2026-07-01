@@ -12,10 +12,13 @@ use super::super::widgets::detail_panel::DetailPanel;
 use super::TabContent;
 use super::super::theme::Theme;
 
+use std::sync::Arc;
+
 #[derive(Clone, Copy, PartialEq)]
-pub enum ProviderAction { Switch, Delete }
+pub enum ProviderAction { Switch, Delete, Edit }
 
 pub struct ProvidersTab {
+    mgr: Arc<ConfigManager>,
     all_profiles: Vec<(Provider, crate::core::models::Profile)>,
     filtered: Vec<usize>,
     pub state: ListState,
@@ -25,10 +28,11 @@ pub struct ProvidersTab {
     pub active_profile: String,
     pub confirm_action: Option<ProviderAction>,
     confirm_button: usize,
+    pub message: Option<String>,
 }
 
 impl ProvidersTab {
-    pub fn new(mgr: &ConfigManager) -> Self {
+    pub fn new(mgr: Arc<ConfigManager>) -> Self {
         let providers = mgr.list_providers().unwrap_or_default();
         let mut all_profiles = Vec::new();
         for p in &providers {
@@ -42,10 +46,12 @@ impl ProvidersTab {
         let mut state = ListState::default();
         if !filtered.is_empty() { state.select(Some(0)); }
         ProvidersTab {
+            mgr,
             all_profiles, filtered, state,
             search_query: String::new(), is_searching: false,
             active_provider, active_profile,
             confirm_action: None, confirm_button: 0,
+            message: None,
         }
     }
 
@@ -78,13 +84,46 @@ impl ProvidersTab {
         f.render_widget(p, area);
     }
 
-    fn do_switch(&self) {}
-    fn do_delete(&self) {}
+    fn selected_profile(&self) -> Option<&(Provider, crate::core::models::Profile)> {
+        let idx = self.state.selected()?;
+        let &ai = self.filtered.get(idx)?;
+        self.all_profiles.get(ai)
+    }
+
+    fn do_switch(&mut self) {
+        let (prov_id, prof_id) = {
+            let Some((prov, prof)) = self.selected_profile() else { return };
+            (prov.id.clone(), prof.id.clone())
+        };
+        let mode = if self.mgr.db().get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false) {
+            crate::core::models::SwitchMode::Proxy
+        } else { crate::core::models::SwitchMode::Local };
+        if let Err(e) = crate::core::switcher::switch_profile(&self.mgr, &prov_id, &prof_id, mode, None) {
+            self.message = Some(format!("Error: {}", e));
+            return;
+        }
+        self.active_provider = prov_id;
+        self.active_profile = prof_id;
+        self.mgr.db().set_setting("active_provider", &self.active_provider).ok();
+        self.mgr.db().set_setting("active_profile", &self.active_profile).ok();
+    }
+
+    fn do_delete(&mut self) {
+        let prof_id = {
+            let Some((prov, prof)) = self.selected_profile() else { return };
+            if !prov.source.can_delete() { return; }
+            prof.id.clone()
+        };
+        self.mgr.db().delete_user_profile(&prof_id).ok();
+        self.all_profiles.retain(|(_, p)| p.id != prof_id);
+        self.refresh_filter();
+    }
 
     fn render_confirm_popup(&self, f: &mut Frame, area: Rect) {
         let (title, msg, c) = match self.confirm_action {
             Some(ProviderAction::Switch) => (" Switch Model ", " Switch to this profile? ", Theme::CYAN),
             Some(ProviderAction::Delete) => (" Delete Profile ", " Delete this profile? ", Theme::RED),
+            Some(ProviderAction::Edit) => (" Edit Profile ", " Edit this profile? ", Theme::CYAN),
             _ => return,
         };
         let popup = centered_rect(44, 6, area);
@@ -95,6 +134,18 @@ impl ProvidersTab {
             Line::from(vec![Span::styled("  Confirm  ", cs), Span::raw("     "), Span::styled("  Cancel  ", xs)]).centered(),
         ]).block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
             .title(Line::from(title).centered()).border_style(Style::default().fg(c)));
+        f.render_widget(Clear, popup);
+        f.render_widget(p, popup);
+    }
+
+    fn render_message_popup(&self, f: &mut Frame, area: Rect) {
+        let msg = self.message.as_deref().unwrap_or("");
+        let popup = centered_rect(44, 5, area);
+        let p = Paragraph::new(vec![
+            Line::from(""), Line::from(msg).centered(), Line::from(""),
+            Line::from(Span::styled("  OK  ", Style::default().fg(Color::Black).bg(Theme::CYAN))).centered(),
+        ]).block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
+            .title(" Notice ").border_style(Style::default().fg(Theme::YELLOW)));
         f.render_widget(Clear, popup);
         f.render_widget(p, popup);
     }
@@ -146,9 +197,16 @@ impl TabContent for ProvidersTab {
         } else { DetailPanel::render_empty(f, main[1], "No profiles available"); }
 
         if self.confirm_action.is_some() { self.render_confirm_popup(f, area); }
+        if self.message.is_some() { self.render_message_popup(f, area); }
     }
 
     fn handle_key(&mut self, code: KeyCode) -> bool {
+        if self.message.is_some() {
+            if matches!(code, KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q')) {
+                self.message = None;
+            }
+            return true;
+        }
         if self.confirm_action.is_some() {
             match code {
                 KeyCode::Tab | KeyCode::Right | KeyCode::Char('j') | KeyCode::Char('l') => self.confirm_button = (self.confirm_button + 1) % 2,
@@ -176,9 +234,21 @@ impl TabContent for ProvidersTab {
             KeyCode::Enter => { self.confirm_action = Some(ProviderAction::Switch); self.confirm_button = 0; }
             KeyCode::Char('d') => {
                 if let Some(&ai) = self.filtered.get(self.state.selected().unwrap_or(0)) {
-                    if !self.all_profiles[ai].0.source.can_delete() { return true; }
+                    if !self.all_profiles[ai].0.source.can_delete() {
+                        self.message = Some("Cannot delete system default profile".into());
+                        return true;
+                    }
                 }
                 self.confirm_action = Some(ProviderAction::Delete); self.confirm_button = 0;
+            }
+            KeyCode::Char('e') => {
+                if let Some(&ai) = self.filtered.get(self.state.selected().unwrap_or(0)) {
+                    if !self.all_profiles[ai].0.source.can_delete() {
+                        self.message = Some("Cannot edit system default profile".into());
+                        return true;
+                    }
+                }
+                self.confirm_action = Some(ProviderAction::Edit); self.confirm_button = 0;
             }
             KeyCode::Char('/') => { self.is_searching = true; }
             _ => return false,

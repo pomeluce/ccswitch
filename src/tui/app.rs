@@ -29,7 +29,7 @@ impl App {
             .get_setting("proxy_mode")
             .map(|v| v == "true")
             .unwrap_or(false);
-        let providers_tab = ProvidersTab::new(&*mgr);
+        let providers_tab = ProvidersTab::new(mgr.clone());
         let usage_tab = UsageTab::new(&*mgr);
         let history_tab = HistoryTab::new(mgr.clone());
         Ok(App {
