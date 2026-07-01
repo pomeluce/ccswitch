@@ -94,7 +94,7 @@ impl App {
             KeyCode::Char('1') => self.active_tab = Tab::Providers,
             KeyCode::Char('2') => self.active_tab = Tab::Usage,
             KeyCode::Char('3') => self.active_tab = Tab::History,
-            KeyCode::Char('Q') => self.should_quit = true,
+            KeyCode::Char('q') | KeyCode::Char('Q') => self.should_quit = true,
             _ => {}
         }
     }
