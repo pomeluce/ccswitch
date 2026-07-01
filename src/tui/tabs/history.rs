@@ -250,6 +250,7 @@ impl TabContent for HistoryTab {
                 ];
 
                 let p = Paragraph::new(lines)
+                    .wrap(ratatui::widgets::Wrap { trim: false })
                     .block(
                         Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
                             .title("Session Detail")
@@ -412,6 +413,7 @@ impl HistoryTab {
             Span::styled(" Quit", Style::default().fg(Theme::COMMENT)),
         ]).centered();
         let p = Paragraph::new(line)
+            .wrap(ratatui::widgets::Wrap { trim: false })
             .block(
                 Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
                     .border_style(Style::default().fg(Theme::DIM)),
