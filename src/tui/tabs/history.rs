@@ -11,7 +11,7 @@ use crossterm::event::KeyCode;
 use crate::core::config::ConfigManager;
 use crate::db::sessions::SessionRecord;
 use super::super::theme::Theme;
-use super::super::widgets::shared::{render_search_box as shared_search, render_shortcut_bar as shared_shortcuts, render_confirm_popup as shared_confirm, shortcut_lines};
+use super::super::widgets::shared::{render_search_box as shared_search, render_shortcut_bar as shared_shortcuts, render_confirm_popup as shared_confirm, shortcut_lines, truncate, relative_time, format_size};
 use super::TabContent;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -409,32 +409,7 @@ impl HistoryTab {
     }
 }
 
-fn truncate(s: &str, max: usize) -> String {
-    if s.chars().count() > max {
-        format!("{}...", s.chars().take(max - 3).collect::<String>())
-    } else {
-        s.to_string()
-    }
-}
 
-fn relative_time(iso: &str) -> String {
-    if iso.len() < 19 { return iso[5..16].to_string(); }
-    let parsed = chrono::NaiveDateTime::parse_from_str(&iso[..19], "%Y-%m-%d %H:%M:%S");
-    let dt = match parsed {
-        Ok(d) => d.and_utc(),
-        Err(_) => return iso[5..16].to_string(),
-    };
-    let dur = chrono::Utc::now() - dt;
-    let mins = dur.num_minutes();
-    let hrs = dur.num_hours();
-    let days = dur.num_days();
-    if mins < 1 { "just now".into() }
-    else if mins < 60 { format!("{} min ago", mins) }
-    else if hrs < 24 { format!("{} hours ago", hrs) }
-    else if days < 7 { format!("{} days ago", days) }
-    else if days < 30 { format!("{} weeks ago", days / 7) }
-    else { format!("{} months ago", days / 30) }
-}
 
 /// How many content lines the shortcut bar needs at this width
 
@@ -453,11 +428,6 @@ fn split_path(path: &str, max_width: usize) -> (String, Vec<String>) {
     (first, rest)
 }
 
-fn format_size(bytes: i64) -> String {
-    if bytes < 1024 { format!("{}B", bytes) }
-    else if bytes < 1024 * 1024 { format!("{:.1}KB", bytes as f64 / 1024.0) }
-    else { format!("{:.1}MB", bytes as f64 / (1024.0 * 1024.0)) }
-}
 
 fn render_empty_detail(f: &mut Frame, area: Rect, hint: &str) {
     use ratatui::{style::Style, text::Line, widgets::Block};
