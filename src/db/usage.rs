@@ -20,10 +20,14 @@ struct UsageLine {
     msg_type: Option<String>,
     message: Option<UsageMessage>,
     timestamp: Option<String>,
+    #[allow(dead_code)]
+    #[serde(rename = "sessionId")]
+    session_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct UsageMessage {
+    id: Option<String>,
     #[allow(dead_code)]
     role: Option<String>,
     model: Option<String>,
@@ -100,56 +104,75 @@ impl Db {
         rows.collect()
     }
 
-    /// Scan Claude Code session JSONL files for assistant message usage data.
-    /// Matches model names to provider/profile mapping.
+    /// Scan local JSONL files, store each assistant message as a row,
+    /// dedup by message.id, track file mtime for incremental updates.
     pub fn scan_local_usage(&self) -> Result<usize, anyhow::Error> {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
         let projects_dir = PathBuf::from(&home).join(".claude/projects");
         if !projects_dir.exists() { return Ok(0); }
 
         let jsonl_files = collect_jsonl_files(&projects_dir);
-        let existing: std::collections::HashSet<String> = {
-            let mut stmt = self.conn().prepare("SELECT DISTINCT session_id FROM usage_logs WHERE mode = 'local'")?;
-            let rows = stmt.query_map([], |r| r.get::<_, Option<String>>(0))?;
-            rows.filter_map(|r| r.ok().flatten()).collect()
+        let model_map = self.build_model_profile_map();
+        let mut imported = 0usize;
+
+        // Pre-load existing message IDs into a HashSet for fast dedup
+        let mut known_msg_ids: std::collections::HashSet<String> = {
+            let mut stmt = self.conn().prepare("SELECT message_id FROM usage_logs WHERE message_id IS NOT NULL")?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+            rows.filter_map(|r| r.ok()).collect()
         };
 
-        // Build model → (provider_id, profile_id) mapping from DB
-        let model_map = self.build_model_profile_map();
-
-        let mut imported = 0usize;
         for path in &jsonl_files {
             let sid = path.file_stem().and_then(|n| n.to_str()).unwrap_or("");
-            if existing.contains(sid) { continue; }
-            let content = match std::fs::read_to_string(path) { Ok(c) => c, Err(_) => continue };
+            let mtime = std::fs::metadata(path)
+                .and_then(|m| m.modified())
+                .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64)
+                .unwrap_or(0);
+            if mtime == 0 { continue; }
 
-            // Aggregate by (provider, profile, date)
-            let mut entries: Vec<(String, String, String, i64, i64)> = Vec::new(); // (pid, pfid, date, input, output)
+            // Check mtime from tracking table
+            let last_mtime: i64 = self.conn().query_row(
+                "SELECT file_mtime FROM session_usage_track WHERE session_id = ?1",
+                params![sid], |r| r.get(0),
+            ).unwrap_or(0);
+
+            if last_mtime >= mtime { continue; } // unchanged
+
+            let content = match std::fs::read_to_string(path) { Ok(c) => c, Err(_) => continue };
+            let mut count = 0usize;
 
             for line in content.lines() {
                 let parsed: UsageLine = match serde_json::from_str(line) { Ok(l) => l, Err(_) => continue };
-                if parsed.msg_type.as_deref() == Some("assistant") {
-                    if let Some(ref msg) = parsed.message {
-                        if let Some(ref u) = msg.usage {
-                            let model = msg.model.as_deref().unwrap_or("unknown");
-                            let (pid, pfid) = model_map.get(model).cloned().unwrap_or(("Claude Code".into(), "local".into()));
-                            let date = parsed.timestamp.as_deref().unwrap_or("").get(0..10).unwrap_or("today").to_string();
-                            entries.push((pid, pfid, date, u.input_tokens.unwrap_or(0), u.output_tokens.unwrap_or(0)));
-                        }
-                    }
-                }
+                if parsed.msg_type.as_deref() != Some("assistant") { continue; }
+                let msg = match &parsed.message { Some(m) => m, None => continue };
+                let usage = match &msg.usage { Some(u) => u, None => continue };
+
+                // Dedup by message.id
+                let msg_id = msg.id.as_deref().unwrap_or("");
+                if !msg_id.is_empty() && known_msg_ids.contains(msg_id) { continue; }
+
+                let model = msg.model.as_deref().unwrap_or("unknown");
+                let (pid, pfid) = model_map.get(model).cloned().unwrap_or(("Claude Code".into(), "local".into()));
+                let date = parsed.timestamp.as_deref().unwrap_or("").get(0..10).unwrap_or("today").to_string();
+                let input = usage.input_tokens.unwrap_or(0);
+                let output = usage.output_tokens.unwrap_or(0);
+                let cache = usage.cache_read_input_tokens.unwrap_or(0) + usage.cache_creation_input_tokens.unwrap_or(0);
+
+                self.conn().execute(
+                    "INSERT INTO usage_logs (provider_id, profile_id, mode, session_id, message_id, prompt_tokens, completion_tokens, cache_tokens, total_tokens, timestamp)
+                     VALUES (?1, ?2, 'local', ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    params![pid, pfid, sid, msg_id, input, output, cache, input + output + cache, format!("{} 00:00:00", date)],
+                )?;
+                if !msg_id.is_empty() { known_msg_ids.insert(msg_id.to_string()); }
+                count += 1;
             }
 
-            for (pid, pfid, date, input, output) in &entries {
-                if *input > 0 || *output > 0 {
-                    self.conn().execute(
-                        "INSERT INTO usage_logs (provider_id, profile_id, mode, session_id, prompt_tokens, completion_tokens, timestamp)
-                         VALUES (?1, ?2, 'local', ?3, ?4, ?5, ?6)",
-                    params![pid, pfid, sid, input, output, format!("{} 00:00:00", date)],
-                    )?;
-                }
-            }
-            if !entries.is_empty() { imported += 1; }
+            // Update mtime tracking
+            self.conn().execute(
+                "INSERT OR REPLACE INTO session_usage_track (session_id, file_mtime) VALUES (?1, ?2)",
+                params![sid, mtime],
+            )?;
+            imported += count;
         }
         Ok(imported)
     }
