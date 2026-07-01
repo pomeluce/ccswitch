@@ -1,12 +1,12 @@
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use rayon::prelude::*;
 use super::connection::Db;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct UsageSummary {
-    pub provider_id: String,
-    pub profile_id: String,
+    pub model: String,
     pub total_prompt: i64,
     pub total_completion: i64,
     pub total_cache_read: i64,
@@ -45,6 +45,13 @@ struct UsageData {
     cache_creation_input_tokens: Option<i64>,
 }
 
+/// Parsed usage record awaiting DB insert
+struct UsageRecord {
+    sid: String, msg_id: String, model: String,
+    pid: String, pfid: String, date: String,
+    input: i64, output: i64, cr: i64, cc: i64,
+}
+
 impl Db {
     pub fn insert_usage_log(
         &self,
@@ -59,9 +66,9 @@ impl Db {
     ) -> Result<(), rusqlite::Error> {
         let total = prompt_tokens + completion_tokens + cache_read_tokens + cache_create_tokens;
         self.conn().execute(
-            "INSERT INTO usage_logs (provider_id, profile_id, mode, session_id, prompt_tokens, completion_tokens, cache_read_tokens, cache_create_tokens, total_tokens)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![provider_id, profile_id, mode, session_id, prompt_tokens, completion_tokens, cache_read_tokens, cache_create_tokens, total],
+            "INSERT INTO usage_logs (model, provider_id, profile_id, mode, session_id, prompt_tokens, completion_tokens, cache_read_tokens, cache_create_tokens, total_tokens)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![provider_id, provider_id, profile_id, mode, session_id, prompt_tokens, completion_tokens, cache_read_tokens, cache_create_tokens, total],
         )?;
         Ok(())
     }
@@ -74,36 +81,36 @@ impl Db {
             _ => "1=1",
         };
         let sql = format!(
-            "SELECT provider_id, profile_id, SUM(prompt_tokens), SUM(completion_tokens), SUM(cache_read_tokens), SUM(cache_create_tokens), COUNT(*)
-             FROM usage_logs WHERE {} GROUP BY provider_id, profile_id ORDER BY SUM(total_tokens) DESC",
+            "SELECT model, SUM(prompt_tokens), SUM(completion_tokens), SUM(cache_read_tokens), SUM(cache_create_tokens), COUNT(*)
+             FROM usage_logs WHERE {} GROUP BY model ORDER BY SUM(total_tokens) DESC",
             date_filter
         );
         let mut stmt = self.conn().prepare(&sql)?;
         let rows = stmt.query_map([], |row| {
             Ok(UsageSummary {
-                provider_id: row.get(0)?,
-                profile_id: row.get(1)?,
-                total_prompt: row.get(2)?,
-                total_completion: row.get(3)?,
-                total_cache_read: row.get(4)?,
-                total_cache_create: row.get(5)?,
-                request_count: row.get(6)?,
+                model: row.get(0)?,
+                
+                total_prompt: row.get(1)?,
+                total_completion: row.get(2)?,
+                total_cache_read: row.get(3)?,
+                total_cache_create: row.get(4)?,
+                request_count: row.get(5)?,
             })
         })?;
         rows.collect()
     }
 
     /// Query per-day usage breakdown for a specific profile
-    pub fn query_daily_usage(&self, provider: &str, profile: &str) -> Result<Vec<(String, i64, i64, i64, i64)>, rusqlite::Error> {
+    pub fn query_daily_usage(&self, model: &str) -> Result<Vec<(String, i64, i64, i64, i64)>, rusqlite::Error> {
         let sql = "SELECT date(timestamp) as day,
                           SUM(prompt_tokens), SUM(completion_tokens),
                           SUM(cache_read_tokens), SUM(cache_create_tokens)
                    FROM usage_logs
-                   WHERE provider_id = ?1 AND profile_id = ?2
+                   WHERE model = ?1
                      AND date(timestamp) >= date('now', '-6 days')
                    GROUP BY day ORDER BY day";
         let mut stmt = self.conn().prepare(sql)?;
-        let rows = stmt.query_map(params![provider, profile], |row| {
+        let rows = stmt.query_map(params![model], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?,
                 row.get::<_, i64>(3)?, row.get::<_, i64>(4)?))
         })?;
@@ -119,67 +126,72 @@ impl Db {
 
         let jsonl_files = collect_jsonl_files(&projects_dir);
         let model_map = self.build_model_profile_map();
-        let mut imported = 0usize;
 
-        // Pre-load existing message IDs into a HashSet for fast dedup
-        let mut known_msg_ids: std::collections::HashSet<String> = {
+        // Pre-load existing message IDs for dedup
+        let known_msg_ids: std::collections::HashSet<String> = {
             let mut stmt = self.conn().prepare("SELECT message_id FROM usage_logs WHERE message_id IS NOT NULL")?;
             let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
             rows.filter_map(|r| r.ok()).collect()
         };
 
-        for path in &jsonl_files {
+        // Collect files that need scanning (mtime changed)
+        let to_scan: Vec<(PathBuf, i64)> = jsonl_files.into_iter().filter_map(|path| {
             let sid = path.file_stem().and_then(|n| n.to_str()).unwrap_or("");
-            let mtime = std::fs::metadata(path)
-                .and_then(|m| m.modified())
+            let mtime = std::fs::metadata(&path).and_then(|m| m.modified())
                 .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64)
                 .unwrap_or(0);
-            if mtime == 0 { continue; }
-
-            // Check mtime from tracking table
-            let last_mtime: i64 = self.conn().query_row(
+            if mtime == 0 { return None; }
+            let last: i64 = self.conn().query_row(
                 "SELECT file_mtime FROM session_usage_track WHERE session_id = ?1",
                 params![sid], |r| r.get(0),
             ).unwrap_or(0);
+            if last >= mtime { None } else { Some((path, mtime)) }
+        }).collect();
 
-            if last_mtime >= mtime { continue; } // unchanged
+        if to_scan.is_empty() { return Ok(0); }
 
-            let content = match std::fs::read_to_string(path) { Ok(c) => c, Err(_) => continue };
-            let mut count = 0usize;
-
-            for line in content.lines() {
-                let parsed: UsageLine = match serde_json::from_str(line) { Ok(l) => l, Err(_) => continue };
-                if parsed.msg_type.as_deref() != Some("assistant") { continue; }
-                let msg = match &parsed.message { Some(m) => m, None => continue };
-                let usage = match &msg.usage { Some(u) => u, None => continue };
-
-                // Dedup by message.id
-                let msg_id = msg.id.as_deref().unwrap_or("");
-                if !msg_id.is_empty() && known_msg_ids.contains(msg_id) { continue; }
-
+        // Parallel parse all files, collect records
+        let all_records: Vec<(i64, Vec<UsageRecord>)> = to_scan.par_iter().filter_map(|(path, mtime)| {
+            let content = std::fs::read_to_string(path).ok()?;
+            let sid = path.file_stem().and_then(|n| n.to_str()).unwrap_or("");
+            let records: Vec<UsageRecord> = content.lines().filter_map(|line| {
+                let parsed: UsageLine = serde_json::from_str(line).ok()?;
+                if parsed.msg_type.as_deref() != Some("assistant") { return None; }
+                let msg = parsed.message.as_ref()?;
+                let usage = msg.usage.as_ref()?;
+                let msg_id = msg.id.as_deref().unwrap_or("").to_string();
+                if !msg_id.is_empty() && known_msg_ids.contains(&msg_id) { return None; }
                 let model = msg.model.as_deref().unwrap_or("unknown");
                 let (pid, pfid) = model_map.get(model).cloned().unwrap_or(("Claude Code".into(), "local".into()));
                 let date = parsed.timestamp.as_deref().unwrap_or("").get(0..10).unwrap_or("today").to_string();
-                let input = usage.input_tokens.unwrap_or(0);
-                let output = usage.output_tokens.unwrap_or(0);
-                let cr = usage.cache_read_input_tokens.unwrap_or(0);
-                let cc = usage.cache_creation_input_tokens.unwrap_or(0);
+                Some(UsageRecord {
+                    sid: sid.to_string(), msg_id, model: model.to_string(),
+                    pid, pfid, date,
+                    input: usage.input_tokens.unwrap_or(0),
+                    output: usage.output_tokens.unwrap_or(0),
+                    cr: usage.cache_read_input_tokens.unwrap_or(0),
+                    cc: usage.cache_creation_input_tokens.unwrap_or(0),
+                })
+            }).collect();
+            if records.is_empty() { None } else { Some((*mtime, records)) }
+        }).collect();
 
+        // Serial DB insert + mtime update
+        let mut imported = 0usize;
+        for (mtime, records) in &all_records {
+            let sid = &records.first().map(|r| r.sid.clone()).unwrap_or_default();
+            for r in records {
                 self.conn().execute(
-                    "INSERT INTO usage_logs (provider_id, profile_id, mode, session_id, message_id, prompt_tokens, completion_tokens, cache_read_tokens, cache_create_tokens, total_tokens, timestamp)
-                     VALUES (?1, ?2, 'local', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                    params![pid, pfid, sid, msg_id, input, output, cr, cc, input + output + cr + cc, format!("{} 00:00:00", date)],
+                    "INSERT INTO usage_logs (model, provider_id, profile_id, mode, session_id, message_id, prompt_tokens, completion_tokens, cache_read_tokens, cache_create_tokens, total_tokens, timestamp)
+                     VALUES (?1, ?2, ?3, 'local', ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                    params![r.model, r.pid, r.pfid, r.sid, r.msg_id, r.input, r.output, r.cr, r.cc, r.input + r.output + r.cr + r.cc, format!("{} 00:00:00", r.date)],
                 )?;
-                if !msg_id.is_empty() { known_msg_ids.insert(msg_id.to_string()); }
-                count += 1;
+                imported += 1;
             }
-
-            // Update mtime tracking
             self.conn().execute(
                 "INSERT OR REPLACE INTO session_usage_track (session_id, file_mtime) VALUES (?1, ?2)",
-                params![sid, mtime],
+                params![sid, *mtime],
             )?;
-            imported += count;
         }
         Ok(imported)
     }

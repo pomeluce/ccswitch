@@ -230,15 +230,13 @@ fn handle_usage(mgr: &ConfigManager, range: &str, profile: Option<&str>) -> Resu
     let summaries = mgr.db().query_usage(range)?;
     let total_tokens: i64 = summaries.iter().map(|s| s.total_prompt + s.total_completion).sum();
     println!("Token Usage ({})", range);
-    println!("{:<30} {:>10} {:>10} {:>8}", "Profile", "Prompt", "Completion", "Reqs");
+    println!("{:<30} {:>10} {:>10} {:>8}", "Model", "Prompt", "Completion", "Reqs");
     println!("{}", "-".repeat(60));
     for s in &summaries {
         if let Some(filter) = profile {
-            let key = format!("{}/{}", s.provider_id, s.profile_id);
-            if !key.contains(filter) { continue; }
+            if !s.model.contains(filter) { continue; }
         }
-        let key = format!("{}/{}", s.provider_id, s.profile_id);
-        println!("{:<30} {:>10} {:>10} {:>8}", key, s.total_prompt, s.total_completion, s.request_count);
+        println!("{:<30} {:>10} {:>10} {:>8}", s.model, s.total_prompt, s.total_completion, s.request_count);
     }
     println!("{}", "-".repeat(60));
     println!("Total: {} tokens across {} requests", total_tokens, summaries.len());

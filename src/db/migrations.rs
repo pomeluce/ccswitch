@@ -63,6 +63,7 @@ pub const MIGRATIONS: &[&str] = &[
     "ALTER TABLE usage_logs ADD COLUMN cache_create_tokens INTEGER NOT NULL DEFAULT 0;",
     "ALTER TABLE usage_logs ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0;",
     "ALTER TABLE usage_logs ADD COLUMN message_id TEXT;",
+    "ALTER TABLE usage_logs ADD COLUMN model TEXT NOT NULL DEFAULT '';",
     // v4: track session mtime + message IDs for incremental usage scanning
     "CREATE TABLE IF NOT EXISTS session_usage_track (
         session_id TEXT PRIMARY KEY,

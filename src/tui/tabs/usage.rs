@@ -146,7 +146,7 @@ impl UsageTab {
             let total = Self::token_total(s);
             let pct = if max > 0 { (total as f64 / max as f64 * 100.0) as usize } else { 0 };
             let bar = "\u{2588}".repeat((pct / 4).min(20));
-            let label = format!("{} / {}", s.provider_id, s.profile_id);
+            let label = s.model.clone();
             let is_sel = i == self.selected_index;
             let arrow = if is_sel { "\u{276f} " } else { "  " };
             let tc = if is_sel { Theme::CYAN } else { Theme::FG };
@@ -173,9 +173,9 @@ impl UsageTab {
 
     fn render_daily_chart(&self, f: &mut Frame, area: Rect) {
         if let Some(s) = self.summaries.get(self.selected_index) {
-            let label = format!("{} / {}", s.provider_id, s.profile_id);
+            let label = s.model.clone();
             let total = Self::token_total(s);
-            let daily = self.mgr.db().query_daily_usage(&s.provider_id, &s.profile_id).unwrap_or_default();
+            let daily = self.mgr.db().query_daily_usage(&s.model).unwrap_or_default();
             let today_date = chrono::Local::now().format("%Y-%m-%d").to_string();
 
             // Build last 7 days with breakdown data
