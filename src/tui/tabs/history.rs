@@ -368,7 +368,7 @@ impl TabContent for HistoryTab {
                 self.confirm_action = Some(ConfirmAction::Open);
                 self.confirm_button = 0;
             }
-            KeyCode::Char('d') => {
+            KeyCode::Char('d') | KeyCode::Char('D') => {
                 self.confirm_action = Some(ConfirmAction::Delete);
                 self.confirm_button = 0;
             }

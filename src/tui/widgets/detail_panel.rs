@@ -1,6 +1,6 @@
 use ratatui::{
     layout::Rect,
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, Paragraph},
     Frame,
@@ -84,18 +84,6 @@ impl DetailPanel {
                 }
             }
         }
-        lines.extend(vec![
-            Line::from(""),
-            Line::from(vec![
-                Span::styled(" \u{23ce} Apply  ",
-                    Style::default().add_modifier(Modifier::REVERSED)),
-                Span::styled(" e Edit  ",
-                    Style::default().add_modifier(Modifier::REVERSED)),
-                Span::styled(" d Delete",
-                    Style::default().fg(Theme::RED)),
-            ]),
-        ]);
-
         let p = Paragraph::new(lines)
             .block(
                 Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
