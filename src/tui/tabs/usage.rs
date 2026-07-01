@@ -78,10 +78,14 @@ impl TabContent for UsageTab {
         // Profile ranking
         self.render_profile_list(f, left[2]);
 
-        // Right: daily chart + shortcut bar
+        // Right: daily chart + shortcut bar (dynamic height)
+        let sc_lines = usage_shortcut_lines(main[1].width);
         let right = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(3), Constraint::Length(3)])
+            .constraints([
+                Constraint::Min(3),
+                Constraint::Length(2 + sc_lines as u16),
+            ])
             .split(main[1]);
         self.render_daily_chart(f, right[0]);
         self.render_shortcut_bar(f, right[1]);
@@ -336,6 +340,20 @@ fn title_case(s: &str) -> String {
         }
     }
     result
+}
+
+fn usage_shortcut_lines(available_width: u16) -> usize {
+    let group_widths = [8, 9, 8, 13, 7]; // J/K, /, T, PgUp/Dn, Q with labels
+    let sep = 2usize;
+    let w = available_width.max(10) as usize;
+    let mut lines = 1usize;
+    let mut cur = 0usize;
+    for gw in &group_widths {
+        if cur + gw > w && cur > 0 { lines += 1; cur = 0; }
+        if cur > 0 { cur += sep; }
+        cur += gw;
+    }
+    lines
 }
 
 fn format_tokens(n: i64) -> String {
