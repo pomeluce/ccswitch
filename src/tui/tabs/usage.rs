@@ -60,15 +60,10 @@ impl UsageTab {
 
 impl TabContent for UsageTab {
     fn render(&mut self, f: &mut Frame, area: Rect) {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(3), Constraint::Length(3)])
-            .split(area);
-
         let main = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(chunks[0]);
+            .split(area);
 
         let left = Layout::default()
             .direction(Direction::Vertical)
@@ -82,11 +77,13 @@ impl TabContent for UsageTab {
         // Profile ranking
         self.render_profile_list(f, left[2]);
 
-        // Right: daily chart
-        self.render_daily_chart(f, main[1]);
-
-        // Bottom shortcut bar
-        self.render_shortcut_bar(f, chunks[1]);
+        // Right: daily chart + shortcut bar
+        let right = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(3), Constraint::Length(3)])
+            .split(main[1]);
+        self.render_daily_chart(f, right[0]);
+        self.render_shortcut_bar(f, right[1]);
     }
 
     fn handle_key(&mut self, code: KeyCode) -> bool {
@@ -161,7 +158,7 @@ impl UsageTab {
         let groups: Vec<Vec<Span>> = vec![
             vec![key(" J/K ", Theme::CYAN), lbl("Nav")],
             vec![key(" / ", Theme::CYAN), lbl("Search")],
-            vec![key(" t ", Theme::GREEN), lbl("Toggle")],
+            vec![key(" T ", Theme::GREEN), lbl("Toggle")],
             vec![key(" PgUp/Dn ", Theme::PURPLE), lbl("Scroll")],
             vec![key(" Q ", Theme::ORANGE), lbl("Quit")],
         ];
