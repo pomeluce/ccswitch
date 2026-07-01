@@ -2,15 +2,16 @@ use std::sync::Arc;
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span},
-    widgets::{Block, Clear, List, ListItem, ListState, Paragraph},
+    widgets::{Block, List, ListItem, ListState, Paragraph},
     Frame,
 };
 use crossterm::event::KeyCode;
 use crate::core::config::ConfigManager;
 use crate::db::sessions::SessionRecord;
 use super::super::theme::Theme;
+use super::super::widgets::shared::{render_search_box as shared_search, render_shortcut_bar as shared_shortcuts, render_confirm_popup as shared_confirm, shortcut_lines};
 use super::TabContent;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -138,7 +139,7 @@ impl TabContent for HistoryTab {
             .split(main[0]);
 
         // Right panel: detail preview + shortcut bar (dynamic height)
-        let shortcut_lines = shortcut_needed_lines(main[1].width);
+        let shortcut_lines = shortcut_lines(main[1].width, &[8, 9, 12, 7, 7]);
         let right_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -384,105 +385,27 @@ impl TabContent for HistoryTab {
 impl HistoryTab {
     fn render_confirm_popup(&self, f: &mut Frame, area: Rect) {
         let is_delete = self.confirm_action == Some(ConfirmAction::Delete);
-        let title = if is_delete { " Confirm Delete " } else { " Open Session " };
-        let msg = if is_delete { " Delete this session? " } else { " Open this session in Claude Code? " };
-        let border_color = if is_delete { Theme::RED } else { Theme::CYAN };
-
-        let popup_area = centered_rect(46, 6, area);
-        let confirm_style = if self.confirm_button == 0 {
-            Style::default().fg(Color::Black).bg(if is_delete { Theme::RED } else { Theme::CYAN })
+        let (title, msg, c) = if is_delete {
+            (" Confirm Delete ", " Delete this session? ", Theme::RED)
         } else {
-            Style::default().fg(Theme::DIM)
+            (" Open Session ", " Open this session in Claude Code? ", Theme::CYAN)
         };
-        let cancel_style = if self.confirm_button == 1 {
-            Style::default().fg(Color::Black).bg(Theme::CYAN)
-        } else {
-            Style::default().fg(Theme::DIM)
-        };
-
-        let p = Paragraph::new(vec![
-            Line::from(msg).centered(),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("  Confirm  ", confirm_style),
-                Span::raw("     "),
-                Span::styled("  Cancel  ", cancel_style),
-            ]).centered(),
-        ])
-        .block(
-            Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                .title(Line::from(title).centered())
-                .border_style(Style::default().fg(border_color)),
-        );
-        f.render_widget(Clear, popup_area);
-        f.render_widget(p, popup_area);
+        shared_confirm(f, area, title, msg, "Confirm", "Cancel", c, self.confirm_button);
     }
 
     fn render_shortcut_bar(&self, f: &mut Frame, area: Rect) {
-        let key = |t: &str, c| -> Span {
-            Span::styled(t.to_string(), Style::default().fg(c))
-        };
-        let lbl = |t: &str| -> Span {
-            Span::styled(format!(" {} ", t), Style::default().fg(Theme::COMMENT))
-        };
-        let sep = || Span::styled("  ".to_string(), Style::default());
-
-        // Each shortcut group as a fixed unit (never split within)
-        let groups: Vec<Vec<Span>> = vec![
-            vec![key(" J/K ", Theme::CYAN), lbl("Nav")],
-            vec![key(" / ", Theme::CYAN), lbl("Search")],
-            vec![key(" ⏎  ", Theme::GREEN), lbl("Open")],
-            vec![key(" D ", Theme::RED), lbl("Delete")],
-            vec![key(" Q ", Theme::ORANGE), lbl("Quit")],
+        let groups = vec![
+            vec![(" J/K ".into(), Theme::CYAN), ("Nav".into(), Theme::COMMENT)],
+            vec![(" / ".into(), Theme::CYAN), ("Search".into(), Theme::COMMENT)],
+            vec![(" ⏎  ".into(), Theme::GREEN), ("Open".into(), Theme::COMMENT)],
+            vec![(" D ".into(), Theme::RED), ("Delete".into(), Theme::COMMENT)],
+            vec![(" Q ".into(), Theme::ORANGE), ("Quit".into(), Theme::COMMENT)],
         ];
-
-        let width = area.width.max(10) as usize;
-        let mut rows: Vec<Line> = Vec::new();
-        let mut current: Vec<Span> = Vec::new();
-        let mut cur_w = 0usize;
-
-        for group in &groups {
-            let g_w: usize = group.iter().map(|s| s.width()).sum::<usize>();
-            if cur_w + g_w > width && !current.is_empty() {
-                rows.push(Line::from(std::mem::take(&mut current)));
-                cur_w = 0;
-            }
-            if !current.is_empty() { current.push(sep()); cur_w += 2; }
-            current.extend(group.clone());
-            cur_w += g_w;
-        }
-        if !current.is_empty() {
-            rows.push(Line::from(current));
-        }
-        if rows.is_empty() {
-            rows.push(Line::default());
-        }
-
-        let p = Paragraph::new(rows)
-            .centered()
-            .block(
-                Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                    .border_style(Style::default().fg(Theme::DIM)),
-            );
-        f.render_widget(p, area);
+        shared_shortcuts(f, area, &groups);
     }
 
     fn render_search_box(&self, f: &mut Frame, area: Rect) {
-        let cursor = if self.is_searching { "▌" } else { "" };
-        let text = if self.search_query.is_empty() && !self.is_searching {
-            "⌕ Search (/ to focus)".to_string()
-        } else if !self.search_query.is_empty() && !self.is_searching {
-            format!("⌕ {} (/) — Esc to clear", self.search_query)
-        } else {
-            format!("⌕ {}{}", self.search_query, cursor)
-        };
-        let color = if self.is_searching { Theme::CYAN } else { Theme::COMMENT };
-        let p = Paragraph::new(Line::from(Span::styled(text, Style::default().fg(color))))
-            .block(
-                Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                    .border_style(Style::default().fg(Theme::DIM)),
-            );
-        f.render_widget(p, area);
+        shared_search(f, area, &self.search_query, self.is_searching);
     }
 }
 
@@ -514,27 +437,7 @@ fn relative_time(iso: &str) -> String {
 }
 
 /// How many content lines the shortcut bar needs at this width
-fn shortcut_needed_lines(available_width: u16) -> usize {
-    // Group widths (approx): J/K+Nav=8, /+Search=9, ⏎+Open=12, D+Delete=7, Q+Quit=6
-    // Plus separators "  " between groups
-    let group_widths = [8usize, 9, 12, 12, 6];
-    let sep = 2usize;
-    let w = available_width.max(10) as usize;
-    let mut lines = 1usize;
-    let mut cur = 0usize;
-    for gw in &group_widths {
-        if cur + gw > w && cur > 0 { lines += 1; cur = 0; }
-        if cur > 0 { cur += sep; }
-        cur += gw;
-    }
-    lines
-}
 
-fn centered_rect(width: u16, height: u16, r: Rect) -> Rect {
-    let x = r.x + (r.width.saturating_sub(width)) / 2;
-    let y = r.y + (r.height.saturating_sub(height)) / 2;
-    Rect { x, y, width: width.min(r.width), height: height.min(r.height) }
-}
 
 /// Split path: first `max_width` chars on first line, remainder on continuation lines
 fn split_path(path: &str, max_width: usize) -> (String, Vec<String>) {

@@ -1,6 +1,6 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, Clear, List, ListItem, ListState, Paragraph},
     Frame,
@@ -11,6 +11,7 @@ use crate::core::models::Provider;
 use super::super::widgets::detail_panel::DetailPanel;
 use super::TabContent;
 use super::super::theme::Theme;
+use super::super::widgets::shared::{render_shortcut_bar as shared_shortcuts, render_confirm_popup as shared_confirm, render_message_popup as shared_msg};
 
 use std::sync::Arc;
 
@@ -83,44 +84,15 @@ impl ProvidersTab {
     }
 
     fn render_shortcut_bar(&self, f: &mut Frame, area: Rect) {
-        let key = |t: &str, c| Span::styled(t.to_string(), Style::default().fg(c));
-        let lbl = |t: &str| Span::styled(format!(" {}", t), Style::default().fg(Theme::COMMENT));
-        let sep = || Span::styled("  ".to_string(), Style::default());
-
-        let groups: Vec<Vec<Span>> = vec![
-            vec![key(" J/K ", Theme::CYAN), lbl("Nav")],
-            vec![key(" / ", Theme::CYAN), lbl("Search")],
-            vec![key(" ⏎  ", Theme::GREEN), lbl("Switch")],
-            vec![key(" D ", Theme::RED), lbl("Delete")],
-            vec![key(" E ", Theme::PURPLE), lbl("Edit")],
-            vec![key(" Q ", Theme::ORANGE), lbl("Quit")],
+        let groups = vec![
+            vec![(" J/K ".into(), Theme::CYAN), ("Nav".into(), Theme::COMMENT)],
+            vec![(" / ".into(), Theme::CYAN), ("Search".into(), Theme::COMMENT)],
+            vec![(" ⏎  ".into(), Theme::GREEN), ("Switch".into(), Theme::COMMENT)],
+            vec![(" D ".into(), Theme::RED), ("Delete".into(), Theme::COMMENT)],
+            vec![(" E ".into(), Theme::PURPLE), ("Edit".into(), Theme::COMMENT)],
+            vec![(" Q ".into(), Theme::ORANGE), ("Quit".into(), Theme::COMMENT)],
         ];
-
-        let width = area.width.max(10) as usize;
-        let mut rows: Vec<Line> = Vec::new();
-        let mut cur: Vec<Span> = Vec::new();
-        let mut cur_w = 0usize;
-
-        for g in &groups {
-            let gw: usize = g.iter().map(|s| s.width()).sum();
-            if cur_w + gw > width && !cur.is_empty() {
-                rows.push(Line::from(std::mem::take(&mut cur)));
-                cur_w = 0;
-            }
-            if !cur.is_empty() { cur.push(sep()); cur_w += 2; }
-            cur.extend(g.clone());
-            cur_w += gw;
-        }
-        if !cur.is_empty() { rows.push(Line::from(cur)); }
-        if rows.is_empty() { rows.push(Line::default()); }
-
-        f.render_widget(
-            Paragraph::new(rows).centered().block(
-                Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                    .border_style(Style::default().fg(Theme::DIM))
-            ),
-            area,
-        );
+        shared_shortcuts(f, area, &groups);
     }
 
     fn render_search_box(&self, f: &mut Frame, area: Rect) {
@@ -258,28 +230,11 @@ impl ProvidersTab {
             Some(ProviderAction::Delete) => (" Delete Profile ", " Delete this profile? ", Theme::RED),
             _ => return,
         };
-        let popup = centered_rect(44, 6, area);
-        let cs = if self.confirm_button == 0 { Style::default().fg(Color::Black).bg(c) } else { Style::default().fg(Theme::DIM) };
-        let xs = if self.confirm_button == 1 { Style::default().fg(Color::Black).bg(Theme::CYAN) } else { Style::default().fg(Theme::DIM) };
-        let p = Paragraph::new(vec![
-            Line::from(msg).centered(), Line::from(""),
-            Line::from(vec![Span::styled("  Confirm  ", cs), Span::raw("     "), Span::styled("  Cancel  ", xs)]).centered(),
-        ]).block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-            .title(Line::from(title).centered()).border_style(Style::default().fg(c)));
-        f.render_widget(Clear, popup);
-        f.render_widget(p, popup);
+        shared_confirm(f, area, title, msg, "Confirm", "Cancel", c, self.confirm_button);
     }
 
     fn render_message_popup(&self, f: &mut Frame, area: Rect) {
-        let msg = self.message.as_deref().unwrap_or("");
-        let popup = centered_rect(44, 5, area);
-        let p = Paragraph::new(vec![
-            Line::from(""), Line::from(msg).centered(), Line::from(""),
-            Line::from(Span::styled("  OK  ", Style::default().fg(Color::Black).bg(Theme::CYAN))).centered(),
-        ]).block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-            .title(Line::from(" Notice ").centered()).border_style(Style::default().fg(Theme::YELLOW)));
-        f.render_widget(Clear, popup);
-        f.render_widget(p, popup);
+        shared_msg(f, area, self.message.as_deref().unwrap_or(""));
     }
 }
 
