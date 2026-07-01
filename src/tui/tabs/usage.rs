@@ -206,18 +206,29 @@ impl UsageTab {
                     Span::styled(format!("{}{}  ", label, val), Style::default().fg(Theme::COMMENT))
                 };
                 let detail_lines: Vec<Line> = if total > 0 {
-                    vec![
-                        Line::from(vec![
+                    let single_line = format!("input {}  output {}  cache read {}  cache create {}",
+                        format_tokens(*in_tok), format_tokens(*out_tok),
+                        format_tokens(*cr_tok), format_tokens(*cc_tok));
+                    // Only split to two lines if terminal is too narrow
+                    if single_line.len() + indent.len() < area.width as usize {
+                        vec![Line::from(vec![
                             Span::styled(indent, Style::default()),
-                            metric("input ", &format_tokens(*in_tok)),
-                            metric("output ", &format_tokens(*out_tok)),
-                        ]),
-                        Line::from(vec![
-                            Span::styled(indent, Style::default()),
-                            metric("cache read ", &format_tokens(*cr_tok)),
-                            metric("cache create ", &format_tokens(*cc_tok)),
-                        ]),
-                    ]
+                            Span::styled(single_line, Style::default().fg(Theme::COMMENT)),
+                        ])]
+                    } else {
+                        vec![
+                            Line::from(vec![
+                                Span::styled(indent, Style::default()),
+                                metric("input ", &format_tokens(*in_tok)),
+                                metric("output ", &format_tokens(*out_tok)),
+                            ]),
+                            Line::from(vec![
+                                Span::styled(indent, Style::default()),
+                                metric("cache read ", &format_tokens(*cr_tok)),
+                                metric("cache create ", &format_tokens(*cc_tok)),
+                            ]),
+                        ]
+                    }
                 } else { vec![] };
                 let mut day_lines = vec![
                     Line::from(vec![
