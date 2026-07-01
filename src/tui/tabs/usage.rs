@@ -200,27 +200,35 @@ impl UsageTab {
                 let w = if max_val > 0 { (total as f64 / max_val as f64 * 30.0) as usize } else { 0 };
                 let bar = "\u{2500}".repeat(w.min(35));
                 let color = if *is_today { Theme::CYAN } else { Theme::PURPLE };
-                let breakdown_str = if total > 0 {
-                    format!("input {}  output {}  cache read {}  cache create {}",
-                        format_tokens(*in_tok), format_tokens(*out_tok),
-                        format_tokens(*cr_tok), format_tokens(*cc_tok))
-                } else { String::new() };
-                let detail_line = if !breakdown_str.is_empty() {
-                    Line::from(vec![
-                        Span::styled("       ", Style::default()),
-                        Span::styled(breakdown_str, Style::default().fg(Theme::COMMENT)),
-                    ])
-                } else { Line::from("") };
-                vec![
+                let indent = "       ";
+                let metric = |label: &str, val: &str| -> Span {
+                    Span::styled(format!("{}{}  ", label, val), Style::default().fg(Theme::COMMENT))
+                };
+                let detail_lines: Vec<Line> = if total > 0 {
+                    vec![
+                        Line::from(vec![
+                            Span::styled(indent, Style::default()),
+                            metric("input ", &format_tokens(*in_tok)),
+                            metric("output ", &format_tokens(*out_tok)),
+                        ]),
+                        Line::from(vec![
+                            Span::styled(indent, Style::default()),
+                            metric("cache read ", &format_tokens(*cr_tok)),
+                            metric("cache create ", &format_tokens(*cc_tok)),
+                        ]),
+                    ]
+                } else { vec![] };
+                let mut day_lines = vec![
                     Line::from(vec![
                         Span::styled("  ", Style::default()),
                         Span::styled(format!("{}  ", date), Style::default().fg(Theme::COMMENT)),
                         Span::styled(bar, Style::default().fg(color)),
                         Span::styled(format!(" {}", format_tokens(total)), Style::default().fg(if *is_today { Theme::CYAN } else { Theme::DIM })),
                     ]),
-                    detail_line,
-                    Line::from(""),
-                ]
+                ];
+                day_lines.extend(detail_lines);
+                day_lines.push(Line::from(""));
+                day_lines
             }).collect();
             // Summary line at bottom of chart
             lines.push(Line::from(""));
