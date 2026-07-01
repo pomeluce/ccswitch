@@ -138,11 +138,11 @@ impl ProvidersTab {
             let val = &form.fields[i];
             let cursor = if i == form.focused { " ▌" } else { "" };
             let style = if i == form.focused { Style::default().fg(Theme::CYAN) } else { Style::default().fg(Theme::FG) };
-            let label_padded = format!("   {:<15}", label);
-            lines.push(Line::from(Span::styled(format!("{}{}{}", label_padded, val, cursor), style)));
+            lines.push(Line::from(Span::styled(format!("{}: {}{}", label, val, cursor), style)).centered());
             lines.push(Line::from(""));
         }
-        lines.push(Line::from("")); // spacing before hints
+        // Push hints to bottom
+        while lines.len() < 17 { lines.push(Line::from("")); }
         lines.push(Line::from(vec![
             Span::styled(" Enter ", Style::default().fg(Theme::GREEN)),
             Span::styled(" Save  ", Style::default().fg(Theme::COMMENT)),
