@@ -127,11 +127,12 @@ impl TabContent for UsageTab {
             KeyCode::Char('/') => {
                 self.is_searching = true;
             }
-            KeyCode::Char('g') => {
-                self.chart_scroll = 0;
+            // Ctrl+U = page up in chart, Ctrl+D = page down
+            KeyCode::Char('\x15') => {
+                self.chart_scroll = self.chart_scroll.saturating_sub(5);
             }
-            KeyCode::Char('G') => {
-                self.chart_scroll = usize::MAX; // will be clamped in render
+            KeyCode::Char('\x04') => {
+                self.chart_scroll = self.chart_scroll.saturating_add(5);
             }
             _ => return false,
         }
