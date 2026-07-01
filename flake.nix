@@ -86,13 +86,74 @@
           }:
           let
             cfg = config.services.ccswitch;
+            format = pkgs.formats.toml { };
           in
           {
             options.services.ccswitch = {
               enable = lib.mkEnableOption "CCSwitch model configuration manager";
+              defaults = lib.mkOption {
+                type = lib.types.submodule {
+                  freeformType = format.type;
+                  options.version = lib.mkOption {
+                    type = lib.types.int;
+                    default = 1;
+                  };
+                  options.providers = lib.mkOption {
+                    type = lib.types.listOf (
+                      lib.types.submodule {
+                        freeformType = format.type;
+                        options = {
+                          id = lib.mkOption { type = lib.types.str; };
+                          name = lib.mkOption { type = lib.types.str; };
+                          api_url = lib.mkOption { type = lib.types.str; };
+                          api_key = lib.mkOption { type = lib.types.str; };
+                          profiles = lib.mkOption {
+                            type = lib.types.listOf (
+                              lib.types.submodule {
+                                freeformType = format.type;
+                                options = {
+                                  id = lib.mkOption { type = lib.types.str; };
+                                  name = lib.mkOption { type = lib.types.str; };
+                                  opus = lib.mkOption { type = lib.types.str; };
+                                  sonnet = lib.mkOption { type = lib.types.str; };
+                                  haiku = lib.mkOption { type = lib.types.str; };
+                                  subagent = lib.mkOption { type = lib.types.str; };
+                                  default = lib.mkOption {
+                                    type = lib.types.bool;
+                                    default = false;
+                                  };
+                                };
+                              }
+                            );
+                            default = [ ];
+                          };
+                        };
+                      }
+                    );
+                    default = [ ];
+                    description = "List of API providers with model profiles";
+                  };
+                };
+                default = { };
+                description = "System default provider configurations";
+                example = lib.literalExpression ''
+                  {
+                    version = 1;
+                    providers = [
+                      { id = "deepseek"; name = "DeepSeek"; api_url = "https://api.deepseek.com/anthropic"; api_key = "env:DEEPSEEK_API_KEY";
+                        profiles = [
+                          { id = "v4"; name = "V4"; opus = "deepseek-v4-pro[1m]"; sonnet = "deepseek-v4-pro[1m]"; haiku = "deepseek-v4-flash"; subagent = "deepseek-v4-flash"; default = true; }
+                        ];
+                      }
+                    ];
+                  }
+                '';
+              };
             };
             config = lib.mkIf cfg.enable {
               environment.systemPackages = [ self.packages.${pkgs.system}.default ];
+              environment.etc."ccswitch/defaults.toml".source =
+                format.generate "ccswitch-defaults.toml" cfg.defaults;
             };
           };
 
@@ -111,31 +172,53 @@
             options.programs.ccswitch = {
               enable = lib.mkEnableOption "CCSwitch model configuration manager";
               defaults = lib.mkOption {
-                type = lib.types.attrs;
+                type =
+                  let
+                    format = pkgs.formats.toml { };
+                  in
+                  lib.types.submodule {
+                    freeformType = format.type;
+                    options.version = lib.mkOption {
+                      type = lib.types.int;
+                      default = 1;
+                    };
+                    options.providers = lib.mkOption {
+                      type = lib.types.listOf (
+                        lib.types.submodule {
+                          freeformType = format.type;
+                          options = {
+                            id = lib.mkOption { type = lib.types.str; };
+                            name = lib.mkOption { type = lib.types.str; };
+                            api_url = lib.mkOption { type = lib.types.str; };
+                            api_key = lib.mkOption { type = lib.types.str; };
+                            profiles = lib.mkOption {
+                              type = lib.types.listOf (
+                                lib.types.submodule {
+                                  freeformType = format.type;
+                                  options = {
+                                    id = lib.mkOption { type = lib.types.str; };
+                                    name = lib.mkOption { type = lib.types.str; };
+                                    opus = lib.mkOption { type = lib.types.str; };
+                                    sonnet = lib.mkOption { type = lib.types.str; };
+                                    haiku = lib.mkOption { type = lib.types.str; };
+                                    subagent = lib.mkOption { type = lib.types.str; };
+                                    default = lib.mkOption {
+                                      type = lib.types.bool;
+                                      default = false;
+                                    };
+                                  };
+                                }
+                              );
+                              default = [ ];
+                            };
+                          };
+                        }
+                      );
+                      default = [ ];
+                    };
+                  };
                 default = { };
                 description = "Default provider configurations";
-                example = {
-                  version = 1;
-                  providers = [
-                    {
-                      id = "deepseek";
-                      name = "DeepSeek";
-                      api_url = "https://api.deepseek.com/anthropic";
-                      api_key = "env:DEEPSEEK_API_KEY";
-                      profiles = [
-                        {
-                          id = "v4";
-                          name = "V4";
-                          opus = "deepseek-v4-pro[1m]";
-                          sonnet = "deepseek-v4-pro[1m]";
-                          haiku = "deepseek-v4-flash";
-                          subagent = "deepseek-v4-flash";
-                          default = true;
-                        }
-                      ];
-                    }
-                  ];
-                };
               };
             };
             config = lib.mkIf cfg.enable {
