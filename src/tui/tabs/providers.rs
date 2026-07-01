@@ -83,23 +83,42 @@ impl ProvidersTab {
     }
 
     fn render_shortcut_bar(&self, f: &mut Frame, area: Rect) {
-        let line = Line::from(vec![
-            Span::styled(" J/K ", Style::default().fg(Theme::CYAN)),
-            Span::styled("Nav  ", Style::default().fg(Theme::COMMENT)),
-            Span::styled(" / ", Style::default().fg(Theme::CYAN)),
-            Span::styled("Search  ", Style::default().fg(Theme::COMMENT)),
-            Span::styled(" ⏎  ", Style::default().fg(Theme::GREEN)),
-            Span::styled("Switch  ", Style::default().fg(Theme::COMMENT)),
-            Span::styled(" D ", Style::default().fg(Theme::RED)),
-            Span::styled("Delete  ", Style::default().fg(Theme::COMMENT)),
-            Span::styled(" E ", Style::default().fg(Theme::PURPLE)),
-            Span::styled("Edit  ", Style::default().fg(Theme::COMMENT)),
-            Span::styled(" Q ", Style::default().fg(Theme::ORANGE)),
-            Span::styled("Quit", Style::default().fg(Theme::COMMENT)),
-        ]).centered();
+        let key = |t: &str, c| Span::styled(t.to_string(), Style::default().fg(c));
+        let lbl = |t: &str| Span::styled(format!(" {}", t), Style::default().fg(Theme::COMMENT));
+        let sep = || Span::styled("  ".to_string(), Style::default());
+
+        let groups: Vec<Vec<Span>> = vec![
+            vec![key(" J/K ", Theme::CYAN), lbl("Nav")],
+            vec![key(" / ", Theme::CYAN), lbl("Search")],
+            vec![key(" ⏎  ", Theme::GREEN), lbl("Switch")],
+            vec![key(" D ", Theme::RED), lbl("Delete")],
+            vec![key(" E ", Theme::PURPLE), lbl("Edit")],
+            vec![key(" Q ", Theme::ORANGE), lbl("Quit")],
+        ];
+
+        let width = area.width.max(10) as usize;
+        let mut rows: Vec<Line> = Vec::new();
+        let mut cur: Vec<Span> = Vec::new();
+        let mut cur_w = 0usize;
+
+        for g in &groups {
+            let gw: usize = g.iter().map(|s| s.width()).sum();
+            if cur_w + gw > width && !cur.is_empty() {
+                rows.push(Line::from(std::mem::take(&mut cur)));
+                cur_w = 0;
+            }
+            if !cur.is_empty() { cur.push(sep()); cur_w += 2; }
+            cur.extend(g.clone());
+            cur_w += gw;
+        }
+        if !cur.is_empty() { rows.push(Line::from(cur)); }
+        if rows.is_empty() { rows.push(Line::default()); }
+
         f.render_widget(
-            Paragraph::new(line).block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                .border_style(Style::default().fg(Theme::DIM))),
+            Paragraph::new(rows).centered().block(
+                Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
+                    .border_style(Style::default().fg(Theme::DIM))
+            ),
             area,
         );
     }
@@ -270,9 +289,13 @@ impl TabContent for ProvidersTab {
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)]).split(area);
         let left = Layout::default().direction(Direction::Vertical)
             .constraints([Constraint::Length(3), Constraint::Min(3)]).split(main[0]);
-        // Right panel: detail + shortcut bar
+        // Right panel: detail + shortcut bar (dynamic height)
+        let sc_lines = provider_shortcut_lines(main[1].width);
         let right = Layout::default().direction(Direction::Vertical)
-            .constraints([Constraint::Min(3), Constraint::Length(3)]).split(main[1]);
+            .constraints([
+                Constraint::Min(3),
+                Constraint::Length(2 + sc_lines as u16),
+            ]).split(main[1]);
         self.render_search_box(f, left[0]);
 
         let items: Vec<ListItem> = self.filtered.iter().enumerate().map(|(fi, &ai)| {
@@ -419,6 +442,20 @@ fn slice_value(text: &str, cursor: usize, max_w: usize) -> VisSlice {
         start = end - max_w;
     }
     VisSlice { text: text[start..end].to_string(), skip: start }
+}
+
+fn provider_shortcut_lines(available_width: u16) -> usize {
+    let group_widths = [8, 9, 12, 8, 7, 7]; // J/K, /, enter, D, E, Q with labels
+    let sep = 2usize;
+    let w = available_width.max(10) as usize;
+    let mut lines = 1usize;
+    let mut cur = 0usize;
+    for gw in &group_widths {
+        if cur + gw > w && cur > 0 { lines += 1; cur = 0; }
+        if cur > 0 { cur += sep; }
+        cur += gw;
+    }
+    lines
 }
 
 fn centered_rect(w: u16, h: u16, r: Rect) -> Rect {
