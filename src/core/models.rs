@@ -53,6 +53,7 @@ pub struct ActiveConfig {
     pub profile_name: String,
     pub base_url: String,
     pub auth_token: String,
+    #[allow(dead_code)]
     pub api_key: String,
     pub opus_model: String,
     pub sonnet_model: String,
