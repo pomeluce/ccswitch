@@ -315,6 +315,7 @@ impl TabContent for HistoryTab {
                 }
                 KeyCode::Enter => {
                     self.is_searching = false;
+                    if !self.sessions.is_empty() { self.state.select(Some(0)); }
                 }
                 KeyCode::Backspace | KeyCode::Delete => {
                     self.search_query.pop();

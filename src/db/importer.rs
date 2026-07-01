@@ -42,6 +42,43 @@ fn projects_dir() -> PathBuf {
     claude_dir().join("projects")
 }
 
+enum TitleField {
+    Custom(String),
+    Ai(String),
+    LastPrompt(String),
+}
+
+/// Lightweight string-based title extraction (avoids full JSON parse for middle lines)
+fn parse_title_only(line: &str) -> Option<TitleField> {
+    if let Some(v) = extract_json_str(line, "\"customTitle\"") {
+        return Some(TitleField::Custom(v));
+    }
+    if let Some(v) = extract_json_str(line, "\"aiTitle\"") {
+        return Some(TitleField::Ai(v));
+    }
+    if let Some(v) = extract_json_str(line, "\"lastPrompt\"") {
+        return Some(TitleField::LastPrompt(v));
+    }
+    None
+}
+
+fn extract_json_str(line: &str, key: &str) -> Option<String> {
+    let start = line.find(key)?;
+    let after_key = &line[start + key.len()..];
+    let colon = after_key.find(':')?;
+    let after_colon = after_key[colon + 1..].trim();
+    if !after_colon.starts_with('"') { return None; }
+    let content = &after_colon[1..];
+    let mut result = String::new();
+    let mut chars = content.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' { chars.next(); continue; }
+        if c == '"' { break; }
+        result.push(c);
+    }
+    if result.is_empty() { None } else { Some(result) }
+}
+
 /// Truncate title to 40 chars max
 fn truncate_title(s: &str) -> String {
     let s = s.trim();
@@ -175,36 +212,27 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
     let mut ai_title: Option<String> = None;
     let mut last_prompt: Option<String> = None;
 
-    // Parse head + tail for metadata, all lines for titles
-    for line in lines.iter().take(head_count).chain(lines.iter().rev().take(tail_count)) {
-        let parsed: JsonlLine = match serde_json::from_str(line) {
-            Ok(l) => l,
-            Err(_) => continue,
-        };
-
-        if let Some(ref sid) = parsed.session_id {
-            if session_id.is_none() { session_id = Some(sid.clone()); }
+    // Single pass: parse head+tail for metadata, all lines for titles
+    for (i, line) in lines.iter().enumerate() {
+        let in_range = i < head_count || i >= lines.len().saturating_sub(tail_count);
+        if !in_range {
+            // Only parse titles from middle lines (skip full JSON parse)
+            if let Some(title) = parse_title_only(line) {
+                match title {
+                    TitleField::Custom(t) => { custom_title = Some(t); }
+                    TitleField::Ai(t) => { ai_title = Some(t); }
+                    TitleField::LastPrompt(t) => { last_prompt = Some(truncate_title(&t)); }
+                }
+            }
+            continue;
         }
-        if let Some(ref c) = parsed.cwd {
-            if cwd.is_none() { cwd = Some(c.clone()); }
-        }
-        if let Some(ref ts) = parsed.timestamp {
-            if created_at.is_none() { created_at = parse_timestamp(ts); }
-        }
-    }
-
-    // Scan ALL lines for titles (they can appear anywhere in the file)
-    for line in lines.iter() {
         let parsed: JsonlLine = match serde_json::from_str(line) { Ok(l) => l, Err(_) => continue };
-        if let Some(ref ct) = parsed.custom_title {
-            if !ct.is_empty() { custom_title = Some(ct.clone()); }
-        }
-        if let Some(ref at) = parsed.ai_title {
-            if !at.is_empty() { ai_title = Some(at.clone()); }
-        }
-        if let Some(ref lp) = parsed.last_prompt {
-            if !lp.is_empty() { last_prompt = Some(truncate_title(lp)); }
-        }
+        if let Some(ref sid) = parsed.session_id { if session_id.is_none() { session_id = Some(sid.clone()); } }
+        if let Some(ref c) = parsed.cwd { if cwd.is_none() { cwd = Some(c.clone()); } }
+        if let Some(ref ts) = parsed.timestamp { if created_at.is_none() { created_at = parse_timestamp(ts); } }
+        if let Some(ref ct) = parsed.custom_title { if !ct.is_empty() { custom_title = Some(ct.clone()); } }
+        if let Some(ref at) = parsed.ai_title { if !at.is_empty() { ai_title = Some(at.clone()); } }
+        if let Some(ref lp) = parsed.last_prompt { if !lp.is_empty() { last_prompt = Some(truncate_title(lp)); } }
     }
 
     // Fallback: extract last user message from tail
