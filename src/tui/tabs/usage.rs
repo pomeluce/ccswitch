@@ -149,7 +149,7 @@ impl UsageTab {
             let pct = if max > 0 { (total as f64 / max as f64 * 100.0) as usize } else { 0 };
             let bar_len = if total > 0 { (pct / 4).max(1).min(20) } else { 0 };
             let bar = "\u{2584}".repeat(bar_len);
-            let label = s.model.clone();
+            let label = title_case(&s.model);
             let is_sel = i == self.selected_index;
             let arrow = if is_sel { "\u{276f} " } else { "  " };
             let tc = if is_sel { Theme::CYAN } else { Theme::FG };
@@ -157,7 +157,7 @@ impl UsageTab {
             ListItem::new(vec![
                 Line::from(vec![
                     Span::styled(format!("{}{}", arrow, label), Style::default().fg(tc)),
-                    Span::styled(format!("  {}", format_tokens(total)), Style::default().fg(Theme::GREEN)),
+                    Span::styled(format!("  {}", format_tokens(total)), Style::default().fg(Theme::DIM)),
                 ]),
                 Line::from(vec![
                     Span::styled("  ", Style::default()),
@@ -177,7 +177,7 @@ impl UsageTab {
 
     fn render_daily_chart(&self, f: &mut Frame, area: Rect) {
         if let Some(s) = self.summaries.get(self.selected_index) {
-            let label = s.model.clone();
+            let label = title_case(&s.model);
             let total = Self::token_total(s);
             let daily = self.mgr.usage_db().query_daily_usage(&s.model).unwrap_or_default();
             let today_date = chrono::Local::now().format("%Y-%m-%d").to_string();
@@ -243,6 +243,17 @@ impl UsageTab {
             f.render_widget(p, area);
         }
     }
+}
+
+fn title_case(s: &str) -> String {
+    let mut result = String::new();
+    let mut upper = true;
+    for c in s.chars() {
+        if c == '-' || c == '.' || c == '_' { upper = true; result.push(c); }
+        else if upper { result.push(c.to_ascii_uppercase()); upper = false; }
+        else { result.push(c); }
+    }
+    result
 }
 
 fn format_tokens(n: i64) -> String {
