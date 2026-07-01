@@ -410,7 +410,7 @@ impl TabContent for ProvidersTab {
                 }
                 self.confirm_action = Some(ProviderAction::Delete); self.confirm_button = 0;
             }
-            KeyCode::Char('e') => {
+            KeyCode::Char('e') | KeyCode::Char('E') => {
                 if let Some(&ai) = self.filtered.get(self.state.selected().unwrap_or(0)) {
                     if !self.all_profiles[ai].0.source.can_delete() {
                         self.message = Some("Cannot edit system default profile".into());
