@@ -419,20 +419,46 @@ impl HistoryTab {
     }
 
     fn render_shortcut_bar(&self, f: &mut Frame, area: Rect) {
-        let key = |t: &str, c| -> Span { Span::styled(t.to_string(), Style::default().fg(Color::Black).bg(c)) };
-        let label = |t: &str| -> Span { Span::styled(t.to_string(), Style::default().fg(Theme::COMMENT)) };
+        let key = |t: &str, c| -> Span {
+            Span::styled(t.to_string(), Style::default().fg(Color::Black).bg(c))
+        };
+        let lbl = |t: &str| -> Span {
+            Span::styled(format!(" {} ", t), Style::default().fg(Theme::COMMENT))
+        };
         let sep = || Span::styled("  ".to_string(), Style::default());
 
-        let line = Line::from(vec![
-            key(" J/K ", Theme::CYAN), label("Nav  "), sep(),
-            key(" / ", Theme::CYAN), label("Search  "), sep(),
-            key(" ⏎ ", Theme::GREEN), label("Open  "), sep(),
-            key(" Ctrl+D ", Theme::RED), label("Delete  "), sep(),
-            key(" Q ", Theme::ORANGE), label("Quit"),
-        ]);
+        // Each shortcut group as a fixed unit (never split within)
+        let groups: Vec<Vec<Span>> = vec![
+            vec![key(" J/K ", Theme::CYAN), lbl("Nav")],
+            vec![key(" / ", Theme::CYAN), lbl("Search")],
+            vec![key(" ⏎  ", Theme::GREEN), lbl("Open")],
+            vec![key(" Ctrl+D ", Theme::RED), lbl("Delete")],
+            vec![key(" Q ", Theme::ORANGE), lbl("Quit")],
+        ];
 
-        let p = Paragraph::new(line)
-            .wrap(ratatui::widgets::Wrap { trim: false })
+        let width = area.width.max(10) as usize;
+        let mut rows: Vec<Line> = Vec::new();
+        let mut current: Vec<Span> = Vec::new();
+        let mut cur_w = 0usize;
+
+        for group in &groups {
+            let g_w: usize = group.iter().map(|s| s.width()).sum::<usize>();
+            if cur_w + g_w > width && !current.is_empty() {
+                rows.push(Line::from(std::mem::take(&mut current)));
+                cur_w = 0;
+            }
+            if !current.is_empty() { current.push(sep()); cur_w += 2; }
+            current.extend(group.clone());
+            cur_w += g_w;
+        }
+        if !current.is_empty() {
+            rows.push(Line::from(current));
+        }
+        if rows.is_empty() {
+            rows.push(Line::default());
+        }
+
+        let p = Paragraph::new(rows)
             .centered()
             .block(
                 Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
@@ -489,10 +515,19 @@ fn relative_time(iso: &str) -> String {
 
 /// How many content lines the shortcut bar needs at this width
 fn shortcut_needed_lines(available_width: u16) -> usize {
-    // ~52 chars for shortcuts, plus separators
-    let content_width = 55usize;
+    // Group widths (approx): J/K+Nav=8, /+Search=9, ⏎+Open=12, Ctrl+D+Delete=12, Q+Quit=6
+    // Plus separators "  " between groups
+    let group_widths = [8usize, 9, 12, 12, 6];
+    let sep = 2usize;
     let w = available_width.max(10) as usize;
-    if w >= content_width { 1 } else { 2 }
+    let mut lines = 1usize;
+    let mut cur = 0usize;
+    for gw in &group_widths {
+        if cur + gw > w && cur > 0 { lines += 1; cur = 0; }
+        if cur > 0 { cur += sep; }
+        cur += gw;
+    }
+    lines
 }
 
 fn centered_rect(width: u16, height: u16, r: Rect) -> Rect {
