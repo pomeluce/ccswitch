@@ -113,6 +113,7 @@ impl TabContent for ProvidersTab {
                         Style::default().fg(title_color),
                     )),
                     Line::from(vec![
+                        Span::styled("  ", Style::default()),
                         Span::styled(&prov.name, Style::default().fg(Theme::COMMENT)),
                         Span::styled(" · ", Style::default().fg(Theme::DIM)),
                         Span::styled(&prov.id, Style::default().fg(Theme::COMMENT)),
