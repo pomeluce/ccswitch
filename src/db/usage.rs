@@ -126,7 +126,8 @@ impl Db {
 
         let jsonl_files = collect_jsonl_files(&projects_dir);
 
-        // Pre-load existing message IDs for dedup
+        // Cleanup synthetic entries and pre-load existing message IDs for dedup
+        self.conn().execute("DELETE FROM usage_logs WHERE model = '<synthetic>'", [])?;
         let known_msg_ids: std::collections::HashSet<String> = {
             let mut stmt = self.conn().prepare("SELECT message_id FROM usage_logs WHERE message_id IS NOT NULL AND message_id != ''")?;
             let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
@@ -147,6 +148,8 @@ impl Db {
                 let msg_id = msg.id.as_deref().unwrap_or("").to_string();
                 if !msg_id.is_empty() && known_msg_ids.contains(&msg_id) { return None; }
                 let model = msg.model.as_deref().unwrap_or("unknown").replace("[1m]", "");
+                // Skip synthetic system messages with zero tokens
+                if model == "<synthetic>" { return None; }
                 let date = parsed.timestamp.as_deref().unwrap_or("").get(0..10).unwrap_or("today").to_string();
                 Some(UsageRecord {
                     sid: sid.to_string(), msg_id, model: model.to_string(), date,
