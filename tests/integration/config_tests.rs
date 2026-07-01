@@ -62,7 +62,8 @@ subagent = "sys-sub"
     )
     .unwrap();
 
-    let db_path = dir.path().join("test.db");
+    // ConfigManager uses model.db (not test.db) — open and pre-populate that.
+    let db_path = dir.path().join("model.db");
     let db = Db::open(&db_path).unwrap();
     // User adds a new profile under the system provider
     use ccswitch::core::models::{Provider, Source};
@@ -75,6 +76,7 @@ subagent = "sys-sub"
         source: Source::User,
     })
     .unwrap();
+    drop(db);
 
     let mgr = ConfigManager::new(&db_path, Some(&defaults_path)).unwrap();
     let providers = mgr.list_providers().unwrap();
