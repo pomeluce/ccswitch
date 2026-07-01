@@ -27,7 +27,7 @@ impl DetailPanel {
         let source_tag = if can_delete { "user" } else { "system" };
         let masked_key = mask_api_key(api_key);
 
-        let lines = vec![
+        let mut lines = vec![
             Line::from(vec![
                 Span::styled(pad, Style::default()),
                 Span::styled(
@@ -66,6 +66,25 @@ impl DetailPanel {
                 Span::styled(format!("{}Key:      ", pad), Style::default().fg(Theme::PURPLE)),
                 Span::styled(&masked_key, Style::default().fg(Theme::GREEN)),
             ]),
+        ];
+        // Continuation lines for long URL/Key values
+        let indent = format!("{}         ", pad);
+        let max_w = (area.width as usize).saturating_sub(indent.len()).max(10);
+        for &(val, color) in &[(api_url, Theme::DIM), (masked_key.as_str(), Theme::GREEN)] {
+            if val.len() > max_w {
+                let remainder: String = val.chars().skip(max_w).collect();
+                for chunk in remainder.chars().collect::<Vec<_>>().chunks(max_w) {
+                    let cont: String = chunk.iter().collect();
+                    if !cont.is_empty() {
+                        lines.push(Line::from(Span::styled(
+                            format!("{}{}", indent, cont),
+                            Style::default().fg(color),
+                        )));
+                    }
+                }
+            }
+        }
+        lines.extend(vec![
             Line::from(""),
             Line::from(vec![
                 Span::styled(" \u{23ce} Apply  ",
@@ -75,7 +94,7 @@ impl DetailPanel {
                 Span::styled(" d Delete",
                     Style::default().fg(Theme::RED)),
             ]),
-        ];
+        ]);
 
         let p = Paragraph::new(lines)
             .block(
