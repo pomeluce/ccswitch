@@ -90,9 +90,9 @@ impl ProvidersTab {
             Span::styled("Search  ", Style::default().fg(Theme::COMMENT)),
             Span::styled(" ⏎  ", Style::default().fg(Theme::GREEN)),
             Span::styled("Switch  ", Style::default().fg(Theme::COMMENT)),
-            Span::styled(" d ", Style::default().fg(Theme::RED)),
+            Span::styled(" D ", Style::default().fg(Theme::RED)),
             Span::styled("Delete  ", Style::default().fg(Theme::COMMENT)),
-            Span::styled(" e ", Style::default().fg(Theme::CYAN)),
+            Span::styled(" E ", Style::default().fg(Theme::PURPLE)),
             Span::styled("Edit  ", Style::default().fg(Theme::COMMENT)),
             Span::styled(" Q ", Style::default().fg(Theme::ORANGE)),
             Span::styled("Quit", Style::default().fg(Theme::COMMENT)),
@@ -378,7 +378,7 @@ impl TabContent for ProvidersTab {
             KeyCode::Char('j') | KeyCode::Down => { let l = self.filtered.len(); if l > 0 { let i = self.state.selected().unwrap_or(0); self.state.select(Some(if i + 1 < l { i + 1 } else { 0 })); } }
             KeyCode::Char('k') | KeyCode::Up => { let l = self.filtered.len(); if l > 0 { let i = self.state.selected().unwrap_or(0); self.state.select(Some(if i > 0 { i - 1 } else { l - 1 })); } }
             KeyCode::Enter => { self.confirm_action = Some(ProviderAction::Switch); self.confirm_button = 0; }
-            KeyCode::Char('d') => {
+            KeyCode::Char('d') | KeyCode::Char('D') => {
                 if let Some(&ai) = self.filtered.get(self.state.selected().unwrap_or(0)) {
                     if !self.all_profiles[ai].0.source.can_delete() {
                         self.message = Some("Cannot delete system default profile".into());
