@@ -140,7 +140,7 @@ impl TabContent for HistoryTab {
         // Right panel: detail preview + shortcut bar
         let right_chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(3), Constraint::Length(3)])
+            .constraints([Constraint::Min(3), Constraint::Length(5)])
             .split(main[1]);
 
         // Search box
@@ -221,7 +221,7 @@ impl TabContent for HistoryTab {
                     Line::from(""),
                     Line::from(vec![
                         Span::styled(format!("{}Project:  ", pad), Style::default().fg(Theme::PURPLE)),
-                        Span::styled(&s.project_path, Style::default().fg(Theme::YELLOW)),
+                        Span::styled(truncate_path(&s.project_path, 40), Style::default().fg(Theme::YELLOW)),
                     ]),
                     Line::from(vec![
                         Span::styled(format!("{}Profile:  ", pad), Style::default().fg(Theme::PURPLE)),
@@ -471,6 +471,14 @@ fn centered_rect(width: u16, height: u16, r: Rect) -> Rect {
     let x = r.x + (r.width.saturating_sub(width)) / 2;
     let y = r.y + (r.height.saturating_sub(height)) / 2;
     Rect { x, y, width: width.min(r.width), height: height.min(r.height) }
+}
+
+fn truncate_path(path: &str, max: usize) -> String {
+    if path.len() <= max { return path.to_string(); }
+    let home = std::env::var("HOME").unwrap_or_default();
+    let short = path.replace(&home, "~");
+    if short.len() <= max { return short; }
+    format!("...{}", &path[path.len().saturating_sub(max - 3)..])
 }
 
 fn format_size(bytes: i64) -> String {
