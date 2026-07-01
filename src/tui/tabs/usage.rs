@@ -39,9 +39,10 @@ impl UsageTab {
         }
     }
 
-    fn total_tokens(&self) -> i64 { self.summaries.iter().map(|s| s.total_prompt + s.total_completion).sum() }
+    fn token_total(s: &UsageSummary) -> i64 { s.total_prompt + s.total_completion + s.total_cache }
+    fn total_tokens(&self) -> i64 { self.summaries.iter().map(|s| Self::token_total(s)).sum() }
     fn total_reqs(&self) -> i64 { self.summaries.iter().map(|s| s.request_count).sum() }
-    fn max_tokens(&self) -> i64 { self.summaries.iter().map(|s| s.total_prompt + s.total_completion).max().unwrap_or(1) }
+    fn max_tokens(&self) -> i64 { self.summaries.iter().map(|s| Self::token_total(s)).max().unwrap_or(1) }
 }
 
 impl TabContent for UsageTab {
@@ -114,9 +115,9 @@ impl UsageTab {
             .constraints([Constraint::Ratio(1,4); 4]).split(area);
 
         let today: i64 = self.mgr.db().query_usage("day").unwrap_or_default()
-            .iter().map(|s| s.total_prompt + s.total_completion).sum();
+            .iter().map(|s| Self::token_total(s)).sum();
         let week: i64 = self.mgr.db().query_usage("week").unwrap_or_default()
-            .iter().map(|s| s.total_prompt + s.total_completion).sum();
+            .iter().map(|s| Self::token_total(s)).sum();
         let all = self.total_tokens();
         let reqs = self.total_reqs();
 
@@ -142,7 +143,7 @@ impl UsageTab {
     fn render_profile_list(&mut self, f: &mut Frame, area: Rect) {
         let max = self.max_tokens();
         let items: Vec<ListItem> = self.summaries.iter().enumerate().map(|(i, s)| {
-            let total = s.total_prompt + s.total_completion;
+            let total = Self::token_total(s);
             let pct = if max > 0 { (total as f64 / max as f64 * 100.0) as usize } else { 0 };
             let bar = "\u{2588}".repeat((pct / 4).min(20));
             let label = format!("{} / {}", s.provider_id, s.profile_id);
@@ -173,31 +174,45 @@ impl UsageTab {
     fn render_daily_chart(&self, f: &mut Frame, area: Rect) {
         if let Some(s) = self.summaries.get(self.selected_index) {
             let label = format!("{} / {}", s.provider_id, s.profile_id);
-            let total = s.total_prompt + s.total_completion;
+            let total = Self::token_total(s);
             let daily = self.mgr.db().query_daily_usage(&s.provider_id, &s.profile_id).unwrap_or_default();
             let today_date = chrono::Local::now().format("%Y-%m-%d").to_string();
 
-            // Build last 7 days with actual data
-            let days: Vec<(String, i64, bool)> = (0..7).rev().map(|offset| {
+            // Build last 7 days with breakdown data
+            let days: Vec<(String, i64, i64, i64, bool)> = (0..7).rev().map(|offset| {
                 let d = chrono::Local::now() - chrono::Duration::days(offset);
                 let date_str = d.format("%Y-%m-%d").to_string();
                 let label_date = d.format("%m-%d").to_string();
-                let val = daily.iter().find(|(dt, _)| dt == &date_str).map(|(_, v)| *v).unwrap_or(0);
-                (label_date, val, date_str == today_date)
+                let (in_tok, out_tok, cache_tok) = daily.iter()
+                    .find(|(dt, _, _, _)| dt == &date_str)
+                    .map(|(_, i, o, c)| (*i, *o, *c))
+                    .unwrap_or((0, 0, 0));
+                (label_date, in_tok, out_tok, cache_tok, date_str == today_date)
             }).collect();
 
-            let max_val = days.iter().map(|(_, v, _)| *v).max().unwrap_or(1).max(1);
-            let mut lines: Vec<Line> = days.iter().flat_map(|(date, val, is_today)| {
-                let w = if max_val > 0 { (*val as f64 / max_val as f64 * 30.0) as usize } else { 0 };
+            let max_val = days.iter().map(|(_, i, o, c, _)| i + o + c).max().unwrap_or(1).max(1);
+            let mut lines: Vec<Line> = days.iter().flat_map(|(date, in_tok, out_tok, cache_tok, is_today)| {
+                let total = in_tok + out_tok + cache_tok;
+                let w = if max_val > 0 { (total as f64 / max_val as f64 * 30.0) as usize } else { 0 };
                 let bar = "\u{2588}".repeat(w.min(35));
                 let color = if *is_today { Theme::CYAN } else { Theme::PURPLE };
+                let breakdown_str = if total > 0 {
+                    format!("in {}｜out {}｜cache {}", format_tokens(*in_tok), format_tokens(*out_tok), format_tokens(*cache_tok))
+                } else { String::new() };
+                let detail_line = if !breakdown_str.is_empty() {
+                    Line::from(vec![
+                        Span::styled("       ", Style::default()),
+                        Span::styled(breakdown_str, Style::default().fg(Theme::COMMENT)),
+                    ])
+                } else { Line::from("") };
                 vec![
                     Line::from(vec![
                         Span::styled("  ", Style::default()),
                         Span::styled(format!("{}  ", date), Style::default().fg(Theme::COMMENT)),
                         Span::styled(bar, Style::default().fg(color)),
-                        Span::styled(format!(" {}", format_tokens(*val)), Style::default().fg(if *is_today { Theme::CYAN } else { Theme::DIM })),
+                        Span::styled(format!(" {}", format_tokens(total)), Style::default().fg(if *is_today { Theme::CYAN } else { Theme::DIM })),
                     ]),
+                    detail_line,
                     Line::from(""),
                 ]
             }).collect();

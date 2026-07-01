@@ -9,6 +9,7 @@ pub struct UsageSummary {
     pub profile_id: String,
     pub total_prompt: i64,
     pub total_completion: i64,
+    pub total_cache: i64,
     pub request_count: i64,
 }
 
@@ -48,11 +49,13 @@ impl Db {
         session_id: Option<&str>,
         prompt_tokens: i64,
         completion_tokens: i64,
+        cache_tokens: i64,
     ) -> Result<(), rusqlite::Error> {
+        let total = prompt_tokens + completion_tokens + cache_tokens;
         self.conn().execute(
-            "INSERT INTO usage_logs (provider_id, profile_id, mode, session_id, prompt_tokens, completion_tokens)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![provider_id, profile_id, mode, session_id, prompt_tokens, completion_tokens],
+            "INSERT INTO usage_logs (provider_id, profile_id, mode, session_id, prompt_tokens, completion_tokens, cache_tokens, total_tokens)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![provider_id, profile_id, mode, session_id, prompt_tokens, completion_tokens, cache_tokens, total],
         )?;
         Ok(())
     }
@@ -65,8 +68,8 @@ impl Db {
             _ => "1=1",
         };
         let sql = format!(
-            "SELECT provider_id, profile_id, SUM(prompt_tokens), SUM(completion_tokens), COUNT(*)
-             FROM usage_logs WHERE {} GROUP BY provider_id, profile_id ORDER BY SUM(prompt_tokens + completion_tokens) DESC",
+            "SELECT provider_id, profile_id, SUM(prompt_tokens), SUM(completion_tokens), SUM(cache_tokens), COUNT(*)
+             FROM usage_logs WHERE {} GROUP BY provider_id, profile_id ORDER BY SUM(total_tokens) DESC",
             date_filter
         );
         let mut stmt = self.conn().prepare(&sql)?;
@@ -76,22 +79,23 @@ impl Db {
                 profile_id: row.get(1)?,
                 total_prompt: row.get(2)?,
                 total_completion: row.get(3)?,
-                request_count: row.get(4)?,
+                total_cache: row.get(4)?,
+                request_count: row.get(5)?,
             })
         })?;
         rows.collect()
     }
 
-    /// Query per-day usage for a specific profile
-    pub fn query_daily_usage(&self, provider: &str, profile: &str) -> Result<Vec<(String, i64)>, rusqlite::Error> {
-        let sql = "SELECT date(timestamp) as day, SUM(prompt_tokens + completion_tokens)
+    /// Query per-day usage breakdown for a specific profile
+    pub fn query_daily_usage(&self, provider: &str, profile: &str) -> Result<Vec<(String, i64, i64, i64)>, rusqlite::Error> {
+        let sql = "SELECT date(timestamp) as day, SUM(prompt_tokens), SUM(completion_tokens), SUM(cache_tokens)
                    FROM usage_logs
                    WHERE provider_id = ?1 AND profile_id = ?2
                      AND date(timestamp) >= date('now', '-6 days')
                    GROUP BY day ORDER BY day";
         let mut stmt = self.conn().prepare(sql)?;
         let rows = stmt.query_map(params![provider, profile], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?, row.get::<_, i64>(3)?))
         })?;
         rows.collect()
     }
