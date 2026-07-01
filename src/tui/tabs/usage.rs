@@ -41,7 +41,6 @@ impl UsageTab {
 
     fn token_total(s: &UsageSummary) -> i64 { s.total_prompt + s.total_completion + s.total_cache_read + s.total_cache_create }
     fn total_tokens(&self) -> i64 { self.summaries.iter().map(|s| Self::token_total(s)).sum() }
-    fn total_reqs(&self) -> i64 { self.summaries.iter().map(|s| s.request_count).sum() }
     fn max_tokens(&self) -> i64 { self.summaries.iter().map(|s| Self::token_total(s)).max().unwrap_or(1) }
 }
 
@@ -184,7 +183,7 @@ impl UsageTab {
             let today_date = chrono::Local::now().format("%Y-%m-%d").to_string();
 
             // Build days with actual usage data (skip zero-token days, max 7)
-            let mut days: Vec<(String, i64, i64, i64, i64, bool)> = (0..7).rev().filter_map(|offset| {
+            let days: Vec<(String, i64, i64, i64, i64, bool)> = (0..7).rev().filter_map(|offset| {
                 let d = chrono::Local::now() - chrono::Duration::days(offset);
                 let date_str = d.format("%Y-%m-%d").to_string();
                 let (in_tok, out_tok, cr_tok, cc_tok) = daily.iter()
