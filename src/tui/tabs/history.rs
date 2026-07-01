@@ -140,7 +140,7 @@ impl TabContent for HistoryTab {
         // Right panel: detail preview + shortcut bar
         let right_chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(3), Constraint::Length(3)])
+            .constraints([Constraint::Min(3), Constraint::Min(3)])
             .split(main[1]);
 
         // Search box
@@ -221,7 +221,7 @@ impl TabContent for HistoryTab {
                     Line::from(""),
                     Line::from(vec![
                         Span::styled(format!("{}Project:  ", pad), Style::default().fg(Theme::PURPLE)),
-                        Span::styled(truncate_path(&s.project_path, 40), Style::default().fg(Theme::YELLOW)),
+                        Span::styled(shorten_path(&s.project_path), Style::default().fg(Theme::YELLOW)),
                     ]),
                     Line::from(vec![
                         Span::styled(format!("{}Profile:  ", pad), Style::default().fg(Theme::PURPLE)),
@@ -399,20 +399,24 @@ impl HistoryTab {
     }
 
     fn render_shortcut_bar(&self, f: &mut Frame, area: Rect) {
-        let line = Line::from(vec![
-            Span::styled(" J/K ", Style::default().fg(Color::Black).bg(Theme::CYAN)),
-            Span::styled(" Nav  ", Style::default().fg(Theme::COMMENT)),
-            Span::styled(" / ", Style::default().fg(Color::Black).bg(Theme::CYAN)),
-            Span::styled(" Search  ", Style::default().fg(Theme::COMMENT)),
-            Span::styled(" ⏎ ", Style::default().fg(Color::Black).bg(Theme::GREEN)),
-            Span::styled(" Open  ", Style::default().fg(Theme::COMMENT)),
-            Span::styled(" Ctrl+D ", Style::default().fg(Color::Black).bg(Theme::RED)),
-            Span::styled(" Delete  ", Style::default().fg(Theme::COMMENT)),
-            Span::styled(" Q ", Style::default().fg(Color::Black).bg(Theme::ORANGE)),
-            Span::styled(" Quit", Style::default().fg(Theme::COMMENT)),
-        ]).centered();
-        let p = Paragraph::new(line)
+        let shortcuts = vec![
+            (vec![("J/K", Theme::CYAN), (" Nav", Theme::COMMENT)], ""),
+            (vec![("/", Theme::CYAN), (" Search", Theme::COMMENT)], "  "),
+            (vec![("⏎", Theme::GREEN), (" Open", Theme::COMMENT)], "  "),
+            (vec![("Ctrl+D", Theme::RED), (" Delete", Theme::COMMENT)], "  "),
+            (vec![("Q", Theme::ORANGE), (" Quit", Theme::COMMENT)], ""),
+        ];
+
+        let sep = Span::styled("  ", Style::default());
+        let all_spans: Vec<Span> = shortcuts.iter().flat_map(|(grp, _)| {
+            grp.iter().map(|(txt, color)| {
+                Span::styled(format!(" {} ", txt), Style::default().fg(Color::Black).bg(*color))
+            }).chain(std::iter::once(sep.clone()))
+        }).collect();
+
+        let p = Paragraph::new(Line::from(all_spans))
             .wrap(ratatui::widgets::Wrap { trim: false })
+            .centered()
             .block(
                 Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
                     .border_style(Style::default().fg(Theme::DIM)),
@@ -472,12 +476,11 @@ fn centered_rect(width: u16, height: u16, r: Rect) -> Rect {
     Rect { x, y, width: width.min(r.width), height: height.min(r.height) }
 }
 
-fn truncate_path(path: &str, max: usize) -> String {
-    if path.len() <= max { return path.to_string(); }
+fn shorten_path(path: &str) -> String {
     let home = std::env::var("HOME").unwrap_or_default();
     let short = path.replace(&home, "~");
-    if short.len() <= max { return short; }
-    format!("...{}", &path[path.len().saturating_sub(max - 3)..])
+    if short.len() <= 45 { return short; }
+    format!(".../{}", std::path::Path::new(path).file_name().unwrap_or_default().to_string_lossy())
 }
 
 fn format_size(bytes: i64) -> String {
