@@ -59,7 +59,8 @@ pub const MIGRATIONS: &[&str] = &[
     // v2: add size_bytes column
     "ALTER TABLE session_history ADD COLUMN size_bytes INTEGER NOT NULL DEFAULT 0;",
     // v3: add cache_tokens column
-    "ALTER TABLE usage_logs ADD COLUMN cache_tokens INTEGER NOT NULL DEFAULT 0;",
+    "ALTER TABLE usage_logs ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0;",
+    "ALTER TABLE usage_logs ADD COLUMN cache_create_tokens INTEGER NOT NULL DEFAULT 0;",
     "ALTER TABLE usage_logs ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0;",
     "ALTER TABLE usage_logs ADD COLUMN message_id TEXT;",
     // v4: track session mtime + message IDs for incremental usage scanning

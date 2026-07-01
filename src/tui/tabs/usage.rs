@@ -39,7 +39,7 @@ impl UsageTab {
         }
     }
 
-    fn token_total(s: &UsageSummary) -> i64 { s.total_prompt + s.total_completion + s.total_cache }
+    fn token_total(s: &UsageSummary) -> i64 { s.total_prompt + s.total_completion + s.total_cache_read + s.total_cache_create }
     fn total_tokens(&self) -> i64 { self.summaries.iter().map(|s| Self::token_total(s)).sum() }
     fn total_reqs(&self) -> i64 { self.summaries.iter().map(|s| s.request_count).sum() }
     fn max_tokens(&self) -> i64 { self.summaries.iter().map(|s| Self::token_total(s)).max().unwrap_or(1) }
@@ -179,25 +179,27 @@ impl UsageTab {
             let today_date = chrono::Local::now().format("%Y-%m-%d").to_string();
 
             // Build last 7 days with breakdown data
-            let days: Vec<(String, i64, i64, i64, bool)> = (0..7).rev().map(|offset| {
+            let days: Vec<(String, i64, i64, i64, i64, bool)> = (0..7).rev().map(|offset| {
                 let d = chrono::Local::now() - chrono::Duration::days(offset);
                 let date_str = d.format("%Y-%m-%d").to_string();
                 let label_date = d.format("%m-%d").to_string();
-                let (in_tok, out_tok, cache_tok) = daily.iter()
-                    .find(|(dt, _, _, _)| dt == &date_str)
-                    .map(|(_, i, o, c)| (*i, *o, *c))
-                    .unwrap_or((0, 0, 0));
-                (label_date, in_tok, out_tok, cache_tok, date_str == today_date)
+                let (in_tok, out_tok, cr_tok, cc_tok) = daily.iter()
+                    .find(|(dt, _, _, _, _)| dt == &date_str)
+                    .map(|(_, i, o, cr, cc)| (*i, *o, *cr, *cc))
+                    .unwrap_or((0, 0, 0, 0));
+                (label_date, in_tok, out_tok, cr_tok, cc_tok, date_str == today_date)
             }).collect();
 
-            let max_val = days.iter().map(|(_, i, o, c, _)| i + o + c).max().unwrap_or(1).max(1);
-            let mut lines: Vec<Line> = days.iter().flat_map(|(date, in_tok, out_tok, cache_tok, is_today)| {
-                let total = in_tok + out_tok + cache_tok;
+            let max_val = days.iter().map(|(_, i, o, cr, cc, _)| i + o + cr + cc).max().unwrap_or(1).max(1);
+            let mut lines: Vec<Line> = days.iter().flat_map(|(date, in_tok, out_tok, cr_tok, cc_tok, is_today)| {
+                let total = in_tok + out_tok + cr_tok + cc_tok;
                 let w = if max_val > 0 { (total as f64 / max_val as f64 * 30.0) as usize } else { 0 };
                 let bar = "\u{2588}".repeat(w.min(35));
                 let color = if *is_today { Theme::CYAN } else { Theme::PURPLE };
                 let breakdown_str = if total > 0 {
-                    format!("in {}｜out {}｜cache {}", format_tokens(*in_tok), format_tokens(*out_tok), format_tokens(*cache_tok))
+                    format!("in {}  out {}  cache-read {}  cache-create {}",
+                        format_tokens(*in_tok), format_tokens(*out_tok),
+                        format_tokens(*cr_tok), format_tokens(*cc_tok))
                 } else { String::new() };
                 let detail_line = if !breakdown_str.is_empty() {
                     Line::from(vec![

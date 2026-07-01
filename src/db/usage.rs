@@ -9,7 +9,8 @@ pub struct UsageSummary {
     pub profile_id: String,
     pub total_prompt: i64,
     pub total_completion: i64,
-    pub total_cache: i64,
+    pub total_cache_read: i64,
+    pub total_cache_create: i64,
     pub request_count: i64,
 }
 
@@ -53,13 +54,14 @@ impl Db {
         session_id: Option<&str>,
         prompt_tokens: i64,
         completion_tokens: i64,
-        cache_tokens: i64,
+        cache_read_tokens: i64,
+        cache_create_tokens: i64,
     ) -> Result<(), rusqlite::Error> {
-        let total = prompt_tokens + completion_tokens + cache_tokens;
+        let total = prompt_tokens + completion_tokens + cache_read_tokens + cache_create_tokens;
         self.conn().execute(
-            "INSERT INTO usage_logs (provider_id, profile_id, mode, session_id, prompt_tokens, completion_tokens, cache_tokens, total_tokens)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![provider_id, profile_id, mode, session_id, prompt_tokens, completion_tokens, cache_tokens, total],
+            "INSERT INTO usage_logs (provider_id, profile_id, mode, session_id, prompt_tokens, completion_tokens, cache_read_tokens, cache_create_tokens, total_tokens)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![provider_id, profile_id, mode, session_id, prompt_tokens, completion_tokens, cache_read_tokens, cache_create_tokens, total],
         )?;
         Ok(())
     }
@@ -72,7 +74,7 @@ impl Db {
             _ => "1=1",
         };
         let sql = format!(
-            "SELECT provider_id, profile_id, SUM(prompt_tokens), SUM(completion_tokens), SUM(cache_tokens), COUNT(*)
+            "SELECT provider_id, profile_id, SUM(prompt_tokens), SUM(completion_tokens), SUM(cache_read_tokens), SUM(cache_create_tokens), COUNT(*)
              FROM usage_logs WHERE {} GROUP BY provider_id, profile_id ORDER BY SUM(total_tokens) DESC",
             date_filter
         );
@@ -83,23 +85,27 @@ impl Db {
                 profile_id: row.get(1)?,
                 total_prompt: row.get(2)?,
                 total_completion: row.get(3)?,
-                total_cache: row.get(4)?,
-                request_count: row.get(5)?,
+                total_cache_read: row.get(4)?,
+                total_cache_create: row.get(5)?,
+                request_count: row.get(6)?,
             })
         })?;
         rows.collect()
     }
 
     /// Query per-day usage breakdown for a specific profile
-    pub fn query_daily_usage(&self, provider: &str, profile: &str) -> Result<Vec<(String, i64, i64, i64)>, rusqlite::Error> {
-        let sql = "SELECT date(timestamp) as day, SUM(prompt_tokens), SUM(completion_tokens), SUM(cache_tokens)
+    pub fn query_daily_usage(&self, provider: &str, profile: &str) -> Result<Vec<(String, i64, i64, i64, i64)>, rusqlite::Error> {
+        let sql = "SELECT date(timestamp) as day,
+                          SUM(prompt_tokens), SUM(completion_tokens),
+                          SUM(cache_read_tokens), SUM(cache_create_tokens)
                    FROM usage_logs
                    WHERE provider_id = ?1 AND profile_id = ?2
                      AND date(timestamp) >= date('now', '-6 days')
                    GROUP BY day ORDER BY day";
         let mut stmt = self.conn().prepare(sql)?;
         let rows = stmt.query_map(params![provider, profile], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?, row.get::<_, i64>(3)?))
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?, row.get::<_, i64>(4)?))
         })?;
         rows.collect()
     }
@@ -156,12 +162,13 @@ impl Db {
                 let date = parsed.timestamp.as_deref().unwrap_or("").get(0..10).unwrap_or("today").to_string();
                 let input = usage.input_tokens.unwrap_or(0);
                 let output = usage.output_tokens.unwrap_or(0);
-                let cache = usage.cache_read_input_tokens.unwrap_or(0) + usage.cache_creation_input_tokens.unwrap_or(0);
+                let cr = usage.cache_read_input_tokens.unwrap_or(0);
+                let cc = usage.cache_creation_input_tokens.unwrap_or(0);
 
                 self.conn().execute(
-                    "INSERT INTO usage_logs (provider_id, profile_id, mode, session_id, message_id, prompt_tokens, completion_tokens, cache_tokens, total_tokens, timestamp)
-                     VALUES (?1, ?2, 'local', ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                    params![pid, pfid, sid, msg_id, input, output, cache, input + output + cache, format!("{} 00:00:00", date)],
+                    "INSERT INTO usage_logs (provider_id, profile_id, mode, session_id, message_id, prompt_tokens, completion_tokens, cache_read_tokens, cache_create_tokens, total_tokens, timestamp)
+                     VALUES (?1, ?2, 'local', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    params![pid, pfid, sid, msg_id, input, output, cr, cc, input + output + cr + cc, format!("{} 00:00:00", date)],
                 )?;
                 if !msg_id.is_empty() { known_msg_ids.insert(msg_id.to_string()); }
                 count += 1;
@@ -196,10 +203,11 @@ impl Db {
                 )))?.collect::<Result<Vec<_>, _>>())
                 {
                     for (pfid, opus, sonnet, haiku, subagent) in &profiles {
-                        map.insert(opus.clone(), (pid.clone(), pfid.clone()));
-                        map.insert(sonnet.clone(), (pid.clone(), pfid.clone()));
-                        map.insert(haiku.clone(), (pid.clone(), pfid.clone()));
-                        map.insert(subagent.clone(), (pid.clone(), pfid.clone()));
+                        for m in [opus, sonnet, haiku, subagent] {
+                            let clean = m.replace("[1m]", "");
+                            map.insert(clean, (pid.clone(), pfid.clone()));
+                            map.insert(m.clone(), (pid.clone(), pfid.clone())); // also keep original
+                        }
                     }
                 }
             }
