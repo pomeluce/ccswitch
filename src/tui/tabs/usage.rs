@@ -169,7 +169,7 @@ impl UsageTab {
 
         let list = List::new(items)
             .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                .title(format!("Profiles — \u{3a3} {}", format_tokens(self.total_tokens())))
+                .title(format!("Models — \u{3a3} {}", format_tokens(self.total_tokens())))
                 .border_style(Style::default().fg(Theme::DIM)))
             .highlight_style(Style::default());
         f.render_stateful_widget(list, area, &mut self.state);
@@ -225,7 +225,8 @@ impl UsageTab {
             // Summary line at bottom of chart
             lines.push(Line::from(""));
             lines.push(Line::from(vec![
-                Span::styled("  Today ", Style::default().fg(Theme::COMMENT)),
+                Span::styled("  ", Style::default()),
+                Span::styled("Today ", Style::default().fg(Theme::COMMENT)),
                 Span::styled(format_tokens(total / 7), Style::default().fg(Theme::GREEN)),
                 Span::styled("   Week ", Style::default().fg(Theme::COMMENT)),
                 Span::styled(format_tokens(total), Style::default().fg(Theme::CYAN)),
