@@ -139,9 +139,10 @@ pub fn relative_time(iso: &str) -> String {
     let parsed = chrono::NaiveDateTime::parse_from_str(&iso[..19], "%Y-%m-%d %H:%M:%S");
     let dt = match parsed { Ok(d) => d.and_utc(), Err(_) => return format_date(iso) };
     let dur = chrono::Utc::now() - dt;
+    let secs = dur.num_seconds();
     let mins = dur.num_minutes(); let hrs = dur.num_hours(); let days = dur.num_days();
-    if mins < 1 { "just now".into() }
-    else if mins < 60 { format!("{} min ago", mins) }
+    if secs < 60 { format!("{} seconds ago", secs) }
+    else if mins < 60 { format!("{} mins ago", mins) }
     else if hrs < 24 { format!("{} hours ago", hrs) }
     else if days < 7 { format!("{} days ago", days) }
     else if days < 30 { format!("{} weeks ago", days / 7) }

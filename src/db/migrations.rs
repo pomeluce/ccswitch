@@ -74,4 +74,10 @@ pub const MIGRATIONS: &[&str] = &[
     "ALTER TABLE session_usage_track ADD COLUMN scanned_at TEXT NOT NULL DEFAULT '';",
     // v6: file mtime for session relative-time display
     "ALTER TABLE session_history ADD COLUMN file_mtime TEXT NOT NULL DEFAULT '';",
+    // v7: track session file mtimes for incremental import
+    "CREATE TABLE IF NOT EXISTS session_file_track (
+        session_id TEXT PRIMARY KEY,
+        file_mtime  INTEGER NOT NULL,
+        scanned_at  TEXT NOT NULL DEFAULT ''
+    );",
 ];

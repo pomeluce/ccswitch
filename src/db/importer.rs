@@ -134,54 +134,77 @@ fn ts_to_iso(ts_ms: i64) -> String {
 }
 
 impl Db {
-    /// Import with progress callback. Called once per file (before filtering).
-    /// Returns total number of new sessions imported.
+    /// Import with progress callback. Incremental: only processes files whose
+    /// mtime differs from the stored index in session_file_track.
+    /// Changed/new files get INSERT OR REPLACE (full field refresh).
     pub fn import_claude_sessions_with_progress(
         &self,
-        on_progress: impl Fn(usize, usize, usize), // files_done, files_total, imported
+        on_progress: impl Fn(usize, usize, usize),
     ) -> Result<usize, anyhow::Error> {
         let projects_dir = projects_dir();
         if !projects_dir.exists() {
             return Ok(0);
         }
 
+        // Load stored file index: session_id -> mtime
+        let file_index: std::collections::HashMap<String, i64> = {
+            let mut stmt = self.conn().prepare(
+                "SELECT session_id, file_mtime FROM session_file_track"
+            )?;
+            let rows = stmt.query_map([], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+            })?;
+            rows.filter_map(|r| r.ok()).collect()
+        };
+
         let jsonl_files = collect_jsonl_files(&projects_dir);
         let total = jsonl_files.len();
         let mut imported = 0usize;
+        let mut updated = 0usize;
         let mut last_report = 0usize;
+        let now_iso = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
         for (idx, path) in jsonl_files.iter().enumerate() {
-            // Skip sub-agent sessions
-            if let Some(name) = path.file_stem().and_then(|n| n.to_str()) {
-                if name.starts_with("agent-") {
-                    continue;
+            let sid = path.file_stem().and_then(|n| n.to_str()).unwrap_or("");
+            if sid.is_empty() || sid.starts_with("agent-") {
+                continue;
+            }
+
+            // Check if file mtime changed (incremental)
+            let current_mtime = file_mtime_secs(path);
+            if let Some(&stored_mtime) = file_index.get(sid) {
+                if stored_mtime == current_mtime {
+                    continue; // Unchanged — skip
                 }
             }
 
             match parse_session_file(path) {
                 Ok(Some(record)) => {
-                    let exists: bool = self.conn().query_row(
-                        "SELECT COUNT(*) FROM session_history WHERE id = ?1",
-                        [&record.id],
-                        |row| row.get::<_, i64>(0),
-                    ).map(|c| c > 0).unwrap_or(false);
-                    if exists { continue; }
+                    // INSERT OR REPLACE refreshes all fields when file changed
                     self.insert_session(&record)?;
-                    imported += 1;
+                    if file_index.contains_key(sid) {
+                        updated += 1;
+                    } else {
+                        imported += 1;
+                    }
+                    // Update file index
+                    self.conn().execute(
+                        "INSERT OR REPLACE INTO session_file_track (session_id, file_mtime, scanned_at) VALUES (?1, ?2, ?3)",
+                        rusqlite::params![sid, current_mtime, now_iso],
+                    )?;
                 }
                 Ok(None) => {}
                 Err(_) => {}
             }
 
             let files_done = idx + 1;
-            // Report every file or every 5 files for smoother progress
             if files_done - last_report >= 5 || files_done == total {
-                on_progress(files_done, total, imported);
+                on_progress(files_done, total, imported + updated);
                 last_report = files_done;
             }
         }
 
-        Ok(imported)
+        Ok(imported + updated)
     }
 
     /// Scan ~/.claude/projects/ recursively for Claude Code session JSONL files
@@ -189,6 +212,16 @@ impl Db {
     pub fn import_claude_sessions(&self) -> Result<usize, anyhow::Error> {
         self.import_claude_sessions_with_progress(|_, _, _| {})
     }
+}
+
+/// Get file modification time as unix timestamp (seconds)
+fn file_mtime_secs(path: &std::path::PathBuf) -> i64 {
+    std::fs::metadata(path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 /// Recursively collect all .jsonl files under a directory

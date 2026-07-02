@@ -101,6 +101,32 @@ impl UsageTab {
         }
     }
 
+    /// Check if a background scan is currently running
+    pub fn is_scanning(&self) -> bool {
+        matches!(self.scan_state, ScanState::Scanning { .. })
+    }
+
+    /// Trigger an incremental scan (called by file watcher when changes detected)
+    pub fn trigger_incremental_scan(&mut self) {
+        if self.scan_handle.is_some() {
+            return; // Already running
+        }
+        let ctx = match self.mgr.usage_db().prepare_scan_context() {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!("Failed to prepare incremental scan: {}", e);
+                return;
+            }
+        };
+        let (tx, rx) = mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            crate::db::usage::parse_files_in_background(ctx, 10, tx);
+        });
+        self.scan_rx = Some(rx);
+        self.scan_handle = Some(handle);
+        // Keep Idle — silent background scan, no progress bar in UI
+    }
+
     /// Gracefully wait for background scan thread to finish.
     pub fn shutdown(&mut self) {
         if let Some(handle) = self.scan_handle.take() {
@@ -160,6 +186,8 @@ impl UsageTab {
                     tracing::info!("Usage scan complete");
                     self.scan_state = ScanState::Idle;
                     self.scan_rx = None;
+                    // Clean up finished thread handle so trigger_incremental_scan can spawn again
+                    if let Some(h) = self.scan_handle.take() { let _ = h.join(); }
                     self.summaries = self.mgr.usage_db().query_usage(&self.range).unwrap_or_default();
                     if !self.summaries.is_empty() && self.state.selected().is_none() {
                         self.state.select(Some(0));

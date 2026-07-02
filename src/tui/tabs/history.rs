@@ -19,7 +19,7 @@ use super::TabContent;
 pub enum ConfirmAction { Open, Delete }
 
 pub struct HistoryTab {
-    all_sessions: Vec<SessionRecord>,
+    pub all_sessions: Vec<SessionRecord>,
     pub sessions: Vec<SessionRecord>,
     pub state: ListState,
     pub search_query: String,

@@ -18,11 +18,16 @@ fn main() {
 
         // Init tracing to file in TUI mode — stderr output corrupts the terminal.
         let log_path = std::path::PathBuf::from(&home).join(".config/ccswitch/ccs.log");
-        let file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log_path)
-            .unwrap_or_else(|_| std::fs::File::create("/dev/null").unwrap());
+        let file = match std::fs::OpenOptions::new().create(true).append(true).open(&log_path) {
+            Ok(f) => f,
+            Err(_) => match std::fs::File::create("/dev/null") {
+                Ok(f) => f,
+                Err(_) => {
+                    eprintln!("Failed to open log file");
+                    std::process::exit(1);
+                }
+            },
+        };
         tracing_subscriber::fmt().with_writer(std::sync::Mutex::new(file)).with_target(false).init();
 
         // Launch TUI
@@ -53,33 +58,39 @@ fn pre_tui_import(home: &str) {
         }
     };
 
-    // Check if import is needed
-    let has_sessions: bool = db
+    // Check if this is first launch (for progress bar display)
+    let is_first_launch: bool = db
         .conn()
         .query_row("SELECT COUNT(*) FROM session_history", [], |r| r.get::<_, i64>(0))
-        .map(|c| c > 0)
-        .unwrap_or(false);
+        .map(|c| c == 0)
+        .unwrap_or(true);
 
-    if has_sessions {
-        return; // Already imported — skip
+    if is_first_launch {
+        eprintln!("\n🔄 First launch: importing Claude Code sessions...\n");
     }
 
-    // First launch — show progress bar
-    eprintln!("\n🔄 First launch: importing Claude Code sessions...\n");
+    // Always run import — incremental (mtime-based) on subsequent launches
+    let result = db.import_claude_sessions_with_progress(|files_done, files_total, imported| {
+        if is_first_launch {
+            let pct = if files_total > 0 {
+                (files_done as f64 / files_total as f64 * 100.0) as usize
+            } else {
+                0
+            };
+            let bar_len = (pct / 4).min(25);
+            let bar = format!("{}{}", "█".repeat(bar_len), "░".repeat(25usize.saturating_sub(bar_len)));
+            eprint!("\r  [{}] {:>3}%  {}/{} files  {} sessions imported", bar, pct, files_done, files_total, imported);
+            std::io::Write::flush(&mut std::io::stderr()).ok();
+        }
+    });
 
-    match db.import_claude_sessions_with_progress(|files_done, files_total, imported| {
-        let pct = if files_total > 0 {
-            (files_done as f64 / files_total as f64 * 100.0) as usize
-        } else {
-            0
-        };
-        let bar_len = (pct / 4).min(25);
-        let bar = format!("{}{}", "█".repeat(bar_len), "░".repeat(25usize.saturating_sub(bar_len)));
-        // Clear line with \r and reprint
-        eprint!("\r  [{}] {:>3}%  {}/{} files  {} sessions imported", bar, pct, files_done, files_total, imported);
-        std::io::Write::flush(&mut std::io::stderr()).ok();
-    }) {
-        Ok(n) => eprintln!("\n\n✅ Imported {} sessions. Launching CCSwitch...\n", n),
-        Err(e) => eprintln!("\n\n⚠️  Import finished with errors: {}\n", e),
+    if is_first_launch {
+        match result {
+            Ok(n) => eprintln!("\n\n✅ Imported {} sessions. Launching CCSwitch...\n", n),
+            Err(e) => eprintln!("\n\n⚠️  Import finished with errors: {}\n", e),
+        }
+    } else if let Err(e) = result {
+        // Silent on subsequent launches unless there's an actual error
+        eprintln!("⚠️  Session import error: {}", e);
     }
 }

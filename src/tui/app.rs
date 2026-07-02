@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, mpsc};
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::{Frame, Terminal, backend::CrosstermBackend};
@@ -19,6 +19,8 @@ pub struct App {
     pub should_quit: bool,
     pub status_message: String,
     pub proxy_running: bool,
+    /// 30s polling channel — receives true when JSONL files change
+    poll_rx: Option<mpsc::Receiver<bool>>,
 }
 
 impl App {
@@ -32,6 +34,9 @@ impl App {
         let providers_tab = ProvidersTab::new(mgr.clone());
         let usage_tab = UsageTab::new(mgr.clone());
         let history_tab = HistoryTab::new(mgr.clone());
+        // Start 30s background file watcher for live incremental updates
+        let poll_rx = Some(super::file_watcher::spawn_polling_thread(30));
+
         Ok(App {
             mgr,
             active_tab: Tab::Providers,
@@ -41,6 +46,7 @@ impl App {
             should_quit: false,
             status_message: String::new(),
             proxy_running,
+            poll_rx,
         })
     }
 
@@ -60,6 +66,9 @@ impl App {
         while !self.should_quit {
             // Poll background scan events every tick (for smooth progress bar)
             self.usage_tab.poll_scan_events();
+
+            // Check 30s file watcher for live incremental updates
+            self.poll_file_changes();
 
             terminal.draw(|f| self.render(f))?;
 
@@ -89,6 +98,41 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    /// Check 30s polling channel. If files changed, run incremental imports
+    /// and refresh data for the active tab.
+    fn poll_file_changes(&mut self) {
+        if let Some(rx) = &self.poll_rx {
+            match rx.try_recv() {
+                Ok(true) => {
+                    tracing::info!("File watcher: changes detected, running incremental imports");
+                    // Incremental session import (updates existing + imports new)
+                    if let Err(e) = self.mgr.session_db().import_claude_sessions() {
+                        tracing::warn!("Polling session import failed: {}", e);
+                    } else {
+                        // Refresh history tab data
+                        let sessions = self.mgr.session_db()
+                            .query_sessions(None, None, 200)
+                            .unwrap_or_default()
+                            .into_iter()
+                            .filter(|s| s.size_bytes > 0)
+                            .collect::<Vec<_>>();
+                        self.history_tab.all_sessions = sessions.clone();
+                        self.history_tab.sessions = sessions;
+                    }
+                    // Trigger usage scan for changed files (calls existing background scan)
+                    if !self.usage_tab.is_scanning() {
+                        self.usage_tab.trigger_incremental_scan();
+                    }
+                }
+                Ok(false) => {} // No changes
+                Err(mpsc::TryRecvError::Empty) => {}
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.poll_rx = None;
+                }
+            }
+        }
     }
 
     fn handle_key(&mut self, code: KeyCode) {
@@ -177,7 +221,7 @@ impl App {
             .collect();
 
         // Calculate widths
-        let left_label = " ccswitch ";
+        let left_label = " ccswitch-tui ";
         let left_width = left_label.len() as u16;
         let mode_label = if self.proxy_running { " 模式: proxy " } else { " 模式: local " };
         let mode_width = mode_label.len() as u16;
