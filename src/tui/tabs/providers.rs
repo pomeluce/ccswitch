@@ -56,11 +56,20 @@ impl ProvidersTab {
                 all_profiles.push((p.clone(), pr.clone()));
             }
         }
+        // Sort by profile name alphabetically (case-insensitive)
+        all_profiles.sort_by(|(_, a), (_, b)| {
+            a.name.to_lowercase().cmp(&b.name.to_lowercase())
+        });
         let active_provider = mgr.db().get_setting("active_provider").unwrap_or_default();
         let active_profile = mgr.db().get_setting("active_profile").unwrap_or_default();
         let filtered: Vec<usize> = (0..all_profiles.len()).collect();
         let mut state = ListState::default();
-        if !filtered.is_empty() { state.select(Some(0)); }
+        // Select the active profile by default, fallback to first
+        if !filtered.is_empty() {
+            let active_idx = all_profiles.iter()
+                .position(|(p, pr)| p.id == active_provider && pr.id == active_profile);
+            state.select(active_idx.or(Some(0)));
+        }
         ProvidersTab {
             mgr,
             all_profiles, filtered, state,

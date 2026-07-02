@@ -147,52 +147,43 @@ impl UsageTab {
         self.summaries.iter().map(|s| Self::token_total(s)).max().unwrap_or(1)
     }
 
-    /// Called every event-loop tick — process at most one Batch to stay responsive.
-    /// Progress and Done events drain eagerly (they're instant, no DB writes).
+    /// Called every event-loop tick — process exactly one event to stay responsive.
+    /// One Batch per tick; Progress and Done are lightweight and handled immediately.
     pub fn poll_scan_events(&mut self) {
-        let mut processed_batch = false;
-        loop {
-            // Extract one event, ending the borrow on self.scan_rx before mutating self
-            let event = match &self.scan_rx {
-                Some(rx) => match rx.try_recv() {
-                    Ok(e) => e,
-                    Err(mpsc::TryRecvError::Empty) => break,
-                    Err(mpsc::TryRecvError::Disconnected) => {
-                        self.scan_state = ScanState::Idle;
-                        self.scan_rx = None;
-                        break;
-                    }
-                },
-                None => return,
-            };
-
-            // Now `event` is owned — no borrow on self
-            match event {
-                ScanEvent::Batch { .. } if processed_batch => break,
-                ScanEvent::Batch { sid, file_path, records } => {
-                    processed_batch = true;
-                    if !records.is_empty() {
-                        if let Err(e) = self.mgr.usage_db().insert_usage_batch(&sid, &file_path, &records) {
-                            tracing::error!("Failed to insert usage batch: {}", e);
-                        }
-                    }
-                }
-                ScanEvent::Progress { files_done, files_total, records } => {
-                    if matches!(self.scan_state, ScanState::Scanning { .. }) {
-                        self.scan_state = ScanState::Scanning { files_done, files_total, records };
-                    }
-                }
-                ScanEvent::Done {} => {
-                    tracing::info!("Usage scan complete");
+        let event = match &self.scan_rx {
+            Some(rx) => match rx.try_recv() {
+                Ok(e) => e,
+                Err(mpsc::TryRecvError::Empty) => return,
+                Err(mpsc::TryRecvError::Disconnected) => {
                     self.scan_state = ScanState::Idle;
                     self.scan_rx = None;
-                    // Clean up finished thread handle so trigger_incremental_scan can spawn again
-                    if let Some(h) = self.scan_handle.take() { let _ = h.join(); }
-                    self.summaries = self.mgr.usage_db().query_usage(&self.range).unwrap_or_default();
-                    if !self.summaries.is_empty() && self.state.selected().is_none() {
-                        self.state.select(Some(0));
+                    return;
+                }
+            },
+            None => return,
+        };
+
+        match event {
+            ScanEvent::Batch { sid, file_path, records } => {
+                if !records.is_empty() {
+                    if let Err(e) = self.mgr.usage_db().insert_usage_batch(&sid, &file_path, &records) {
+                        tracing::error!("Failed to insert usage batch: {}", e);
                     }
-                    break;
+                }
+            }
+            ScanEvent::Progress { files_done, files_total, records } => {
+                if matches!(self.scan_state, ScanState::Scanning { .. }) {
+                    self.scan_state = ScanState::Scanning { files_done, files_total, records };
+                }
+            }
+            ScanEvent::Done {} => {
+                tracing::info!("Usage scan complete");
+                self.scan_state = ScanState::Idle;
+                self.scan_rx = None;
+                if let Some(h) = self.scan_handle.take() { let _ = h.join(); }
+                self.summaries = self.mgr.usage_db().query_usage(&self.range).unwrap_or_default();
+                if !self.summaries.is_empty() && self.state.selected().is_none() {
+                    self.state.select(Some(0));
                 }
             }
         }
@@ -416,6 +407,22 @@ impl UsageTab {
                     }
                 })
                 .collect();
+
+            // If no usage data in the last 7 days, show a hint instead of empty chart
+            if days.is_empty() {
+                let p = Paragraph::new(vec![
+                    Line::from(""),
+                    Line::from(Span::styled("  最近 7 天没有使用该模型", Style::default().fg(Theme::COMMENT))).centered(),
+                    Line::from(""),
+                ]).block(
+                    Block::bordered()
+                        .border_set(ratatui::symbols::border::ROUNDED)
+                        .title(format!("{} — This Week", label))
+                        .border_style(Style::default().fg(Theme::DIM)),
+                );
+                f.render_widget(p, area);
+                return;
+            }
 
             let max_val = days.iter().map(|(_, i, o, cr, cc, _)| i + o + cr + cc).max().unwrap_or(1).max(1);
             let lines: Vec<Line> = days

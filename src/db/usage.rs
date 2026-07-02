@@ -125,7 +125,7 @@ impl Db {
         };
         let sql = format!(
             "SELECT model, SUM(prompt_tokens), SUM(completion_tokens), SUM(cache_read_tokens), SUM(cache_create_tokens), COUNT(*)
-             FROM usage_logs WHERE {} GROUP BY model ORDER BY SUM(total_tokens) DESC",
+             FROM usage_logs WHERE {} GROUP BY model ORDER BY MAX(timestamp) DESC",
             date_filter
         );
         let mut stmt = self.conn().prepare(&sql)?;
@@ -226,9 +226,9 @@ impl Db {
         self.conn().execute("BEGIN", [])?;
         for r in records {
             self.conn().execute(
-                "INSERT OR IGNORE INTO usage_logs (model, provider_id, profile_id, mode, session_id, message_id, prompt_tokens, completion_tokens, cache_read_tokens, cache_create_tokens, total_tokens, timestamp)
+                "INSERT OR REPLACE INTO usage_logs (model, provider_id, profile_id, mode, session_id, message_id, prompt_tokens, completion_tokens, cache_read_tokens, cache_create_tokens, total_tokens, timestamp)
                  VALUES (?1, ?2, ?3, 'local', ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-                params![r.model, "", "", sid, r.msg_id, r.input, r.output, r.cr, r.cc, r.input + r.output + r.cr + r.cc, format!("{} 00:00:00", r.date)],
+                params![r.model, "", "", sid, r.msg_id, r.input, r.output, r.cr, r.cc, r.input + r.output + r.cr + r.cc, r.date],
             )?;
             imported += 1;
         }
@@ -322,7 +322,15 @@ fn parse_single_file(
             if model == "<synthetic>" {
                 return None;
             }
-            let date = parsed.timestamp.as_deref().unwrap_or("").get(0..10).unwrap_or("today").to_string();
+            let ts = parsed.timestamp.as_deref().unwrap_or("");
+            // "2026-07-02T12:02:02.866Z" → "2026-07-02 12:02:02"
+            let date = if ts.len() >= 19 {
+                format!("{} {}", &ts[..10], &ts[11..19])
+            } else if ts.len() >= 10 {
+                format!("{} 00:00:00", &ts[..10])
+            } else {
+                "today".to_string()
+            };
             Some(UsageRecord {
                 msg_id,
                 model: model.to_string(),
