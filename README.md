@@ -101,31 +101,52 @@ nix run github:your/ccswitch
 nix profile install github:your/ccswitch
 ```
 
+### Homebrew（macOS）
+
+```bash
+brew tap pomeluce/ccswitch
+brew install ccswitch
+```
+
 ### Cargo（Linux / macOS / Windows WSL2）
 
 ```bash
-# 安装
-cargo install --git https://github.com/your/ccswitch
-
-# 或者从源码构建
-git clone https://github.com/your/ccswitch
-cd ccswitch
-cargo build --release
-cp target/release/ccs ~/.local/bin/
+cargo install --git https://github.com/pomeluce/ccswitch
 ```
 
 首次运行会自动创建 `~/.config/ccswitch/` 目录（包含数据库和配置文件）。
 
-### 手动安装（任意平台）
+### 预编译包（Linux）
 
-从 [Releases] 下载预编译二进制，放到 `$PATH` 中即可：
+从 [Releases](https://github.com/pomeluce/ccswitch/releases) 下载：
 
 ```bash
-chmod +x ccs
-mv ccs ~/.local/bin/
+# Debian/Ubuntu
+curl -LO https://github.com/pomeluce/ccswitch/releases/latest/download/ccs_<version>_linux-x86_64.deb
+sudo dpkg -i ccs_*.deb
+
+# Fedora/RHEL
+curl -LO https://github.com/pomeluce/ccswitch/releases/latest/download/ccswitch-<version>.x86_64.rpm
+sudo rpm -i ccswitch-*.rpm
+
+# 通用 tar.gz
+curl -LO https://github.com/pomeluce/ccswitch/releases/latest/download/ccs_<version>_linux-x86_64.tar.gz
+tar -xzf ccs_*.tar.gz
+sudo mv ccs /usr/local/bin/
 ```
 
-首次使用建议手动创建 `~/.config/ccswitch/defaults.toml` 配置文件。
+### 预编译包（macOS 手动）
+
+```bash
+curl -LO https://github.com/pomeluce/ccswitch/releases/latest/download/ccs_<version>_darwin-arm64.tar.gz
+tar -xzf ccs_*.tar.gz
+chmod +x ccs
+sudo mv ccs /usr/local/bin/
+```
+
+### 预编译包（Windows）
+
+从 [Releases](https://github.com/pomeluce/ccswitch/releases) 下载 zip 或 exe，解压后将 `ccs.exe` 放到 `%PATH%` 中。
 
 ## 使用
 

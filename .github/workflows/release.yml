@@ -1,0 +1,193 @@
+---
+# yamllint disable rule:line-length
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+  BIN_NAME: ccs
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install packaging tools
+        run: cargo install cargo-deb cargo-generate-rpm
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Package tar.gz
+        run: |
+          mkdir -p dist
+          cp target/release/${{ env.BIN_NAME }} dist/
+          cp README.md LICENSE dist/
+          cd dist
+          tar -czf ../${{ env.BIN_NAME }}_${{ github.ref_name }}_linux-x86_64.tar.gz *
+
+      - name: Package deb
+        run: cargo deb --no-build
+
+      - name: Package rpm
+        run: cargo generate-rpm
+
+      - name: Upload tar.gz
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-tarball
+          path: ${{ env.BIN_NAME }}_${{ github.ref_name }}_linux-x86_64.tar.gz
+
+      - name: Upload deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-deb
+          path: target/debian/ccswitch_*.deb
+
+      - name: Upload rpm
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-rpm
+          path: target/generate-rpm/ccswitch-*.rpm
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Package tar.gz
+        run: |
+          mkdir -p dist
+          cp target/release/${{ env.BIN_NAME }} dist/
+          cp README.md LICENSE dist/
+          cd dist
+          tar -czf ../${{ env.BIN_NAME }}_${{ github.ref_name }}_darwin-arm64.tar.gz *
+
+      - name: Upload tar.gz
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-tarball
+          path: ${{ env.BIN_NAME }}_${{ github.ref_name }}_darwin-arm64.tar.gz
+
+      - name: Update Homebrew formula
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          TARBALL="${{ env.BIN_NAME }}_${{ github.ref_name }}_darwin-arm64.tar.gz"
+          SHA256=$(shasum -a 256 "$TARBALL" | cut -d ' ' -f 1)
+
+          git clone "https://${HOMEBREW_TAP_TOKEN}@github.com/pomeluce/homebrew-ccswitch.git" homebrew-tap
+          cd homebrew-tap
+
+          cat > Formula/ccswitch.rb << 'RUBYEOF'
+          class Ccswitch < Formula
+            desc "Claude Code model configuration manager"
+            homepage "https://github.com/pomeluce/ccswitch"
+            url "URL_PLACEHOLDER"
+            sha256 "SHA_PLACEHOLDER"
+            license "GPL-3.0"
+            version "VERSION_PLACEHOLDER"
+
+            def install
+              bin.install "ccs"
+            end
+
+            test do
+              system "#{bin}/ccs", "--version"
+            end
+          end
+          RUBYEOF
+
+          sed -i '' "s|URL_PLACEHOLDER|https://github.com/pomeluce/ccswitch/releases/download/${{ github.ref_name }}/${TARBALL}|" Formula/ccswitch.rb
+          sed -i '' "s|SHA_PLACEHOLDER|${SHA256}|" Formula/ccswitch.rb
+          sed -i '' "s|VERSION_PLACEHOLDER|${VERSION}|" Formula/ccswitch.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/ccswitch.rb
+          git commit -m "chore: update formula for ${{ github.ref_name }}" || true
+          git pull --rebase || true
+          git push
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binary
+        run: cargo build --release
+        shell: bash
+
+      - name: Package zip
+        run: |
+          New-Item -ItemType Directory -Path dist -Force
+          Copy-Item "target/release/${{ env.BIN_NAME }}.exe" -Destination dist/
+          Copy-Item README.md -Destination dist/
+          Copy-Item LICENSE -Destination dist/
+          Compress-Archive -Path dist/* -DestinationPath "${{ env.BIN_NAME }}_${{ github.ref_name }}_windows-x86_64.zip"
+        shell: pwsh
+
+      - name: Upload exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: target/release/${{ env.BIN_NAME }}.exe
+
+      - name: Upload zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-zip
+          path: ${{ env.BIN_NAME }}_${{ github.ref_name }}_windows-x86_64.zip
+
+  publish:
+    needs: [linux, macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la artifacts/
+
+      - name: Generate changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip all
+        env:
+          OUTPUT: CHANGELOG.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --notes-file CHANGELOG.md \
+            artifacts/*
