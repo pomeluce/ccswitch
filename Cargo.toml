@@ -57,7 +57,7 @@ tokio-test = "0.4"
 [package.metadata.deb]
 name = "ccswitch"
 maintainer = "pomeluce <pomeluce+ccswitch@outlook.com>"
-description = "Claude Code model configuration manager"
+extended-description = "Claude Code model configuration manager"
 license = "GPL-3.0"
 section = "utils"
 priority = "optional"

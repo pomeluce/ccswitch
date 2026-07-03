@@ -96,6 +96,7 @@ jobs:
           git clone "https://${HOMEBREW_TAP_TOKEN}@github.com/pomeluce/homebrew-ccswitch.git" homebrew-tap
           cd homebrew-tap
 
+          mkdir -p Formula
           cat > Formula/ccswitch.rb << 'RUBYEOF'
           class Ccswitch < Formula
             desc "Claude Code model configuration manager"
