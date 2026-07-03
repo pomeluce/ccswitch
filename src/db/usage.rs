@@ -18,17 +18,9 @@ pub struct UsageSummary {
 #[derive(Debug, Clone)]
 pub enum ScanEvent {
     /// A batch of parsed records from one file, ready for DB insert
-    Batch {
-        sid: String,
-        file_path: PathBuf,
-        records: Vec<UsageRecord>,
-    },
+    Batch { sid: String, file_path: PathBuf, records: Vec<UsageRecord> },
     /// Progress update (files done / files total, cumulative records)
-    Progress {
-        files_done: usize,
-        files_total: usize,
-        records: usize,
-    },
+    Progress { files_done: usize, files_total: usize, records: usize },
     /// All files parsed. total_imported = 0 (will be set by main thread after inserts)
     Done {},
 }
@@ -165,6 +157,15 @@ impl Db {
         rows.collect()
     }
 
+    /// Query token usage for a specific session (by session ID)
+    pub fn query_session_tokens(&self, session_id: &str) -> Result<(i64, i64), rusqlite::Error> {
+        let mut stmt = self.conn().prepare(
+            "SELECT COALESCE(SUM(prompt_tokens),0), COALESCE(SUM(completion_tokens),0)
+             FROM usage_logs WHERE session_id = ?1",
+        )?;
+        stmt.query_row(params![session_id], |row| Ok((row.get(0)?, row.get(1)?)))
+    }
+
     /// Prepare scan context: ensure tables exist + load known IDs + file index.
     /// Called from main thread. Fast — no filesystem walk.
     pub fn prepare_scan_context(&self) -> Result<ScanContext, anyhow::Error> {
@@ -190,7 +191,7 @@ impl Db {
                 file_mtime INTEGER NOT NULL,
                 scanned_at TEXT NOT NULL DEFAULT ''
             );
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_msg_id ON usage_logs(message_id) WHERE message_id IS NOT NULL;"
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_msg_id ON usage_logs(message_id) WHERE message_id IS NOT NULL;",
         )?;
 
         // Cleanup synthetic entries
@@ -198,21 +199,15 @@ impl Db {
 
         // Pre-load existing message IDs for dedup
         let known_msg_ids: Vec<String> = {
-            let mut stmt = self.conn().prepare(
-                "SELECT message_id FROM usage_logs WHERE message_id IS NOT NULL AND message_id != ''"
-            )?;
+            let mut stmt = self.conn().prepare("SELECT message_id FROM usage_logs WHERE message_id IS NOT NULL AND message_id != ''")?;
             let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
             rows.filter_map(|r| r.ok()).collect()
         };
 
         // Load stored file index: session_id → mtime
         let file_index: std::collections::HashMap<String, i64> = {
-            let mut stmt = self.conn().prepare(
-                "SELECT session_id, file_mtime FROM session_usage_track"
-            )?;
-            let rows = stmt.query_map([], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
-            })?;
+            let mut stmt = self.conn().prepare("SELECT session_id, file_mtime FROM session_usage_track")?;
+            let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
             rows.filter_map(|r| r.ok()).collect()
         };
 
@@ -248,11 +243,7 @@ impl Db {
 /// Background-thread function: collect changed files, parse them, send batches via channel.
 /// No database access — pure file I/O + JSON parsing. File-system walk is done here
 /// (in the background) to keep the main thread responsive.
-pub fn parse_files_in_background(
-    ctx: ScanContext,
-    batch_size: usize,
-    tx: std::sync::mpsc::Sender<ScanEvent>,
-) {
+pub fn parse_files_in_background(ctx: ScanContext, batch_size: usize, tx: std::sync::mpsc::Sender<ScanEvent>) {
     // Collect changed files (in background — this is the slow part on first launch)
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
     let projects_dir = std::path::PathBuf::from(&home).join(".claude/projects");
@@ -285,7 +276,11 @@ pub fn parse_files_in_background(
 
         let files_done = idx + 1;
         if files_done - last_report >= batch_size || files_done == total {
-            let _ = tx.send(ScanEvent::Progress { files_done, files_total: total, records: total_records });
+            let _ = tx.send(ScanEvent::Progress {
+                files_done,
+                files_total: total,
+                records: total_records,
+            });
             last_report = files_done;
         }
     }
@@ -294,11 +289,7 @@ pub fn parse_files_in_background(
 }
 
 /// Parse a single JSONL file, returning all new (unseen) usage records
-fn parse_single_file(
-    path: &PathBuf,
-    _sid: &str,
-    known_msg_ids: &std::collections::HashSet<&str>,
-) -> Vec<UsageRecord> {
+fn parse_single_file(path: &PathBuf, _sid: &str, known_msg_ids: &std::collections::HashSet<&str>) -> Vec<UsageRecord> {
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
         Err(_) => return Vec::new(),
@@ -353,11 +344,7 @@ fn file_mtime(path: &PathBuf) -> Option<i64> {
 }
 
 /// Recursively collect changed .jsonl files under a directory
-fn collect_changed_files(
-    dir: &PathBuf,
-    out: &mut Vec<(PathBuf, String)>,
-    file_index: &std::collections::HashMap<String, i64>,
-) {
+fn collect_changed_files(dir: &PathBuf, out: &mut Vec<(PathBuf, String)>, file_index: &std::collections::HashMap<String, i64>) {
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();

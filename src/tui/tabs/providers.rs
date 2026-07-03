@@ -1,22 +1,25 @@
+use super::super::theme::Theme;
+use super::super::widgets::detail_panel::DetailPanel;
+use super::super::widgets::shared::{centered_rect, render_confirm_popup as shared_confirm, render_message_popup as shared_msg};
+use super::TabContent;
+use crate::core::config::ConfigManager;
+use crate::core::models::Provider;
+use crossterm::event::KeyCode;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::Style,
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Clear, List, ListItem, ListState, Paragraph},
     Frame,
 };
-use crossterm::event::KeyCode;
-use crate::core::config::ConfigManager;
-use crate::core::models::Provider;
-use super::super::widgets::detail_panel::DetailPanel;
-use super::TabContent;
-use super::super::theme::Theme;
-use super::super::widgets::shared::{render_shortcut_bar as shared_shortcuts, render_confirm_popup as shared_confirm, render_message_popup as shared_msg, centered_rect};
 
 use std::sync::Arc;
 
 #[derive(Clone, Copy, PartialEq)]
-pub enum ProviderAction { Switch, Delete }
+pub enum ProviderAction {
+    Switch,
+    Delete,
+}
 
 pub struct ProvidersTab {
     mgr: Arc<ConfigManager>,
@@ -35,9 +38,9 @@ pub struct ProvidersTab {
 }
 
 struct EditForm {
-    fields: [String; 5],   // name, opus, sonnet, haiku, subagent
-    cursors: [usize; 5],   // cursor position in each field
-    focused: usize,        // 0..4
+    fields: [String; 5], // name, opus, sonnet, haiku, subagent
+    cursors: [usize; 5], // cursor position in each field
+    focused: usize,      // 0..4
     prov_id: String,
     prof_id: String,
 }
@@ -57,54 +60,51 @@ impl ProvidersTab {
             }
         }
         // Sort by profile name alphabetically (case-insensitive)
-        all_profiles.sort_by(|(_, a), (_, b)| {
-            a.name.to_lowercase().cmp(&b.name.to_lowercase())
-        });
+        all_profiles.sort_by(|(_, a), (_, b)| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
         let active_provider = mgr.db().get_setting("active_provider").unwrap_or_default();
         let active_profile = mgr.db().get_setting("active_profile").unwrap_or_default();
         let filtered: Vec<usize> = (0..all_profiles.len()).collect();
         let mut state = ListState::default();
         // Select the active profile by default, fallback to first
         if !filtered.is_empty() {
-            let active_idx = all_profiles.iter()
-                .position(|(p, pr)| p.id == active_provider && pr.id == active_profile);
+            let active_idx = all_profiles.iter().position(|(p, pr)| p.id == active_provider && pr.id == active_profile);
             state.select(active_idx.or(Some(0)));
         }
         ProvidersTab {
             mgr,
-            all_profiles, filtered, state,
-            search_query: String::new(), is_searching: false,
-            active_provider, active_profile,
-            confirm_action: None, confirm_button: 0,
-            message: None, edit_form: None,
+            all_profiles,
+            filtered,
+            state,
+            search_query: String::new(),
+            is_searching: false,
+            active_provider,
+            active_profile,
+            confirm_action: None,
+            confirm_button: 0,
+            message: None,
+            edit_form: None,
         }
     }
 
     pub fn refresh_filter(&mut self) {
         let q = self.search_query.trim().to_lowercase();
         let tokens: Vec<&str> = q.split_whitespace().collect();
-        self.filtered = self.all_profiles.iter().enumerate()
+        self.filtered = self
+            .all_profiles
+            .iter()
+            .enumerate()
             .filter(|(_, (prov, prof))| {
-                if tokens.is_empty() { return true; }
+                if tokens.is_empty() {
+                    return true;
+                }
                 let hay = format!("{} {} {} {}", prov.name, prov.id, prof.name, prof.id).to_lowercase();
                 tokens.iter().all(|t| hay.contains(t))
             })
-            .map(|(i, _)| i).collect();
+            .map(|(i, _)| i)
+            .collect();
         if self.state.selected().unwrap_or(0) >= self.filtered.len() {
             self.state.select(if self.filtered.is_empty() { None } else { Some(0) });
         }
-    }
-
-    fn render_shortcut_bar(&self, f: &mut Frame, area: Rect) {
-        let groups = vec![
-            vec![(" J/K ".into(), Theme::CYAN), ("Nav".into(), Theme::COMMENT)],
-            vec![(" / ".into(), Theme::CYAN), ("Search".into(), Theme::COMMENT)],
-            vec![(" ⏎  ".into(), Theme::GREEN), ("Switch".into(), Theme::COMMENT)],
-            vec![(" D ".into(), Theme::RED), ("Delete".into(), Theme::COMMENT)],
-            vec![(" E ".into(), Theme::PURPLE), ("Edit".into(), Theme::COMMENT)],
-            vec![(" Q ".into(), Theme::ORANGE), ("Quit".into(), Theme::COMMENT)],
-        ];
-        shared_shortcuts(f, area, &groups);
     }
 
     fn render_search_box(&self, f: &mut Frame, area: Rect) {
@@ -113,11 +113,15 @@ impl ProvidersTab {
             "\u{2315} Search (/ to focus)".to_string()
         } else if !self.search_query.is_empty() && !self.is_searching {
             format!("\u{2315} {} (/) — Esc to clear", self.search_query)
-        } else { format!("\u{2315} {}{}", self.search_query, cursor) };
+        } else {
+            format!("\u{2315} {}{}", self.search_query, cursor)
+        };
         let color = if self.is_searching { Theme::CYAN } else { Theme::COMMENT };
-        let p = Paragraph::new(Line::from(Span::styled(text, Style::default().fg(color))))
-            .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                .border_style(Style::default().fg(Theme::DIM)));
+        let p = Paragraph::new(Line::from(Span::styled(text, Style::default().fg(color)))).block(
+            Block::bordered()
+                .border_set(ratatui::symbols::border::ROUNDED)
+                .border_style(Style::default().fg(Theme::DIM)),
+        );
         f.render_widget(p, area);
     }
 
@@ -130,11 +134,11 @@ impl ProvidersTab {
     fn do_edit(&mut self) {
         let Some((prov, prof)) = self.selected_profile() else { return };
         let fields = [prof.name.clone(), prof.opus.clone(), prof.sonnet.clone(), prof.haiku.clone(), prof.subagent.clone()];
-        let cursors = [
-            fields[0].len(), fields[1].len(), fields[2].len(), fields[3].len(), fields[4].len(),
-        ];
+        let cursors = [fields[0].len(), fields[1].len(), fields[2].len(), fields[3].len(), fields[4].len()];
         self.edit_form = Some(EditForm {
-            fields, cursors, focused: 0,
+            fields,
+            cursors,
+            focused: 0,
             prov_id: prov.id.clone(),
             prof_id: prof.id.clone(),
         });
@@ -149,13 +153,18 @@ impl ProvidersTab {
             sonnet: form.fields[2].clone(),
             haiku: form.fields[3].clone(),
             subagent: form.fields[4].clone(),
-            default: false, source: crate::core::models::Source::User,
+            default: false,
+            source: crate::core::models::Source::User,
         };
         if let Err(e) = self.mgr.db().insert_user_profile(&form.prov_id, &pr) {
             tracing::error!("Failed to insert user profile: {}", e);
         }
         if let Some((_, p)) = self.all_profiles.iter_mut().find(|(prov, prof)| prov.id == form.prov_id && prof.id == form.prof_id) {
-            p.name = pr.name; p.opus = pr.opus; p.sonnet = pr.sonnet; p.haiku = pr.haiku; p.subagent = pr.subagent;
+            p.name = pr.name;
+            p.opus = pr.opus;
+            p.sonnet = pr.sonnet;
+            p.haiku = pr.haiku;
+            p.subagent = pr.subagent;
         }
         self.refresh_filter();
     }
@@ -171,7 +180,9 @@ impl ProvidersTab {
 
         let mut lines: Vec<Line> = Vec::new();
         // Top padding (3 lines)
-        lines.push(Line::from("")); lines.push(Line::from("")); lines.push(Line::from(""));
+        lines.push(Line::from(""));
+        lines.push(Line::from(""));
+        lines.push(Line::from(""));
         for (i, label) in EDIT_LABELS.iter().enumerate() {
             let val = &form.fields[i];
             let pos = form.cursors[i].min(val.len());
@@ -179,7 +190,11 @@ impl ProvidersTab {
             let cur = (pos - vis.skip).min(vis.text.len());
             let (left, right) = vis.text.split_at(cur);
             let cursor = if i == form.focused { "▌" } else { "" };
-            let style = if i == form.focused { Style::default().fg(Theme::CYAN) } else { Style::default().fg(Theme::FG) };
+            let style = if i == form.focused {
+                Style::default().fg(Theme::COMMENT)
+            } else {
+                Style::default().fg(Theme::FG)
+            };
             lines.push(Line::from(vec![
                 Span::styled(format!("{}{:<15}: ", pad, label), Style::default().fg(Theme::FG)),
                 Span::styled(left.to_string(), style),
@@ -190,21 +205,27 @@ impl ProvidersTab {
             lines.push(Line::from(""));
         }
         // Padding before hints
-        lines.push(Line::from("")); lines.push(Line::from(""));
+        lines.push(Line::from(""));
+        lines.push(Line::from(""));
         // Hints at bottom (centered)
-        lines.push(Line::from(vec![
-            Span::styled(" Enter ", Style::default().fg(Theme::GREEN)),
-            Span::styled(" Save  ", Style::default().fg(Theme::COMMENT)),
-            Span::styled(" Esc ", Style::default().fg(Theme::DIM)),
-            Span::styled(" Cancel  ", Style::default().fg(Theme::COMMENT)),
-            Span::styled(" Tab ", Style::default().fg(Theme::CYAN)),
-            Span::styled(" Next field", Style::default().fg(Theme::COMMENT)),
-        ]).centered());
+        lines.push(
+            Line::from(vec![
+                Span::styled(" Enter ", Style::default().fg(Theme::COMMENT)),
+                Span::styled(" Save  ", Style::default().fg(Theme::COMMENT)),
+                Span::styled(" Esc ", Style::default().fg(Theme::DIM)),
+                Span::styled(" Cancel  ", Style::default().fg(Theme::COMMENT)),
+                Span::styled(" Tab ", Style::default().fg(Theme::COMMENT)),
+                Span::styled(" Next field", Style::default().fg(Theme::COMMENT)),
+            ])
+            .centered(),
+        );
 
-        let p = Paragraph::new(lines)
-            .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
+        let p = Paragraph::new(lines).block(
+            Block::bordered()
+                .border_set(ratatui::symbols::border::ROUNDED)
                 .title(Line::from(" Edit Profile ").centered())
-                .border_style(Style::default().fg(Theme::CYAN)));
+                .border_style(Style::default().fg(Theme::COMMENT)),
+        );
         f.render_widget(Clear, popup);
         f.render_widget(p, popup);
     }
@@ -216,7 +237,9 @@ impl ProvidersTab {
         };
         let mode = if self.mgr.db().get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false) {
             crate::core::models::SwitchMode::Proxy
-        } else { crate::core::models::SwitchMode::Local };
+        } else {
+            crate::core::models::SwitchMode::Local
+        };
         if let Err(e) = crate::core::switcher::switch_profile(&self.mgr, &prov_id, &prof_id, mode, None) {
             self.message = Some(format!("Error: {}", e));
             return;
@@ -234,7 +257,9 @@ impl ProvidersTab {
     fn do_delete(&mut self) {
         let prof_id = {
             let Some((prov, prof)) = self.selected_profile() else { return };
-            if !prov.source.can_delete() { return; }
+            if !prov.source.can_delete() {
+                return;
+            }
             prof.id.clone()
         };
         if let Err(e) = self.mgr.db().delete_user_profile(&prof_id) {
@@ -260,45 +285,62 @@ impl ProvidersTab {
 
 impl TabContent for ProvidersTab {
     fn render(&mut self, f: &mut Frame, area: Rect) {
-        let main = Layout::default().direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)]).split(area);
-        let left = Layout::default().direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), Constraint::Min(3)]).split(main[0]);
-        // Right panel: detail + shortcut bar (dynamic height)
-        let sc_lines = provider_shortcut_lines(main[1].width);
-        let right = Layout::default().direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(3),
-                Constraint::Length(2 + sc_lines as u16),
-            ]).split(main[1]);
+        let main = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(area);
+        let left = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Min(3)])
+            .split(main[0]);
+        // Right panel: detail preview
+        let right = Layout::default().direction(Direction::Vertical).constraints([Constraint::Min(3)]).split(main[1]);
         self.render_search_box(f, left[0]);
 
-        let items: Vec<ListItem> = self.filtered.iter().enumerate().map(|(fi, &ai)| {
-            let (prov, prof) = &self.all_profiles[ai];
-            let is_sel = self.state.selected() == Some(fi);
-            let arrow = if is_sel { "\u{276f} " } else { "  " };
-            let tc = if is_sel { Theme::CYAN } else { Theme::FG };
-            let active = self.active_provider == prov.id && self.active_profile == prof.id;
-            ListItem::new(vec![
-                Line::from(vec![
-                    Span::styled(format!("{}{}", arrow, prof.name), Style::default().fg(tc)),
-                    if active { Span::styled(" (in use)", Style::default().fg(Theme::GREEN)) } else { Span::styled("", Style::default()) },
-                ]),
-                Line::from(vec![
-                    Span::styled("  ", Style::default()),
-                    Span::styled(&prov.name, Style::default().fg(Theme::COMMENT)),
-                    Span::styled(" \u{b7} ", Style::default().fg(Theme::DIM)),
-                    Span::styled(&prov.id, Style::default().fg(Theme::COMMENT)),
-                    Span::styled(" \u{b7} ", Style::default().fg(Theme::DIM)),
-                    Span::styled(&prof.id, Style::default().fg(Theme::COMMENT)),
-                    if active { Span::styled(" \u{2605} active", Style::default().fg(Theme::YELLOW)) } else { Span::styled("", Style::default()) },
-                ]),
-                Line::from(""),
-            ])
-        }).collect();
+        let items: Vec<ListItem> = self
+            .filtered
+            .iter()
+            .enumerate()
+            .map(|(fi, &ai)| {
+                let (prov, prof) = &self.all_profiles[ai];
+                let is_sel = self.state.selected() == Some(fi);
+                let arrow = if is_sel { "\u{276f} " } else { "  " };
+                let tc = if is_sel { Theme::CYAN } else { Theme::FG };
+                let active = self.active_provider == prov.id && self.active_profile == prof.id;
+                ListItem::new(vec![
+                    Line::from(vec![
+                        Span::styled(format!("{}{}", arrow, prof.name), Style::default().fg(tc)),
+                        if active {
+                            Span::styled(" (in use)", Style::default().fg(Theme::COMMENT))
+                        } else {
+                            Span::styled("", Style::default())
+                        },
+                    ]),
+                    Line::from(vec![
+                        Span::styled("  ", Style::default()),
+                        Span::styled(&prov.name, Style::default().fg(Theme::COMMENT)),
+                        Span::styled(" \u{b7} ", Style::default().fg(Theme::DIM)),
+                        Span::styled(&prov.id, Style::default().fg(Theme::COMMENT)),
+                        Span::styled(" \u{b7} ", Style::default().fg(Theme::DIM)),
+                        Span::styled(&prof.id, Style::default().fg(Theme::COMMENT)),
+                        if active {
+                            Span::styled(" \u{2605} active", Style::default().fg(Theme::YELLOW))
+                        } else {
+                            Span::styled("", Style::default())
+                        },
+                    ]),
+                    Line::from(""),
+                ])
+            })
+            .collect();
 
-        let list = List::new(items).block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-            .title(format!("Profiles ({})", self.filtered.len())).border_style(Style::default().fg(Theme::DIM)))
+        let list = List::new(items)
+            .block(
+                Block::bordered()
+                    .border_set(ratatui::symbols::border::ROUNDED)
+                    .title(format!("Profiles ({})", self.filtered.len()))
+                    .border_style(Style::default().fg(Theme::DIM)),
+            )
             .highlight_style(Style::default());
         f.render_stateful_widget(list, left[1], &mut self.state);
 
@@ -308,14 +350,19 @@ impl TabContent for ProvidersTab {
                 let active = self.active_provider == prov.id && self.active_profile == prof.id;
                 DetailPanel::render_profile_detail(f, right[0], &prov.name, prof, &prov.api_url, &prov.api_key, active, prov.source.can_delete());
             }
-        } else { DetailPanel::render_empty(f, right[0], "No profiles available"); }
+        } else {
+            DetailPanel::render_empty(f, right[0], "No profiles available");
+        }
 
-        // Shortcut bar
-        self.render_shortcut_bar(f, right[1]);
-
-        if self.confirm_action.is_some() { self.render_confirm_popup(f, area); }
-        if self.message.is_some() { self.render_message_popup(f, area); }
-        if self.edit_form.is_some() { self.render_edit_form(f, area); }
+        if self.confirm_action.is_some() {
+            self.render_confirm_popup(f, area);
+        }
+        if self.message.is_some() {
+            self.render_message_popup(f, area);
+        }
+        if self.edit_form.is_some() {
+            self.render_edit_form(f, area);
+        }
     }
 
     fn handle_key(&mut self, code: KeyCode) -> bool {
@@ -324,22 +371,44 @@ impl TabContent for ProvidersTab {
             let field = &mut f.fields[f.focused];
             let cur = &mut f.cursors[f.focused];
             match code {
-                KeyCode::Esc => { self.edit_form = None; }
-                KeyCode::Enter => { self.commit_edit(); }
-                KeyCode::Tab => { f.focused = (f.focused + 1) % 5; }
-                KeyCode::BackTab => { f.focused = if f.focused == 0 { 4 } else { f.focused - 1 }; }
-                KeyCode::Left => { *cur = cur.saturating_sub(1); }
-                KeyCode::Right => { *cur = (*cur + 1).min(field.len()); }
-                KeyCode::Home => { *cur = 0; }
-                KeyCode::End => { *cur = field.len(); }
+                KeyCode::Esc => {
+                    self.edit_form = None;
+                }
+                KeyCode::Enter => {
+                    self.commit_edit();
+                }
+                KeyCode::Tab => {
+                    f.focused = (f.focused + 1) % 5;
+                }
+                KeyCode::BackTab => {
+                    f.focused = if f.focused == 0 { 4 } else { f.focused - 1 };
+                }
+                KeyCode::Left => {
+                    *cur = cur.saturating_sub(1);
+                }
+                KeyCode::Right => {
+                    *cur = (*cur + 1).min(field.len());
+                }
+                KeyCode::Home => {
+                    *cur = 0;
+                }
+                KeyCode::End => {
+                    *cur = field.len();
+                }
                 KeyCode::Backspace => {
-                    if *cur > 0 { *cur -= 1; field.remove(*cur); }
+                    if *cur > 0 {
+                        *cur -= 1;
+                        field.remove(*cur);
+                    }
                 }
                 KeyCode::Delete => {
-                    if *cur < field.len() { field.remove(*cur); }
+                    if *cur < field.len() {
+                        field.remove(*cur);
+                    }
                 }
                 KeyCode::Char(c) => {
-                    field.insert(*cur, c); *cur += 1;
+                    field.insert(*cur, c);
+                    *cur += 1;
                 }
                 _ => {}
             }
@@ -355,27 +424,70 @@ impl TabContent for ProvidersTab {
             match code {
                 KeyCode::Tab | KeyCode::Right | KeyCode::Char('j') | KeyCode::Char('l') => self.confirm_button = (self.confirm_button + 1) % 2,
                 KeyCode::BackTab | KeyCode::Left | KeyCode::Char('k') | KeyCode::Char('h') => self.confirm_button = if self.confirm_button == 0 { 1 } else { 0 },
-                KeyCode::Enter => { if self.confirm_button == 0 { match self.confirm_action { Some(ProviderAction::Switch) => self.do_switch(), Some(ProviderAction::Delete) => self.do_delete(), _ => {} } } self.confirm_action = None; self.confirm_button = 0; }
-                KeyCode::Esc | KeyCode::Char('q') => { self.confirm_action = None; self.confirm_button = 0; }
+                KeyCode::Enter => {
+                    if self.confirm_button == 0 {
+                        match self.confirm_action {
+                            Some(ProviderAction::Switch) => self.do_switch(),
+                            Some(ProviderAction::Delete) => self.do_delete(),
+                            _ => {}
+                        }
+                    }
+                    self.confirm_action = None;
+                    self.confirm_button = 0;
+                }
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    self.confirm_action = None;
+                    self.confirm_button = 0;
+                }
                 _ => {}
             }
             return true;
         }
         if self.is_searching {
             match code {
-                KeyCode::Esc => { self.is_searching = false; self.search_query.clear(); self.refresh_filter(); }
-                KeyCode::Enter => { self.is_searching = false; if !self.filtered.is_empty() { self.state.select(Some(0)); } }
-                KeyCode::Backspace | KeyCode::Delete => { self.search_query.pop(); self.refresh_filter(); }
-                KeyCode::Char(c) => { self.search_query.push(c); self.refresh_filter(); }
+                KeyCode::Esc => {
+                    self.is_searching = false;
+                    self.search_query.clear();
+                    self.refresh_filter();
+                }
+                KeyCode::Enter => {
+                    self.is_searching = false;
+                    if !self.filtered.is_empty() {
+                        self.state.select(Some(0));
+                    }
+                }
+                KeyCode::Backspace | KeyCode::Delete => {
+                    self.search_query.pop();
+                    self.refresh_filter();
+                }
+                KeyCode::Char(c) => {
+                    self.search_query.push(c);
+                    self.refresh_filter();
+                }
                 _ => {}
             }
             return true;
         }
         match code {
             KeyCode::Tab | KeyCode::BackTab => return false,
-            KeyCode::Char('j') | KeyCode::Down => { let l = self.filtered.len(); if l > 0 { let i = self.state.selected().unwrap_or(0); self.state.select(Some(if i + 1 < l { i + 1 } else { 0 })); } }
-            KeyCode::Char('k') | KeyCode::Up => { let l = self.filtered.len(); if l > 0 { let i = self.state.selected().unwrap_or(0); self.state.select(Some(if i > 0 { i - 1 } else { l - 1 })); } }
-            KeyCode::Enter => { self.confirm_action = Some(ProviderAction::Switch); self.confirm_button = 0; }
+            KeyCode::Char('j') | KeyCode::Down => {
+                let l = self.filtered.len();
+                if l > 0 {
+                    let i = self.state.selected().unwrap_or(0);
+                    self.state.select(Some(if i + 1 < l { i + 1 } else { 0 }));
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                let l = self.filtered.len();
+                if l > 0 {
+                    let i = self.state.selected().unwrap_or(0);
+                    self.state.select(Some(if i > 0 { i - 1 } else { l - 1 }));
+                }
+            }
+            KeyCode::Enter => {
+                self.confirm_action = Some(ProviderAction::Switch);
+                self.confirm_button = 0;
+            }
             KeyCode::Char('d') | KeyCode::Char('D') => {
                 if let Some(&ai) = self.filtered.get(self.state.selected().unwrap_or(0)) {
                     if !self.all_profiles[ai].0.source.can_delete() {
@@ -383,7 +495,8 @@ impl TabContent for ProvidersTab {
                         return true;
                     }
                 }
-                self.confirm_action = Some(ProviderAction::Delete); self.confirm_button = 0;
+                self.confirm_action = Some(ProviderAction::Delete);
+                self.confirm_button = 0;
             }
             KeyCode::Char('e') | KeyCode::Char('E') => {
                 if let Some(&ai) = self.filtered.get(self.state.selected().unwrap_or(0)) {
@@ -394,14 +507,49 @@ impl TabContent for ProvidersTab {
                 }
                 self.do_edit();
             }
-            KeyCode::Char('/') => { self.is_searching = true; }
+            KeyCode::Char('/') => {
+                self.is_searching = true;
+            }
             _ => return false,
         }
         true
     }
+
+    fn shortcut_groups(&self) -> Vec<Vec<(String, Color)>> {
+        vec![
+            vec![(" J/K ".into(), Theme::COMMENT), ("Nav".into(), Theme::COMMENT)],
+            vec![(" / ".into(), Theme::COMMENT), ("Search".into(), Theme::COMMENT)],
+            vec![(" ⏎  ".into(), Theme::COMMENT), ("Switch".into(), Theme::COMMENT)],
+            vec![(" D ".into(), Theme::COMMENT), ("Delete".into(), Theme::COMMENT)],
+            vec![(" E ".into(), Theme::COMMENT), ("Edit".into(), Theme::COMMENT)],
+            vec![(" Q ".into(), Theme::COMMENT), ("Quit".into(), Theme::COMMENT)],
+        ]
+    }
+
+    fn shortcut_lines(&self, available_width: u16) -> usize {
+        let group_widths = [8usize, 9, 12, 8, 7, 7];
+        let sep = 2usize;
+        let w = available_width.saturating_sub(2).max(10) as usize;
+        let mut lines = 1usize;
+        let mut cur = 0usize;
+        for gw in &group_widths {
+            if cur + gw > w && cur > 0 {
+                lines += 1;
+                cur = 0;
+            }
+            if cur > 0 {
+                cur += sep;
+            }
+            cur += gw;
+        }
+        lines
+    }
 }
 
-struct VisSlice { text: String, skip: usize }
+struct VisSlice {
+    text: String,
+    skip: usize,
+}
 
 /// Show a windowed slice of text centered around cursor position
 fn slice_value(text: &str, cursor: usize, max_w: usize) -> VisSlice {
@@ -416,20 +564,8 @@ fn slice_value(text: &str, cursor: usize, max_w: usize) -> VisSlice {
     if end == text.len() && end > max_w {
         start = end - max_w;
     }
-    VisSlice { text: text[start..end].to_string(), skip: start }
-}
-
-fn provider_shortcut_lines(available_width: u16) -> usize {
-    let group_widths = [8, 9, 12, 8, 7, 7]; // J/K, /, enter, D, E, Q with labels
-    let sep = 2usize;
-    let w = available_width.saturating_sub(2).max(10) as usize; // account for border
-    let mut lines = 1usize;
-    let mut cur = 0usize;
-    for gw in &group_widths {
-        if cur + gw > w && cur > 0 { lines += 1; cur = 0; }
-        if cur > 0 { cur += sep; }
-        cur += gw;
+    VisSlice {
+        text: text[start..end].to_string(),
+        skip: start,
     }
-    lines
 }
-

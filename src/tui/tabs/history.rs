@@ -1,22 +1,25 @@
 use std::sync::Arc;
 
+use super::super::theme::Theme;
+use super::super::widgets::session_detail::{render_empty_detail, render_session_detail};
+use super::super::widgets::shared::{format_size, relative_time, render_confirm_popup as shared_confirm, render_search_box as shared_search, truncate};
+use super::TabContent;
+use crate::core::config::ConfigManager;
+use crate::db::sessions::SessionRecord;
+use crossterm::event::KeyCode;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::Style,
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, List, ListItem, ListState},
     Frame,
 };
-use crossterm::event::KeyCode;
-use crate::core::config::ConfigManager;
-use crate::db::sessions::SessionRecord;
-use super::super::theme::Theme;
-use super::super::widgets::session_detail::{render_session_detail, render_empty_detail};
-use super::super::widgets::shared::{render_search_box as shared_search, render_shortcut_bar as shared_shortcuts, render_confirm_popup as shared_confirm, shortcut_lines, truncate, relative_time, format_size};
-use super::TabContent;
 
 #[derive(Clone, Copy, PartialEq)]
-pub enum ConfirmAction { Open, Delete }
+pub enum ConfirmAction {
+    Open,
+    Delete,
+}
 
 pub struct HistoryTab {
     pub all_sessions: Vec<SessionRecord>,
@@ -35,14 +38,18 @@ impl HistoryTab {
     pub fn new(mgr: Arc<ConfigManager>) -> Self {
         // Session import is handled before TUI launch (in main.rs with progress bar).
         // Just load whatever is already in the DB.
-        let all = mgr.session_db().query_sessions(None, None, 200)
+        let all = mgr
+            .session_db()
+            .query_sessions(None, None, 200)
             .unwrap_or_default()
             .into_iter()
             .filter(|s| s.size_bytes > 0)
             .collect::<Vec<_>>();
         let sessions = all.clone();
         let mut state = ListState::default();
-        if !sessions.is_empty() { state.select(Some(0)); }
+        if !sessions.is_empty() {
+            state.select(Some(0));
+        }
         HistoryTab {
             all_sessions: all,
             sessions,
@@ -60,15 +67,14 @@ impl HistoryTab {
     pub fn refresh(&mut self) {
         let query = self.search_query.trim().to_lowercase();
         let tokens: Vec<&str> = query.split_whitespace().collect();
-        self.sessions = self.all_sessions
+        self.sessions = self
+            .all_sessions
             .iter()
             .filter(|s| {
-                if tokens.is_empty() { return true; }
-                let haystack = format!(
-                    "{} {}",
-                    s.title.as_deref().unwrap_or(""),
-                    s.project_path
-                ).to_lowercase();
+                if tokens.is_empty() {
+                    return true;
+                }
+                let haystack = format!("{} {}", s.title.as_deref().unwrap_or(""), s.project_path).to_lowercase();
                 tokens.iter().all(|t| haystack.contains(t))
             })
             .cloned()
@@ -135,15 +141,8 @@ impl TabContent for HistoryTab {
             .constraints([Constraint::Length(3), Constraint::Min(0)])
             .split(main[0]);
 
-        // Right panel: detail preview + shortcut bar (dynamic height)
-        let shortcut_lines = shortcut_lines(main[1].width, &[8, 9, 12, 7, 7]);
-        let right_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(3),
-                Constraint::Length(2 + shortcut_lines as u16), // borders + content
-            ])
-            .split(main[1]);
+        // Right panel: detail preview
+        let right_chunks = Layout::default().direction(Direction::Vertical).constraints([Constraint::Min(3)]).split(main[1]);
 
         // Search box
         self.render_search_box(f, left_chunks[0]);
@@ -160,7 +159,8 @@ impl TabContent for HistoryTab {
                 let is_uuid = raw.len() >= 32 && raw.chars().filter(|c| *c == '-').count() >= 4;
                 let title = if is_uuid {
                     std::path::Path::new(&s.project_path)
-                        .file_name().map(|n| n.to_string_lossy().to_string())
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_else(|| raw.to_string())
                 } else {
                     raw.to_string()
@@ -183,10 +183,7 @@ impl TabContent for HistoryTab {
                 let title_color = if is_selected { Theme::CYAN } else { Theme::FG };
 
                 ListItem::new(vec![
-                    Line::from(Span::styled(
-                        format!("{}{}", arrow, title),
-                        Style::default().fg(title_color),
-                    )),
+                    Line::from(Span::styled(format!("{}{}", arrow, title), Style::default().fg(title_color))),
                     Line::from(vec![
                         Span::styled("  ", Style::default()),
                         Span::styled(date, Style::default().fg(Theme::COMMENT)),
@@ -204,7 +201,8 @@ impl TabContent for HistoryTab {
         let count = items.len();
         let list = List::new(items)
             .block(
-                Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
+                Block::bordered()
+                    .border_set(ratatui::symbols::border::ROUNDED)
                     .title(format!("Sessions ({})", count))
                     .border_style(Style::default().fg(Theme::DIM)),
             )
@@ -212,10 +210,11 @@ impl TabContent for HistoryTab {
 
         f.render_stateful_widget(list, left_chunks[1], &mut self.state);
 
-        // Right: detail preview + shortcut bar
+        // Right panel: detail preview
         if let Some(idx) = self.state.selected() {
             if let Some(s) = self.sessions.get(idx) {
-                render_session_detail(f, right_chunks[0], s);
+                let tokens = self.mgr.usage_db().query_session_tokens(&s.id).ok();
+                render_session_detail(f, right_chunks[0], s, tokens);
             } else {
                 render_empty_detail(f, right_chunks[0], "No session selected");
             }
@@ -224,7 +223,6 @@ impl TabContent for HistoryTab {
         }
 
         // Shortcut bar under detail preview
-        self.render_shortcut_bar(f, right_chunks[1]);
 
         // Confirmation popup
         if self.confirm_action.is_some() {
@@ -236,12 +234,10 @@ impl TabContent for HistoryTab {
         // Confirm popup mode (open or delete)
         if self.confirm_action.is_some() {
             match code {
-                KeyCode::Tab | KeyCode::Right |
-                KeyCode::Char('j') | KeyCode::Char('l') => {
+                KeyCode::Tab | KeyCode::Right | KeyCode::Char('j') | KeyCode::Char('l') => {
                     self.confirm_button = (self.confirm_button + 1) % 2;
                 }
-                KeyCode::BackTab | KeyCode::Left |
-                KeyCode::Char('k') | KeyCode::Char('h') => {
+                KeyCode::BackTab | KeyCode::Left | KeyCode::Char('k') | KeyCode::Char('h') => {
                     self.confirm_button = if self.confirm_button == 0 { 1 } else { 0 };
                 }
                 KeyCode::Enter => {
@@ -274,7 +270,9 @@ impl TabContent for HistoryTab {
                 }
                 KeyCode::Enter => {
                     self.is_searching = false;
-                    if !self.sessions.is_empty() { self.state.select(Some(0)); }
+                    if !self.sessions.is_empty() {
+                        self.state.select(Some(0));
+                    }
                 }
                 KeyCode::Backspace | KeyCode::Delete => {
                     self.search_query.pop();
@@ -293,13 +291,17 @@ impl TabContent for HistoryTab {
         match code {
             KeyCode::Char('j') | KeyCode::Down => {
                 let len = self.sessions.len();
-                if len == 0 { return true; }
+                if len == 0 {
+                    return true;
+                }
                 let i = self.state.selected().unwrap_or(0);
                 self.state.select(Some(if i + 1 < len { i + 1 } else { 0 }));
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 let len = self.sessions.len();
-                if len == 0 { return true; }
+                if len == 0 {
+                    return true;
+                }
                 let i = self.state.selected().unwrap_or(0);
                 self.state.select(Some(if i > 0 { i - 1 } else { len - 1 }));
             }
@@ -314,9 +316,40 @@ impl TabContent for HistoryTab {
             KeyCode::Char('/') => {
                 self.is_searching = true;
             }
-            _ => { return false; }
+            _ => {
+                return false;
+            }
         }
         true
+    }
+
+    fn shortcut_groups(&self) -> Vec<Vec<(String, Color)>> {
+        vec![
+            vec![(" J/K ".into(), Theme::COMMENT), ("Nav".into(), Theme::COMMENT)],
+            vec![(" / ".into(), Theme::COMMENT), ("Search".into(), Theme::COMMENT)],
+            vec![(" ⏎  ".into(), Theme::COMMENT), ("Open".into(), Theme::COMMENT)],
+            vec![(" D ".into(), Theme::COMMENT), ("Delete".into(), Theme::COMMENT)],
+            vec![(" Q ".into(), Theme::COMMENT), ("Quit".into(), Theme::COMMENT)],
+        ]
+    }
+
+    fn shortcut_lines(&self, available_width: u16) -> usize {
+        let group_widths = [8usize, 9, 12, 7, 7];
+        let sep = 2usize;
+        let w = available_width.saturating_sub(2).max(10) as usize;
+        let mut lines = 1usize;
+        let mut cur = 0usize;
+        for gw in &group_widths {
+            if cur + gw > w && cur > 0 {
+                lines += 1;
+                cur = 0;
+            }
+            if cur > 0 {
+                cur += sep;
+            }
+            cur += gw;
+        }
+        lines
     }
 }
 
@@ -331,20 +364,7 @@ impl HistoryTab {
         shared_confirm(f, area, title, msg, "Confirm", "Cancel", c, self.confirm_button);
     }
 
-    fn render_shortcut_bar(&self, f: &mut Frame, area: Rect) {
-        let groups = vec![
-            vec![(" J/K ".into(), Theme::CYAN), ("Nav".into(), Theme::COMMENT)],
-            vec![(" / ".into(), Theme::CYAN), ("Search".into(), Theme::COMMENT)],
-            vec![(" ⏎  ".into(), Theme::GREEN), ("Open".into(), Theme::COMMENT)],
-            vec![(" D ".into(), Theme::RED), ("Delete".into(), Theme::COMMENT)],
-            vec![(" Q ".into(), Theme::ORANGE), ("Quit".into(), Theme::COMMENT)],
-        ];
-        shared_shortcuts(f, area, &groups);
-    }
-
     fn render_search_box(&self, f: &mut Frame, area: Rect) {
         shared_search(f, area, &self.search_query, self.is_searching);
     }
 }
-
-

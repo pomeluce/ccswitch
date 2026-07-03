@@ -1,3 +1,6 @@
+use super::shared::{format_size, format_tokens};
+use crate::db::sessions::SessionRecord;
+use crate::tui::theme::Theme;
 use ratatui::{
     layout::Rect,
     style::Style,
@@ -5,12 +8,9 @@ use ratatui::{
     widgets::{Block, Paragraph},
     Frame,
 };
-use crate::db::sessions::SessionRecord;
-use crate::tui::theme::Theme;
-use super::shared::format_size;
 
 /// Render a session detail panel in the given area.
-pub fn render_session_detail(f: &mut Frame, area: Rect, session: &SessionRecord) {
+pub fn render_session_detail(f: &mut Frame, area: Rect, session: &SessionRecord, tokens: Option<(i64, i64)>) {
     let pad = "  ";
     let home = std::env::var("HOME").unwrap_or_default();
     let path_short = session.project_path.replace(&home, "~");
@@ -21,10 +21,7 @@ pub fn render_session_detail(f: &mut Frame, area: Rect, session: &SessionRecord)
     let mut lines = vec![
         Line::from(vec![
             Span::styled(pad, Style::default()),
-            Span::styled(
-                session.title.as_deref().unwrap_or(&session.id),
-                Style::default().fg(Theme::CYAN),
-            ),
+            Span::styled(session.title.as_deref().unwrap_or(&session.id), Style::default().fg(Theme::CYAN)),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -35,10 +32,7 @@ pub fn render_session_detail(f: &mut Frame, area: Rect, session: &SessionRecord)
 
     let cont_indent = format!("{}           ", pad);
     for rest in rest_lines {
-        lines.push(Line::from(Span::styled(
-            format!("{}{}", cont_indent, rest),
-            Style::default().fg(Theme::YELLOW),
-        )));
+        lines.push(Line::from(Span::styled(format!("{}{}", cont_indent, rest), Style::default().fg(Theme::YELLOW))));
     }
 
     lines.extend(vec![
@@ -53,7 +47,11 @@ pub fn render_session_detail(f: &mut Frame, area: Rect, session: &SessionRecord)
         Line::from(vec![
             Span::styled(format!("{}Tokens:   ", pad), Style::default().fg(Theme::PURPLE)),
             Span::styled(
-                format!("{} prompt / {} completion", session.prompt_tokens, session.completion_tokens),
+                if let Some((p, c)) = tokens {
+                    format!("{} prompt / {} completion", format_tokens(p), format_tokens(c))
+                } else {
+                    format!("{} prompt / {} completion", format_tokens(session.prompt_tokens), format_tokens(session.completion_tokens))
+                },
                 Style::default().fg(Theme::FG),
             ),
         ]),
@@ -73,7 +71,8 @@ pub fn render_session_detail(f: &mut Frame, area: Rect, session: &SessionRecord)
 
     let p = Paragraph::new(lines)
         .block(
-            Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
+            Block::bordered()
+                .border_set(ratatui::symbols::border::ROUNDED)
                 .title("Session Detail")
                 .border_style(Style::default().fg(Theme::DIM)),
         )
@@ -83,11 +82,9 @@ pub fn render_session_detail(f: &mut Frame, area: Rect, session: &SessionRecord)
 
 /// Render empty detail placeholder
 pub fn render_empty_detail(f: &mut Frame, area: Rect, hint: &str) {
-    let p = Paragraph::new(vec![
-        Line::from(""),
-        Line::from(Span::styled(hint, Style::default().fg(Theme::COMMENT))).centered(),
-    ]).block(
-        Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
+    let p = Paragraph::new(vec![Line::from(""), Line::from(Span::styled(hint, Style::default().fg(Theme::COMMENT))).centered()]).block(
+        Block::bordered()
+            .border_set(ratatui::symbols::border::ROUNDED)
             .title("Session Detail")
             .border_style(Style::default().fg(Theme::DIM)),
     );

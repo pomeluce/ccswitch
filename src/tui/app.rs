@@ -1,8 +1,8 @@
 use std::path::PathBuf;
-use std::sync::{Arc, mpsc};
+use std::sync::{mpsc, Arc};
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use ratatui::{Frame, Terminal, backend::CrosstermBackend};
+use ratatui::{backend::CrosstermBackend, Frame, Terminal};
 
 use crate::core::config::ConfigManager;
 
@@ -26,11 +26,7 @@ pub struct App {
 impl App {
     pub fn new(db_path: PathBuf, defaults_path: PathBuf) -> anyhow::Result<Self> {
         let mgr = Arc::new(ConfigManager::new(&db_path, Some(&defaults_path))?);
-        let proxy_running = mgr
-            .db()
-            .get_setting("proxy_mode")
-            .map(|v| v == "true")
-            .unwrap_or(false);
+        let proxy_running = mgr.db().get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false);
         let providers_tab = ProvidersTab::new(mgr.clone());
         let usage_tab = UsageTab::new(mgr.clone());
         let history_tab = HistoryTab::new(mgr.clone());
@@ -59,10 +55,7 @@ impl App {
         result
     }
 
-    fn event_loop(
-        &mut self,
-        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-    ) -> anyhow::Result<()> {
+    fn event_loop(&mut self, terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> anyhow::Result<()> {
         while !self.should_quit {
             // Poll background scan events every tick (for smooth progress bar)
             self.usage_tab.poll_scan_events();
@@ -88,9 +81,7 @@ impl App {
                 ratatui::restore();
                 if let Some(ref project) = self.history_tab.launch_project.take() {
                     println!("\n  Launching Claude Code in {}\n", project);
-                    let _ = std::process::Command::new("claude")
-                        .current_dir(project)
-                        .status();
+                    let _ = std::process::Command::new("claude").current_dir(project).status();
                     print!("\n  Returning to CCSwitch...\n");
                 }
                 *terminal = ratatui::init();
@@ -112,7 +103,9 @@ impl App {
                         tracing::warn!("Polling session import failed: {}", e);
                     } else {
                         // Refresh history tab data
-                        let sessions = self.mgr.session_db()
+                        let sessions = self
+                            .mgr
+                            .session_db()
                             .query_sessions(None, None, 200)
                             .unwrap_or_default()
                             .into_iter()
@@ -142,7 +135,9 @@ impl App {
             Tab::Usage => self.usage_tab.handle_key(code),
             Tab::History => self.history_tab.handle_key(code),
         };
-        if handled { return; }
+        if handled {
+            return;
+        }
 
         match code {
             KeyCode::Tab => self.next_tab(),
@@ -172,12 +167,25 @@ impl App {
     }
 
     fn render(&mut self, f: &mut Frame) {
+        use super::widgets::shared::render_shortcut_bar;
         use ratatui::layout::{Constraint, Direction, Layout};
 
         let area = f.area();
+
+        // Calculate shortcut bar height for the active tab
+        let sc_lines = match self.active_tab {
+            Tab::Providers => self.providers_tab.shortcut_lines(area.width),
+            Tab::Usage => self.usage_tab.shortcut_lines(area.width),
+            Tab::History => self.history_tab.shortcut_lines(area.width),
+        };
+
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), Constraint::Min(0)])
+            .constraints([
+                Constraint::Length(3),                   // tab bar
+                Constraint::Min(3),                      // tab content
+                Constraint::Length(2 + sc_lines as u16), // shortcut bar
+            ])
             .split(area);
 
         // Tab bar
@@ -188,34 +196,33 @@ impl App {
             Tab::Usage => self.usage_tab.render(f, chunks[1]),
             Tab::History => self.history_tab.render(f, chunks[1]),
         }
+        // Global shortcut bar
+        let groups = match self.active_tab {
+            Tab::Providers => self.providers_tab.shortcut_groups(),
+            Tab::Usage => self.usage_tab.shortcut_groups(),
+            Tab::History => self.history_tab.shortcut_groups(),
+        };
+        render_shortcut_bar(f, chunks[2], &groups);
     }
 
     fn render_tab_bar(&self, f: &mut Frame, area: ratatui::layout::Rect) {
+        use super::tabs::Tab;
         use ratatui::{
             style::Style,
             text::{Line, Span},
             widgets::{Block, Paragraph},
         };
-        use super::tabs::Tab;
 
-        let tabs = [
-            (Tab::Providers, " 模型 "),
-            (Tab::Usage, " 用量 "),
-            (Tab::History, " 会话 "),
-        ];
+        let tabs = [(Tab::Providers, " 模型 "), (Tab::Usage, " 用量 "), (Tab::History, " 会话 ")];
 
         // Build tab spans: active = cyan block, inactive = dim text
         let tab_spans: Vec<Span> = tabs
             .iter()
             .flat_map(|(tab, label)| {
                 if *tab == self.active_tab {
-                    vec![
-                        Span::styled(*label, Style::default().fg(Theme::CYAN)),
-                    ]
+                    vec![Span::styled(*label, Style::default().fg(Theme::CYAN))]
                 } else {
-                    vec![
-                        Span::styled(*label, Style::default().fg(Theme::DIM)),
-                    ]
+                    vec![Span::styled(*label, Style::default().fg(Theme::DIM))]
                 }
             })
             .collect();
@@ -237,15 +244,19 @@ impl App {
         all_spans.push(Span::styled(" ".repeat(pad_left as usize), Style::default()));
         all_spans.extend(tab_spans);
         all_spans.push(Span::styled(" ".repeat(pad_right as usize), Style::default()));
-        all_spans.push(Span::styled(mode_label, if self.proxy_running {
-            Style::default().fg(Theme::GREEN)
-        } else {
-            Style::default().fg(Theme::DIM)
-        }));
+        all_spans.push(Span::styled(
+            mode_label,
+            if self.proxy_running {
+                Style::default().fg(Theme::GREEN)
+            } else {
+                Style::default().fg(Theme::DIM)
+            },
+        ));
 
         let p = Paragraph::new(Line::from(all_spans)).block(
-            Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                .border_style(Style::default().fg(Theme::DIM))
+            Block::bordered()
+                .border_set(ratatui::symbols::border::ROUNDED)
+                .border_style(Style::default().fg(Theme::DIM)),
         );
         f.render_widget(p, area);
     }

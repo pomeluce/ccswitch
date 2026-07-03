@@ -1,5 +1,5 @@
 use super::super::theme::Theme;
-use super::super::widgets::shared::{render_shortcut_bar as shared_shortcuts, render_search_box as shared_search};
+use super::super::widgets::shared::{format_tokens, render_search_box as shared_search};
 use super::TabContent;
 use crate::core::config::ConfigManager;
 use crate::db::usage::{ScanContext, ScanEvent, UsageSummary};
@@ -17,11 +17,7 @@ use std::sync::Arc;
 /// Background scan state, updated by poll_scan_events()
 enum ScanState {
     Idle,
-    Scanning {
-        files_done: usize,
-        files_total: usize,
-        records: usize,
-    },
+    Scanning { files_done: usize, files_total: usize, records: usize },
 }
 
 pub struct UsageTab {
@@ -49,9 +45,7 @@ impl UsageTab {
         // Check if this is first launch (no usage data yet)
         let is_first_launch = {
             let db = mgr.usage_db();
-            let count: i64 = db.conn()
-                .query_row("SELECT COUNT(*) FROM usage_logs", [], |r| r.get(0))
-                .unwrap_or(0);
+            let count: i64 = db.conn().query_row("SELECT COUNT(*) FROM usage_logs", [], |r| r.get(0)).unwrap_or(0);
             count == 0
         };
 
@@ -65,7 +59,10 @@ impl UsageTab {
                 }
                 Err(e) => {
                     tracing::error!("Failed to prepare scan context: {}", e);
-                    ScanContext { known_msg_ids: Vec::new(), file_index: std::collections::HashMap::new() }
+                    ScanContext {
+                        known_msg_ids: Vec::new(),
+                        file_index: std::collections::HashMap::new(),
+                    }
                 }
             };
             // Always spawn background thread — it does its own file collection
@@ -75,7 +72,11 @@ impl UsageTab {
             scan_rx = Some(rx);
             scan_handle = Some(handle);
             if is_first_launch {
-                scan_state = ScanState::Scanning { files_done: 0, files_total: 0, records: 0 };
+                scan_state = ScanState::Scanning {
+                    files_done: 0,
+                    files_total: 0,
+                    records: 0,
+                };
             } else {
                 scan_state = ScanState::Idle;
             }
@@ -180,7 +181,9 @@ impl UsageTab {
                 tracing::info!("Usage scan complete");
                 self.scan_state = ScanState::Idle;
                 self.scan_rx = None;
-                if let Some(h) = self.scan_handle.take() { let _ = h.join(); }
+                if let Some(h) = self.scan_handle.take() {
+                    let _ = h.join();
+                }
                 self.summaries = self.mgr.usage_db().query_usage(&self.range).unwrap_or_default();
                 if !self.summaries.is_empty() && self.state.selected().is_none() {
                     self.state.select(Some(0));
@@ -209,15 +212,8 @@ impl TabContent for UsageTab {
         // Profile ranking
         self.render_profile_list(f, left[2]);
 
-        // Right: daily chart (or scan progress) + shortcut bar
-        let sc_lines = usage_shortcut_lines(main[1].width);
-        let right = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(3),
-                Constraint::Length(2 + sc_lines as u16),
-            ])
-            .split(main[1]);
+        // Right: daily chart (or scan progress)
+        let right = Layout::default().direction(Direction::Vertical).constraints([Constraint::Min(3)]).split(main[1]);
 
         match &self.scan_state {
             ScanState::Scanning { files_done, files_total, records } => {
@@ -227,7 +223,6 @@ impl TabContent for UsageTab {
                 self.render_daily_chart(f, right[0]);
             }
         }
-        self.render_shortcut_bar(f, right[1]);
     }
 
     fn handle_key(&mut self, code: KeyCode) -> bool {
@@ -286,20 +281,38 @@ impl TabContent for UsageTab {
         }
         true
     }
+
+    fn shortcut_groups(&self) -> Vec<Vec<(String, Color)>> {
+        vec![
+            vec![(" J/K ".into(), Theme::COMMENT), ("Nav".into(), Theme::COMMENT)],
+            vec![(" / ".into(), Theme::COMMENT), ("Search".into(), Theme::COMMENT)],
+            vec![(" T ".into(), Theme::COMMENT), ("Toggle".into(), Theme::COMMENT)],
+            vec![(" PgUp/Dn ".into(), Theme::COMMENT), ("Scroll".into(), Theme::COMMENT)],
+            vec![(" Q ".into(), Theme::COMMENT), ("Quit".into(), Theme::COMMENT)],
+        ]
+    }
+
+    fn shortcut_lines(&self, available_width: u16) -> usize {
+        let widths = [9usize, 10, 10, 17, 8];
+        let sep = 2usize;
+        let w = available_width.saturating_sub(2).max(10) as usize;
+        let mut lines = 1usize;
+        let mut cur = 0usize;
+        for gw in &widths {
+            if cur + gw > w && cur > 0 {
+                lines += 1;
+                cur = 0;
+            }
+            if cur > 0 {
+                cur += sep;
+            }
+            cur += gw;
+        }
+        lines
+    }
 }
 
 impl UsageTab {
-    fn render_shortcut_bar(&self, f: &mut Frame, area: Rect) {
-        let groups: Vec<Vec<(String, Color)>> = vec![
-            vec![(" J/K ".into(), Theme::CYAN), ("Nav".into(), Theme::COMMENT)],
-            vec![(" / ".into(), Theme::CYAN), ("Search".into(), Theme::COMMENT)],
-            vec![(" T ".into(), Theme::GREEN), ("Toggle".into(), Theme::COMMENT)],
-            vec![(" PgUp/Dn ".into(), Theme::PURPLE), ("Scroll".into(), Theme::COMMENT)],
-            vec![(" Q ".into(), Theme::ORANGE), ("Quit".into(), Theme::COMMENT)],
-        ];
-        shared_shortcuts(f, area, &groups);
-    }
-
     fn render_search_box(&self, f: &mut Frame, area: Rect) {
         shared_search(f, area, &self.search_query, self.is_searching);
     }
@@ -311,13 +324,12 @@ impl UsageTab {
             // Query actual daily breakdown for today/week calculation
             let daily = self.mgr.usage_db().query_daily_usage(&s.model).unwrap_or_default();
             let today_date = chrono::Local::now().format("%Y-%m-%d").to_string();
-            let today_tokens = daily.iter()
+            let today_tokens = daily
+                .iter()
                 .find(|(dt, _, _, _, _)| dt == &today_date)
                 .map(|(_, i, o, cr, cc)| i + o + cr + cc)
                 .unwrap_or(0);
-            let week_tokens = daily.iter()
-                .map(|(_, i, o, cr, cc)| i + o + cr + cc)
-                .sum::<i64>();
+            let week_tokens = daily.iter().map(|(_, i, o, cr, cc)| i + o + cr + cc).sum::<i64>();
             let total_tokens = Self::token_total(s);
             (today_tokens, week_tokens, total_tokens, s.request_count)
         } else {
@@ -414,7 +426,8 @@ impl UsageTab {
                     Line::from(""),
                     Line::from(Span::styled("  最近 7 天没有使用该模型", Style::default().fg(Theme::COMMENT))).centered(),
                     Line::from(""),
-                ]).block(
+                ])
+                .block(
                     Block::bordered()
                         .border_set(ratatui::symbols::border::ROUNDED)
                         .title(format!("{} — This Week", label))
@@ -462,7 +475,10 @@ impl UsageTab {
                         Span::styled("  ", Style::default()),
                         Span::styled(format!("{}  ", date), Style::default().fg(Theme::COMMENT)),
                         Span::styled(bar, Style::default().fg(color)),
-                        Span::styled(format!(" {}", format_tokens(total)), Style::default().fg(if *is_today { Theme::ORANGE } else { Theme::DIM })),
+                        Span::styled(
+                            format!(" {}", format_tokens(total)),
+                            Style::default().fg(if *is_today { Theme::ORANGE } else { Theme::DIM }),
+                        ),
                     ])];
                     day_lines.extend(detail_lines);
                     day_lines.push(Line::from(""));
@@ -488,7 +504,8 @@ impl UsageTab {
                 Line::from(Span::styled("  No usage data yet", Style::default().fg(Theme::COMMENT))).centered(),
                 Line::from(""),
                 Line::from(Span::styled("  Scan starts automatically on first launch", Style::default().fg(Theme::DIM))).centered(),
-            ]).block(
+            ])
+            .block(
                 Block::bordered()
                     .border_set(ratatui::symbols::border::ROUNDED)
                     .title(" Usage ")
@@ -519,9 +536,17 @@ impl UsageTab {
 
         let lines = vec![
             Line::from(""),
-            Line::from(Span::styled(format!("    {}  Scanning Claude Code sessions...", spinner), Style::default().fg(Theme::CYAN))).centered(),
+            Line::from(Span::styled(
+                format!("    {}  Scanning Claude Code sessions...", spinner),
+                Style::default().fg(Theme::COMMENT),
+            ))
+            .centered(),
             Line::from(""),
-            Line::from(Span::styled(format!("    {} {}  {} / {} files", bar, pct, files_done, files_total), Style::default().fg(Theme::PURPLE))).centered(),
+            Line::from(Span::styled(
+                format!("    {} {}  {} / {} files", bar, pct, files_done, files_total),
+                Style::default().fg(Theme::COMMENT),
+            ))
+            .centered(),
             Line::from(""),
             Line::from(Span::styled(format!("    {} records imported", records), Style::default().fg(Theme::COMMENT))).centered(),
             Line::from(""),
@@ -532,7 +557,7 @@ impl UsageTab {
             Block::bordered()
                 .border_set(ratatui::symbols::border::ROUNDED)
                 .title(" Scanning ")
-                .border_style(Style::default().fg(Theme::PURPLE)),
+                .border_style(Style::default().fg(Theme::COMMENT)),
         );
         f.render_widget(p, area);
     }
@@ -553,29 +578,4 @@ fn title_case(s: &str) -> String {
         }
     }
     result
-}
-
-/// Pre-calculate shortcut bar lines to match shared_shortcuts actual rendering
-fn usage_shortcut_lines(available_width: u16) -> usize {
-    let widths = [9usize, 10, 10, 17, 8];
-    let sep = 2usize;
-    let w = available_width.saturating_sub(2).max(10) as usize;
-    let mut lines = 1usize;
-    let mut cur = 0usize;
-    for gw in &widths {
-        if cur + gw > w && cur > 0 { lines += 1; cur = 0; }
-        if cur > 0 { cur += sep; }
-        cur += gw;
-    }
-    lines
-}
-
-fn format_tokens(n: i64) -> String {
-    if n >= 1_000_000 {
-        format!("{:.1}M", n as f64 / 1_000_000.0)
-    } else if n >= 1_000 {
-        format!("{:.1}k", n as f64 / 1_000.0)
-    } else {
-        n.to_string()
-    }
 }
