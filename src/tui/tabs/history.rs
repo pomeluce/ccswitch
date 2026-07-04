@@ -203,7 +203,11 @@ impl TabContent for HistoryTab {
         if let Some(idx) = self.state.selected() {
             if let Some(s) = self.sessions.get(idx) {
                 let tokens = self.mgr.db().query_session_tokens(&s.id).ok();
-                render_session_detail(f, right_chunks[0], s, tokens);
+                let active_prov = self.mgr.get_setting("active_provider").unwrap_or_default();
+                let active_prof = self.mgr.get_setting("active_profile").unwrap_or_default();
+                let prov_name = if active_prov.is_empty() { None } else { Some(active_prov.as_str()) };
+                let prof_name = if active_prof.is_empty() { None } else { Some(active_prof.as_str()) };
+                render_session_detail(f, right_chunks[0], s, tokens, prov_name, prof_name);
             } else {
                 render_empty_detail(f, right_chunks[0], "No session selected");
             }

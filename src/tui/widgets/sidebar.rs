@@ -31,23 +31,32 @@ pub fn render_sidebar(f: &mut Frame, area: Rect, active_tab: Tab, db: &Db) {
     let inner_h = area.height.saturating_sub(2); // border
     let avail = inner_h.saturating_sub(header_lines + footer_lines);
     let pad_bottom = avail.saturating_sub(tab_lines);
+    let inner_w = area.width.saturating_sub(2) as usize;
+
+    // Compute max label width and left pad for centered block
+    let max_w = tabs.iter().map(|(_, l)| {
+        l.chars().map(|c| if c > '\u{7e}' { 2 } else { 1 }).sum::<usize>()
+    }).max().unwrap_or(8);
+    let tab_pad = " ".repeat(inner_w.saturating_sub(max_w) / 2);
+    let title_pad = " ".repeat(inner_w.saturating_sub(12) / 2);
 
     let mut lines: Vec<Line> = Vec::new();
     // Title
     lines.push(Line::from(Span::styled(
-        "ccswitch-tui",
+        format!("{}ccswitch-tui", title_pad),
         Style::default().fg(theme::current().dim),
     )));
     lines.push(Line::from(""));
     lines.push(Line::from(""));
-
     for (tab, label) in &tabs {
         let style = if *tab == active_tab {
             Style::default().fg(theme::current().cyan)
         } else {
             Style::default().fg(theme::current().dim)
         };
-        lines.push(Line::from(Span::styled(*label, style)));
+        let dw = label.chars().map(|c| if c > '\u{7e}' { 2 } else { 1 }).sum::<usize>();
+        let rpad = " ".repeat(max_w.saturating_sub(dw));
+        lines.push(Line::from(Span::styled(format!("{}{}{}", tab_pad, label, rpad), style)));
         lines.push(Line::from(""));
     }
 
@@ -55,13 +64,14 @@ pub fn render_sidebar(f: &mut Frame, area: Rect, active_tab: Tab, db: &Db) {
         lines.push(Line::from(""));
     }
 
+    let mdw = mode_label.chars().map(|c| if c > '\u{7e}' { 2 } else { 1 }).sum::<usize>();
+    let mpad = " ".repeat(inner_w.saturating_sub(mdw) / 2);
     lines.push(Line::from(Span::styled(
-        mode_label,
+        format!("{}{}", mpad, mode_label),
         Style::default().fg(theme::current().dim),
     )));
 
     let p = Paragraph::new(lines)
-        .centered()
         .block(
             Block::bordered()
                 .border_set(ratatui::symbols::border::ROUNDED)

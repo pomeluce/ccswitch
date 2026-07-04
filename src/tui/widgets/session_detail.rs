@@ -11,7 +11,7 @@ use ratatui::{
 };
 
 /// Render a session detail panel in the given area.
-pub fn render_session_detail(f: &mut Frame, area: Rect, session: &SessionRecord, tokens: Option<(i64, i64)>) {
+pub fn render_session_detail(f: &mut Frame, area: Rect, session: &SessionRecord, tokens: Option<(i64, i64)>, active_provider: Option<&str>, active_profile: Option<&str>) {
     let home = std::env::var("HOME").unwrap_or_default();
     let path_short = session.project_path.replace(&home, "~");
     let max_w = (area.width as usize).saturating_sub(4).max(20);
@@ -29,9 +29,11 @@ pub fn render_session_detail(f: &mut Frame, area: Rect, session: &SessionRecord,
     lines.extend(line_with_wrap(lang::current().detail_project, &path_short, max_w, theme::current().purple, theme::current().yellow));
     lines.push(Line::from(""));
 
-    // Profile
-    let profile_text = session.profile_id.as_deref().unwrap_or("-");
-    lines.extend(line_with_wrap(lang::current().detail_profile, profile_text, max_w, theme::current().purple, theme::current().fg));
+    // Profile: provider_id · profile_id
+    let pid = active_provider.unwrap_or("-");
+    let pfid = session.profile_id.as_deref().or(active_profile).unwrap_or("-");
+    let profile_text = format!("{} \u{b7} {}", pid, pfid);
+    lines.extend(line_with_wrap(lang::current().detail_profile, &profile_text, max_w, theme::current().purple, theme::current().fg));
     lines.push(Line::from(""));
 
     // Mode

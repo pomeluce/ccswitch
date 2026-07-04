@@ -68,15 +68,6 @@ impl App {
             if event::poll(std::time::Duration::from_millis(100))? {
                 if let Event::Key(key) = event::read()? {
                     if key.kind == KeyEventKind::Press {
-                        // Ctrl+J/K: sidebar tab navigation
-                        if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
-                            match key.code {
-                                KeyCode::Char('j') => self.next_tab(),
-                                KeyCode::Char('k') => self.prev_tab(),
-                                _ => {}
-                            }
-                            continue;
-                        }
                         self.handle_key(key.code);
                     }
                 }
@@ -147,21 +138,23 @@ impl App {
             return;
         }
 
-        // Tab / Shift+Tab switch app type (if not consumed by tab)
+        // Tab/Shift+Tab: sidebar tab navigation
         match code {
-            KeyCode::Tab => {
+            KeyCode::Tab => { self.next_tab(); return; }
+            KeyCode::BackTab => { self.prev_tab(); return; }
+            _ => {}
+        }
+
+        // Space / Shift+Space: switch app type
+        match code {
+            KeyCode::Char(' ') => {
                 self.app_type = super::widgets::app_bar::toggle_app_type(&self.app_type).to_string();
-                return;
-            }
-            KeyCode::BackTab => {
-                self.app_type = if self.app_type == "claude" { "codex".into() } else { "claude".into() };
                 return;
             }
             _ => {}
         }
 
         match code {
-            KeyCode::Enter => {} // sidebar Enter — tab switches happen via J/K navigation
             KeyCode::Char('q') | KeyCode::Char('Q') => self.should_quit = true,
             _ => {}
         }

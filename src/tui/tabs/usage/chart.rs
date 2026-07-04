@@ -46,7 +46,7 @@ pub fn render_daily_chart(
         .block(
             Block::bordered()
                 .border_set(ratatui::symbols::border::ROUNDED)
-                .title(format!("{} — This Week", label))
+                .title(format!("{} — {}", lang::current().chart_title, label))
                 .border_style(Style::default().fg(theme::current().dim)),
         );
         f.render_widget(p, area);
@@ -81,7 +81,7 @@ pub fn render_daily_chart(
         .block(
             Block::bordered()
                 .border_set(ratatui::symbols::border::ROUNDED)
-                .title(format!("{} — This Week", label))
+                .title(format!("{} — {}", lang::current().chart_title, label))
                 .border_style(Style::default().fg(theme::current().dim)),
         );
         f.render_widget(p, area);
@@ -95,9 +95,10 @@ pub fn render_daily_chart(
             let total = in_tok + out_tok + cr_tok + cc_tok;
             let w = if max_val > 0 { (total as f64 / max_val as f64 * 30.0) as usize } else { 0 };
             let w = if total > 0 { w.max(1) } else { 0 };
-            let bar = "\u{2500}".repeat(w.min(35));
+            let bar_max = (area.width as usize).saturating_sub(24);
+            let bar = "\u{2500}".repeat(w.min(bar_max));
             let color = if *is_today { theme::current().orange } else { theme::current().purple };
-            let indent = "       ";
+            let indent = "  ";
             let detail_lines: Vec<Line> = if total > 0 {
                 let text = format!(
                     "{}: {}  {}: {}  {}: {}  {}: {}",
@@ -106,17 +107,14 @@ pub fn render_daily_chart(
                     lang::current().chart_cache_read, format_tokens(*cr_tok),
                     lang::current().chart_cache_create, format_tokens(*cc_tok)
                 );
-                let max_w = (area.width as usize).saturating_sub(indent.len() + 2).max(10);
+                let max_w = (area.width as usize).saturating_sub(4).max(20);
+                let (first, rest) = split_dw(&text, max_w);
                 let mut result = vec![Line::from(vec![
                     Span::styled(indent, Style::default()),
-                    Span::styled(text.chars().take(max_w).collect::<String>(), Style::default().fg(theme::current().comment)),
+                    Span::styled(first, Style::default().fg(theme::current().comment)),
                 ])];
-                let remainder: String = text.chars().skip(max_w).collect();
-                for chunk in remainder.chars().collect::<Vec<_>>().chunks(max_w) {
-                    let cont: String = chunk.iter().collect();
-                    if !cont.is_empty() {
-                        result.push(Line::from(Span::styled(format!("{}{}", indent, cont), Style::default().fg(theme::current().comment))));
-                    }
+                for line in rest {
+                    result.push(Line::from(Span::styled(format!("{}{}", indent, line), Style::default().fg(theme::current().comment))));
                 }
                 result
             } else {
@@ -145,8 +143,30 @@ pub fn render_daily_chart(
     let p = Paragraph::new(lines).block(
         Block::bordered()
             .border_set(ratatui::symbols::border::ROUNDED)
-            .title(format!("{} — This Week", label))
+            .title(format!("{} — {}", lang::current().chart_title, label))
             .border_style(Style::default().fg(theme::current().dim)),
     );
     f.render_widget(p, area);
+}
+
+fn dw(c: char) -> usize { if c > '\u{7e}' { 2 } else { 1 } }
+
+fn split_dw(text: &str, max_w: usize) -> (String, Vec<String>) {
+    let mut first = String::new();
+    let mut rest = Vec::new();
+    let mut cur = String::new();
+    let mut cur_w = 0usize;
+    for c in text.chars() {
+        let cw = dw(c);
+        if cur_w + cw > max_w && !cur.is_empty() {
+            if first.is_empty() { first = cur; }
+            else { rest.push(cur); }
+            cur = String::new();
+            cur_w = 0;
+        }
+        cur.push(c);
+        cur_w += cw;
+    }
+    if first.is_empty() { first = cur; } else { rest.push(cur); }
+    (first, rest)
 }
