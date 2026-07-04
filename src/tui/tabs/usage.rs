@@ -378,7 +378,10 @@ impl UsageTab {
                         Span::styled(format!("{}{}", arrow, label), Style::default().fg(tc)),
                         Span::styled(format!("  {}", format_tokens(total)), Style::default().fg(theme::current().dim)),
                     ]),
-                    Line::from(vec![Span::styled("  ", Style::default()), Span::styled(bar_text, Style::default().fg(theme::current().purple))]),
+                    Line::from(vec![
+                        Span::styled("  ", Style::default()),
+                        Span::styled(bar_text, Style::default().fg(theme::current().purple)),
+                    ]),
                     Line::from(""),
                 ])
             })
@@ -534,25 +537,26 @@ impl UsageTab {
         let lines = vec![
             Line::from(""),
             Line::from(Span::styled(
-                format!("    {}  Scanning Claude Code sessions...", spinner),
-                Style::default().fg(theme::current().comment),
-            )).centered(),
+                format!("{}  Scanning Claude Code sessions...", spinner),
+                Style::default().fg(theme::current().purple),
+            ))
+            .centered(),
             Line::from(""),
+            Line::from(Span::styled(format!("{} {}%", bar, pct), Style::default().fg(theme::current().comment))).centered(),
             Line::from(Span::styled(
-                format!("    {} {}  {} / {} files", bar, pct, files_done, files_total),
+                format!("{} / {} files — {} records imported", files_done, files_total, records),
                 Style::default().fg(theme::current().comment),
-            )).centered(),
+            ))
+            .centered(),
             Line::from(""),
-            Line::from(Span::styled(format!("    {} records imported", records), Style::default().fg(theme::current().comment))).centered(),
-            Line::from(""),
-            Line::from(Span::styled("    Data refreshes automatically when complete", Style::default().fg(theme::current().dim))).centered(),
+            Line::from(Span::styled("Data refreshes automatically when complete", Style::default().fg(theme::current().dim))).centered(),
         ];
 
         let p = Paragraph::new(lines).block(
             Block::bordered()
                 .border_set(ratatui::symbols::border::ROUNDED)
                 .title(" Scanning ")
-                .border_style(Style::default().fg(theme::current().comment)),
+                .border_style(Style::default().fg(theme::current().purple)),
         );
         f.render_widget(p, area);
     }

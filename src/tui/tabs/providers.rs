@@ -191,7 +191,7 @@ impl ProvidersTab {
             let (left, right) = vis.text.split_at(cur);
             let cursor = if i == form.focused { "▌" } else { "" };
             let style = if i == form.focused {
-                Style::default().fg(theme::current().comment)
+                Style::default().fg(theme::current().cyan)
             } else {
                 Style::default().fg(theme::current().fg)
             };
@@ -311,7 +311,7 @@ impl TabContent for ProvidersTab {
                     Line::from(vec![
                         Span::styled(format!("{}{}", arrow, prof.name), Style::default().fg(tc)),
                         if active {
-                            Span::styled(" (in use)", Style::default().fg(theme::current().comment))
+                            Span::styled(" (in use)", Style::default().fg(theme::current().green))
                         } else {
                             Span::styled("", Style::default())
                         },
