@@ -136,7 +136,18 @@ impl App {
     }
 
     fn handle_key(&mut self, code: KeyCode) {
-        // Tab / Shift+Tab switch app type (global priority)
+        // Let active tab handle keys first
+        let handled = match self.active_tab {
+            Tab::Providers => self.providers_tab.handle_key(code),
+            Tab::Usage => self.usage_tab.handle_key(code),
+            Tab::History => self.history_tab.handle_key(code),
+            Tab::Settings => self.settings_tab.handle_key(code),
+        };
+        if handled {
+            return;
+        }
+
+        // Tab / Shift+Tab switch app type (if not consumed by tab)
         match code {
             KeyCode::Tab => {
                 self.app_type = super::widgets::app_bar::toggle_app_type(&self.app_type).to_string();
@@ -147,17 +158,6 @@ impl App {
                 return;
             }
             _ => {}
-        }
-
-        // Let active tab handle keys
-        let handled = match self.active_tab {
-            Tab::Providers => self.providers_tab.handle_key(code),
-            Tab::Usage => self.usage_tab.handle_key(code),
-            Tab::History => self.history_tab.handle_key(code),
-            Tab::Settings => self.settings_tab.handle_key(code),
-        };
-        if handled {
-            return;
         }
 
         match code {

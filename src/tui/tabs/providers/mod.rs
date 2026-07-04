@@ -1,6 +1,6 @@
 pub mod form;
 
-use form::EditForm;
+use form::{EditForm, ProviderForm};
 use super::super::theme;
 use super::super::widgets::shared::{render_confirm_popup as shared_confirm, render_message_popup as shared_msg};
 use super::TabContent;
@@ -53,6 +53,7 @@ pub struct ProvidersTab {
     confirm_button: usize,
     pub message: Option<String>,
     edit_form: Option<EditForm>,
+    provider_form: Option<ProviderForm>,
 }
 
 impl ProvidersTab {
@@ -71,6 +72,8 @@ impl ProvidersTab {
         let selected_provider_idx = providers.iter()
             .position(|p| p.id == active_provider)
             .unwrap_or(0);
+        let active_provider = providers.get(selected_provider_idx)
+            .map(|p| p.id.clone()).unwrap_or_default();
 
         let profiles = if let Some(p) = providers.get(selected_provider_idx) {
             p.profiles.clone()
@@ -78,14 +81,14 @@ impl ProvidersTab {
             vec![]
         };
 
-        let selected_profile_idx = profiles.iter()
-            .position(|pr| pr.id == active_profile)
-            .unwrap_or(0);
+        let selected_profile_idx = if profiles.is_empty() { 0 } else {
+            profiles.iter().position(|pr| pr.id == active_profile).unwrap_or(0)
+        };
 
         let mut provider_state = ListState::default();
         provider_state.select(Some(selected_provider_idx));
         let mut profile_state = ListState::default();
-        profile_state.select(Some(selected_profile_idx));
+        profile_state.select(if profiles.is_empty() { None } else { Some(selected_profile_idx) });
 
         ProvidersTab {
             mgr,
@@ -104,13 +107,68 @@ impl ProvidersTab {
             confirm_button: 0,
             message: None,
             edit_form: None,
+            provider_form: None,
         }
     }
 
-    fn load_profiles(&mut self) {
-        // Re-fetch from list_providers() to get merged system + user profiles
+    // ── Provider CRUD ──
+
+    fn do_add_provider(&mut self) {
+        self.provider_form = Some(ProviderForm {
+            fields: [String::new(), String::new(), String::new(), String::new()],
+            cursors: [0, 0, 0, 0],
+            focused: 0,
+            is_edit: false,
+        });
+    }
+
+    fn do_edit_provider(&mut self) {
+        let Some(prov) = self.selected_provider() else { return };
+        if !prov.source.can_delete() {
+            self.message = Some("Cannot edit system default provider".into());
+            return;
+        }
+        self.provider_form = Some(ProviderForm {
+            fields: [prov.name.clone(), prov.id.clone(), prov.api_url.clone(), prov.api_key.clone()],
+            cursors: [prov.name.len(), prov.id.len(), prov.api_url.len(), prov.api_key.len()],
+            focused: 0,
+            is_edit: true,
+        });
+    }
+
+    fn commit_provider(&mut self) {
+        let Some(form) = self.provider_form.take() else { return };
+        let pr = Provider {
+            id: form.fields[1].clone(),
+            name: form.fields[0].clone(),
+            api_url: form.fields[2].clone(),
+            api_key: form.fields[3].clone(),
+            profiles: vec![],
+            source: crate::core::models::Source::User,
+        };
+        if let Err(e) = self.mgr.db().insert_provider(&pr, "claude") {
+            self.message = Some(format!("Failed to save provider: {}", e));
+            return;
+        }
+        self.refresh_providers();
+    }
+
+    fn do_delete_provider(&mut self) {
+        let Some(prov) = self.selected_provider() else { return };
+        if !prov.source.can_delete() {
+            self.message = Some("Cannot delete system default provider".into());
+            return;
+        }
+        if let Err(e) = self.mgr.db().delete_provider(&prov.id, "claude") {
+            self.message = Some(format!("Failed to delete: {}", e));
+            return;
+        }
+        self.refresh_providers();
+    }
+
+    /// Full refresh: re-fetch providers from DB (expensive, call on mutations or Enter)
+    fn refresh_providers(&mut self) {
         let mut providers = self.mgr.list_providers().unwrap_or_default();
-        // Sort: system first, then user, each group alphabetically
         providers.sort_by(|a, b| match (a.source.can_delete(), b.source.can_delete()) {
             (false, true) => Ordering::Less,
             (true, false) => Ordering::Greater,
@@ -120,6 +178,11 @@ impl ProvidersTab {
         if self.selected_provider_idx >= self.providers.len() {
             self.selected_provider_idx = 0;
         }
+        self.load_profiles();
+    }
+
+    /// Lightweight: load profiles for selected provider from cached data (no DB call)
+    fn load_profiles(&mut self) {
         self.profiles = if let Some(p) = self.providers.get(self.selected_provider_idx) {
             p.profiles.clone()
         } else {
@@ -141,32 +204,52 @@ impl ProvidersTab {
         self.providers.get(self.selected_provider_idx)
     }
 
-    fn do_edit(&mut self) {
-        let Some(prof) = self.selected_profile() else { return };
-        let fields = [prof.name.clone(), prof.opus.clone(), prof.sonnet.clone(), prof.haiku.clone(), prof.subagent.clone()];
-        let cursors = [fields[0].len(), fields[1].len(), fields[2].len(), fields[3].len(), fields[4].len()];
+    fn do_add_profile(&mut self) {
         let prov_id = self.selected_provider().map(|p| p.id.clone()).unwrap_or_default();
         self.edit_form = Some(EditForm {
-            fields, cursors, focused: 0, prov_id, prof_id: prof.id.clone(),
+            fields: [String::new(), String::new(), String::new(), String::new(), String::new(), String::new()],
+            cursors: [0, 0, 0, 0, 0, 0],
+            focused: 0, is_edit: false,
+            prov_id,
+                    });
+    }
+
+    fn do_edit(&mut self) {
+        let Some(prof) = self.selected_profile() else { return };
+        let fields = [prof.id.clone(), prof.name.clone(), prof.opus.clone(), prof.sonnet.clone(), prof.haiku.clone(), prof.subagent.clone()];
+        let cursors = [fields[0].len(), fields[1].len(), fields[2].len(), fields[3].len(), fields[4].len(), fields[5].len()];
+        let prov_id = self.selected_provider().map(|p| p.id.clone()).unwrap_or_default();
+        self.edit_form = Some(EditForm {
+            fields, cursors, focused: 0, is_edit: true, prov_id,
         });
     }
 
     fn commit_edit(&mut self) {
         let Some(form) = self.edit_form.take() else { return };
+        let prof_id = if form.fields[0].is_empty() {
+            form.fields[1].to_lowercase().replace(' ', "-")
+        } else {
+            form.fields[0].clone()
+        };
         let pr = Profile {
-            id: form.prof_id.clone(), name: form.fields[0].clone(),
-            opus: form.fields[1].clone(), sonnet: form.fields[2].clone(),
-            haiku: form.fields[3].clone(), subagent: form.fields[4].clone(),
+            id: prof_id, name: form.fields[1].clone(),
+            opus: form.fields[2].clone(), sonnet: form.fields[3].clone(),
+            haiku: form.fields[4].clone(), subagent: form.fields[5].clone(),
             default: false, source: crate::core::models::Source::User,
         };
         if let Err(e) = self.mgr.db().insert_claude_profile(&form.prov_id, &pr) {
+            self.message = Some(format!("Failed to save: {}", e));
             tracing::error!("Failed to insert user profile: {}", e);
+            return;
         }
-        self.load_profiles();
+        self.refresh_providers();
     }
 
     fn do_switch(&mut self) {
-        let prov_id = self.active_provider.clone();
+        let prov_id = match self.selected_provider() {
+            Some(p) => p.id.clone(),
+            None => return,
+        };
         let prof_id = {
             let Some(prof) = self.selected_profile() else { return };
             prof.id.clone()
@@ -180,7 +263,11 @@ impl ProvidersTab {
             self.message = Some(format!("Error: {}", e));
             return;
         }
+        self.active_provider = prov_id;
         self.active_profile = prof_id;
+        if let Err(e) = self.mgr.set_setting("active_provider", &self.active_provider) {
+            tracing::error!("Failed to save active_provider: {}", e);
+        }
         if let Err(e) = self.mgr.set_setting("active_profile", &self.active_profile) {
             tracing::error!("Failed to save active_profile: {}", e);
         }
@@ -193,9 +280,11 @@ impl ProvidersTab {
             prof.id.clone()
         };
         if let Err(e) = self.mgr.db().delete_claude_profile(&prof_id) {
+            self.message = Some(format!("Failed to delete: {}", e));
             tracing::error!("Failed to delete user profile: {}", e);
+            return;
         }
-        self.load_profiles();
+        self.refresh_providers();
     }
 
     fn render_edit_form(&self, f: &mut Frame, area: Rect) {
@@ -204,10 +293,22 @@ impl ProvidersTab {
         }
     }
 
+    fn render_provider_form(&self, f: &mut Frame, area: Rect) {
+        if let Some(ref form) = self.provider_form {
+            form::render_provider_form(form, f, area);
+        }
+    }
+
     fn render_confirm_popup(&self, f: &mut Frame, area: Rect) {
         let (title, msg, c) = match self.confirm_action {
             Some(ProviderAction::Switch) => (" Switch Model ", " Switch to this profile? ", theme::current().cyan),
-            Some(ProviderAction::Delete) => (" Delete Profile ", " Delete this profile? ", theme::current().red),
+            Some(ProviderAction::Delete) => {
+                if self.panel == Panel::ProviderList {
+                    (" Delete Provider ", " Delete this provider? ", theme::current().red)
+                } else {
+                    (" Delete Profile ", " Delete this profile? ", theme::current().red)
+                }
+            }
             _ => return,
         };
         shared_confirm(f, area, title, msg, "Confirm", "Cancel", c, self.confirm_button);
@@ -262,8 +363,7 @@ impl TabContent for ProvidersTab {
             ListItem::new(vec![
                 Line::from(vec![
                     Span::styled(format!("{}{}", arrow, pr.name), Style::default().fg(tc)),
-                    if active { Span::styled(" (in use)", Style::default().fg(theme::current().green)) } else { Span::raw("") },
-                    if active { Span::styled(" ★ active", Style::default().fg(theme::current().yellow)) } else { Span::raw("") },
+                    if active { Span::styled(" ●", Style::default().fg(theme::current().green)) } else { Span::raw("") },
                 ]),
                 Line::from(vec![
                     Span::styled("     ", Style::default()),
@@ -302,9 +402,19 @@ impl TabContent for ProvidersTab {
         if self.confirm_action.is_some() { self.render_confirm_popup(f, area); }
         if self.message.is_some() { self.render_message_popup(f, area); }
         if self.edit_form.is_some() { self.render_edit_form(f, area); }
+        if self.provider_form.is_some() { self.render_provider_form(f, area); }
     }
 
     fn handle_key(&mut self, code: KeyCode) -> bool {
+        // Provider form mode
+        if let Some(ref mut f) = self.provider_form {
+            match code {
+                KeyCode::Esc => { self.provider_form = None; }
+                KeyCode::Enter => { self.commit_provider(); }
+                _ => { f.handle_key(code); }
+            }
+            return true;
+        }
         // Edit form mode
         if let Some(ref mut f) = self.edit_form {
             match code {
@@ -330,7 +440,13 @@ impl TabContent for ProvidersTab {
                     if self.confirm_button == 0 {
                         match self.confirm_action {
                             Some(ProviderAction::Switch) => self.do_switch(),
-                            Some(ProviderAction::Delete) => self.do_delete(),
+                            Some(ProviderAction::Delete) => {
+                                if self.panel == Panel::ProviderList {
+                                    self.do_delete_provider();
+                                } else {
+                                    self.do_delete();
+                                }
+                            }
                             _ => {}
                         }
                     }
@@ -355,11 +471,15 @@ impl TabContent for ProvidersTab {
             Panel::ProviderList => vec![
                 vec![(" J/K ".into(), theme::current().comment), ("Nav".into(), theme::current().comment)],
                 vec![(" ⏎  ".into(), theme::current().comment), ("Profiles".into(), theme::current().comment)],
+                vec![(" A ".into(), theme::current().comment), ("Add".into(), theme::current().comment)],
+                vec![(" E ".into(), theme::current().comment), ("Edit".into(), theme::current().comment)],
+                vec![(" D ".into(), theme::current().comment), ("Del".into(), theme::current().comment)],
                 vec![(" Q ".into(), theme::current().comment), ("Quit".into(), theme::current().comment)],
             ],
             Panel::ProfileList => vec![
                 vec![(" J/K ".into(), theme::current().comment), ("Nav".into(), theme::current().comment)],
                 vec![(" ⏎  ".into(), theme::current().comment), ("Switch".into(), theme::current().comment)],
+                vec![(" A ".into(), theme::current().comment), ("Add".into(), theme::current().comment)],
                 vec![(" D ".into(), theme::current().comment), ("Delete".into(), theme::current().comment)],
                 vec![(" E ".into(), theme::current().comment), ("Edit".into(), theme::current().comment)],
                 vec![(" Esc ".into(), theme::current().comment), ("Back".into(), theme::current().comment)],
@@ -370,8 +490,8 @@ impl TabContent for ProvidersTab {
 
     fn shortcut_lines(&self, available_width: u16) -> usize {
         let widths: &[usize] = match self.panel {
-            Panel::ProviderList => &[8, 12, 7],
-            Panel::ProfileList => &[8, 10, 8, 7, 9, 7],
+            Panel::ProviderList => &[8, 12, 7, 7, 7, 7],
+            Panel::ProfileList => &[8, 10, 7, 8, 7, 9, 7],
         };
         let sep = 2usize;
         let w = available_width.saturating_sub(2).max(10) as usize;
@@ -410,7 +530,20 @@ impl ProvidersTab {
             }
             KeyCode::Enter => {
                 self.panel = Panel::ProfileList;
+                self.refresh_providers();
                 self.profile_state.select(Some(self.selected_profile_idx));
+            }
+            KeyCode::Char('a') | KeyCode::Char('A') => self.do_add_provider(),
+            KeyCode::Char('e') | KeyCode::Char('E') => self.do_edit_provider(),
+            KeyCode::Char('d') | KeyCode::Char('D') => {
+                if let Some(prov) = self.selected_provider() {
+                    if !prov.source.can_delete() {
+                        self.message = Some("Cannot delete system default provider".into());
+                    } else {
+                        self.confirm_action = Some(ProviderAction::Delete);
+                        self.confirm_button = 0;
+                    }
+                }
             }
             _ => return false,
         }
@@ -471,6 +604,7 @@ impl ProvidersTab {
                 }
                 self.do_edit();
             }
+            KeyCode::Char('a') | KeyCode::Char('A') => self.do_add_profile(),
             _ => return false,
         }
         true

@@ -42,7 +42,7 @@ pub fn render_shortcut_bar(f: &mut Frame, area: Rect, groups: &[Vec<(String, Col
     let group_spans: Vec<Vec<Span>> = groups
         .iter()
         .map(|grp| {
-            let label = Span::styled(format!(" {}", grp[1].0.clone()), Style::default().fg(theme::current().comment));
+            let label = Span::styled(format!(": {}", grp[1].0.clone()), Style::default().fg(theme::current().comment));
             vec![Span::styled(grp[0].0.clone(), Style::default().fg(grp[0].1)), label]
         })
         .collect();
