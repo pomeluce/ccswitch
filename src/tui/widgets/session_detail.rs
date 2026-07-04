@@ -11,63 +11,51 @@ use ratatui::{
 
 /// Render a session detail panel in the given area.
 pub fn render_session_detail(f: &mut Frame, area: Rect, session: &SessionRecord, tokens: Option<(i64, i64)>) {
-    let pad = "  ";
     let home = std::env::var("HOME").unwrap_or_default();
     let path_short = session.project_path.replace(&home, "~");
-    let label = format!("{}Project:  ", pad);
-    let path_start_len = (area.width as usize).saturating_sub(14);
-    let (first_part, rest_lines) = split_path(&path_short, path_start_len);
+    let max_w = (area.width as usize).saturating_sub(4).max(20);
 
-    let mut lines = vec![
-        Line::from(vec![
-            Span::styled(pad, Style::default()),
-            Span::styled(session.title.as_deref().unwrap_or(&session.id), Style::default().fg(theme::current().cyan)),
-        ]),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled(label, Style::default().fg(theme::current().purple)),
-            Span::styled(&first_part, Style::default().fg(theme::current().yellow)),
-        ]),
-    ];
+    let mut lines: Vec<Line> = Vec::new();
 
-    let cont_indent = format!("{}           ", pad);
-    for rest in rest_lines {
-        lines.push(Line::from(Span::styled(format!("{}{}", cont_indent, rest), Style::default().fg(theme::current().yellow))));
-    }
+    // Title
+    lines.push(Line::from(vec![
+        Span::styled("  ", Style::default()),
+        Span::styled(session.title.as_deref().unwrap_or(&session.id), Style::default().fg(theme::current().cyan)),
+    ]));
+    lines.push(Line::from(""));
 
-    lines.extend(vec![
-        Line::from(vec![
-            Span::styled(format!("{}Profile:  ", pad), Style::default().fg(theme::current().purple)),
-            Span::styled(session.profile_id.as_deref().unwrap_or("-"), Style::default().fg(theme::current().fg)),
-        ]),
-        Line::from(vec![
-            Span::styled(format!("{}Mode:     ", pad), Style::default().fg(theme::current().purple)),
-            Span::styled(&session.mode, Style::default().fg(theme::current().green)),
-        ]),
-        Line::from(vec![
-            Span::styled(format!("{}Tokens:   ", pad), Style::default().fg(theme::current().purple)),
-            Span::styled(
-                if let Some((p, c)) = tokens {
-                    format!("{} prompt / {} completion", format_tokens(p), format_tokens(c))
-                } else {
-                    format!("{} prompt / {} completion", format_tokens(session.prompt_tokens), format_tokens(session.completion_tokens))
-                },
-                Style::default().fg(theme::current().fg),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled(format!("{}Started:  ", pad), Style::default().fg(theme::current().purple)),
-            Span::styled(&session.start_time, Style::default().fg(theme::current().dim)),
-        ]),
-        Line::from(vec![
-            Span::styled(format!("{}Messages: ", pad), Style::default().fg(theme::current().purple)),
-            Span::styled(format!("{}", session.message_count), Style::default().fg(theme::current().fg)),
-        ]),
-        Line::from(vec![
-            Span::styled(format!("{}Size:     ", pad), Style::default().fg(theme::current().purple)),
-            Span::styled(format_size(session.size_bytes), Style::default().fg(theme::current().fg)),
-        ]),
-    ]);
+    // Project
+    lines.extend(line_with_wrap("Project", &path_short, max_w, theme::current().purple, theme::current().yellow));
+    lines.push(Line::from(""));
+
+    // Profile
+    let profile_text = session.profile_id.as_deref().unwrap_or("-");
+    lines.extend(line_with_wrap("Profile", profile_text, max_w, theme::current().purple, theme::current().fg));
+    lines.push(Line::from(""));
+
+    // Mode
+    lines.extend(line_with_wrap("Mode", &session.mode, max_w, theme::current().purple, theme::current().green));
+    lines.push(Line::from(""));
+
+    // Tokens
+    let token_text = if let Some((p, c)) = tokens {
+        format!("{} prompt / {} completion", format_tokens(p), format_tokens(c))
+    } else {
+        format!("{} prompt / {} completion", format_tokens(session.prompt_tokens), format_tokens(session.completion_tokens))
+    };
+    lines.extend(line_with_wrap("Tokens", &token_text, max_w, theme::current().purple, theme::current().fg));
+    lines.push(Line::from(""));
+
+    // Started
+    lines.extend(line_with_wrap("Started", &session.start_time, max_w, theme::current().purple, theme::current().dim));
+    lines.push(Line::from(""));
+
+    // Messages
+    lines.extend(line_with_wrap("Messages", &session.message_count.to_string(), max_w, theme::current().purple, theme::current().fg));
+    lines.push(Line::from(""));
+
+    // Size
+    lines.extend(line_with_wrap("Size", &format_size(session.size_bytes), max_w, theme::current().purple, theme::current().fg));
 
     let p = Paragraph::new(lines)
         .block(
@@ -91,36 +79,43 @@ pub fn render_empty_detail(f: &mut Frame, area: Rect, hint: &str) {
     f.render_widget(p, area);
 }
 
-/// Split a long path into first line + continuation lines at word boundaries
-fn split_path(path: &str, max_w: usize) -> (String, Vec<String>) {
-    if path.len() <= max_w {
-        return (path.to_string(), vec![]);
+/// Build labeled lines with left pad + fixed-width label: "  Label:  value"
+fn line_with_wrap(label: &str, value: &str, max_w: usize, label_color: ratatui::style::Color, value_color: ratatui::style::Color) -> Vec<Line<'static>> {
+    let prefix = format!("  {:<8}:  ", label);
+    let indent = " ".repeat(prefix.len());
+    let first_value_w = max_w.saturating_sub(prefix.len());
+    let (first_part, rest_lines) = split_value(value, first_value_w);
+
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled(prefix, Style::default().fg(label_color)),
+            Span::styled(first_part, Style::default().fg(value_color)),
+        ])
+    ];
+
+    for rest in rest_lines {
+        lines.push(Line::from(vec![
+            Span::styled(indent.clone(), Style::default()),
+            Span::styled(rest, Style::default().fg(value_color)),
+        ]));
     }
-    let mut rest: Vec<String> = Vec::new();
-    let mut remaining = path;
-    let first;
-    loop {
-        if remaining.len() <= max_w {
-            first = remaining.to_string();
-            break;
-        }
-        let cut = &remaining[..max_w];
-        if let Some(sep) = cut.rfind('/') {
-            let part = &remaining[..=sep];
-            // If the part before separator is too short (< max_w/2), just cut at max_w
-            if part.len() < max_w / 2 {
-                rest.push(remaining[max_w..].to_string());
-                first = remaining[..max_w].to_string();
-                break;
-            }
-            rest.push(part.trim_end_matches('/').to_string());
-            remaining = &remaining[sep + 1..];
-        } else {
-            rest.push(remaining[max_w..].to_string());
-            first = remaining[..max_w].to_string();
-            break;
-        }
+
+    lines
+}
+
+/// Split a value string: first line fits in max_w chars, remainder in max_w-char chunks
+fn split_value(text: &str, max_w: usize) -> (String, Vec<String>) {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= max_w || max_w < 4 {
+        return (text.to_string(), vec![]);
     }
-    rest.reverse();
-    (first, rest)
+    let first: String = chars[..max_w].iter().collect();
+    let mut parts: Vec<String> = Vec::new();
+    let mut idx = max_w;
+    while idx < chars.len() {
+        let end = (idx + max_w).min(chars.len());
+        parts.push(chars[idx..end].iter().collect());
+        idx = end;
+    }
+    (first, parts)
 }

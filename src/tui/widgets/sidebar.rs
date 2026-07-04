@@ -24,25 +24,21 @@ pub fn render_sidebar(f: &mut Frame, area: Rect, active_tab: Tab, db: &Db) {
         "local"
     };
 
-    let tab_lines = (tabs.len() * 2) as u16; // each tab + blank line
-    let header_lines = 2u16;  // title + blank
+    let tab_lines = (tabs.len() * 2) as u16;
+    let header_lines = 3u16;  // title + 2 blank lines
     let footer_lines = 1u16;  // mode
     let inner_h = area.height.saturating_sub(2); // border
     let avail = inner_h.saturating_sub(header_lines + footer_lines);
-    let pad_top = avail.saturating_sub(tab_lines) / 2;
-    let pad_bottom = avail.saturating_sub(tab_lines + pad_top);
+    let pad_bottom = avail.saturating_sub(tab_lines);
 
     let mut lines: Vec<Line> = Vec::new();
-    // Title (centered by paragraph)
+    // Title
     lines.push(Line::from(Span::styled(
         "ccswitch-tui",
         Style::default().fg(theme::current().dim),
     )));
     lines.push(Line::from(""));
-
-    for _ in 0..pad_top {
-        lines.push(Line::from(""));
-    }
+    lines.push(Line::from(""));
 
     for (tab, label) in &tabs {
         let style = if *tab == active_tab {
