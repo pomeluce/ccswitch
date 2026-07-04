@@ -70,6 +70,10 @@ pub struct Lang {
     pub no_usage: &'static str,
     pub no_usage_hint: &'static str,
     pub no_usage_7d: &'static str,
+    pub chart_input: &'static str,
+    pub chart_output: &'static str,
+    pub chart_cache_read: &'static str,
+    pub chart_cache_create: &'static str,
 
     // History tab
     pub sessions_title: &'static str,
@@ -176,6 +180,10 @@ const LANG_ZH: Lang = Lang {
     no_usage: "暂无用量数据",
     no_usage_hint: "首次启动后自动开始扫描",
     no_usage_7d: "最近 7 天没有使用该模型",
+    chart_input: "输入",
+    chart_output: "输出",
+    chart_cache_read: "缓存读取",
+    chart_cache_create: "缓存创建",
 
     sessions_title: "会话",
     detail_title: "会话详情",
@@ -269,6 +277,10 @@ const LANG_EN: Lang = Lang {
     no_usage: "No usage data yet",
     no_usage_hint: "Scan starts automatically on first launch",
     no_usage_7d: "No usage in last 7 days",
+    chart_input: "input",
+    chart_output: "output",
+    chart_cache_read: "cache read",
+    chart_cache_create: "cache create",
 
     sessions_title: "Sessions",
     detail_title: "Session Detail",

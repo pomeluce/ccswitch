@@ -97,7 +97,7 @@ pub fn render_edit_form(form: &EditForm, f: &mut Frame, area: Rect) {
             Style::default().fg(theme::current().fg)
         };
         lines.push(Line::from(vec![
-            Span::styled(format!("{}{:<15}: ", pad, label), Style::default().fg(theme::current().fg)),
+            Span::styled(format!("{}{}", pad, pad_label(label, 15)), Style::default().fg(theme::current().fg)),
             Span::styled(left.to_string(), style),
             Span::styled(cursor.to_string(), style),
             Span::styled(right.to_string(), style),
@@ -192,7 +192,7 @@ pub fn render_provider_form(form: &ProviderForm, f: &mut Frame, area: Rect) {
             Style::default().fg(theme::current().fg)
         };
         lines.push(Line::from(vec![
-            Span::styled(format!("{}{:<10}: ", pad, label), Style::default().fg(theme::current().fg)),
+            Span::styled(format!("{}{}", pad, pad_label(label, 10)), Style::default().fg(theme::current().fg)),
             Span::styled(left.to_string(), style),
             Span::styled(cursor.to_string(), style),
             Span::styled(right.to_string(), style),
@@ -226,6 +226,12 @@ pub fn render_provider_form(form: &ProviderForm, f: &mut Frame, area: Rect) {
 struct VisSlice {
     text: String,
     skip: usize,
+}
+
+fn display_width(s: &str) -> usize { s.chars().map(|c| if c > '\u{7e}' { 2 } else { 1 }).sum() }
+fn pad_label(label: &str, w: usize) -> String {
+    let dw = display_width(label);
+    if dw >= w { format!("{}: ", label) } else { format!("{}{}: ", label, " ".repeat(w - dw)) }
 }
 
 fn slice_value(text: &str, cursor: usize, max_w: usize) -> VisSlice {

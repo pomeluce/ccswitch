@@ -100,11 +100,11 @@ pub fn render_daily_chart(
             let indent = "       ";
             let detail_lines: Vec<Line> = if total > 0 {
                 let text = format!(
-                    "input {}  output {}  cache read {}  cache create {}",
-                    format_tokens(*in_tok),
-                    format_tokens(*out_tok),
-                    format_tokens(*cr_tok),
-                    format_tokens(*cc_tok)
+                    "{}: {}  {}: {}  {}: {}  {}: {}",
+                    lang::current().chart_input, format_tokens(*in_tok),
+                    lang::current().chart_output, format_tokens(*out_tok),
+                    lang::current().chart_cache_read, format_tokens(*cr_tok),
+                    lang::current().chart_cache_create, format_tokens(*cc_tok)
                 );
                 let max_w = (area.width as usize).saturating_sub(indent.len() + 2).max(10);
                 let mut result = vec![Line::from(vec![

@@ -82,7 +82,8 @@ pub fn render_empty_detail(f: &mut Frame, area: Rect, hint: &str) {
 
 /// Build labeled lines with left pad + fixed-width label: "  Label:  value"
 fn line_with_wrap(label: &str, value: &str, max_w: usize, label_color: ratatui::style::Color, value_color: ratatui::style::Color) -> Vec<Line<'static>> {
-    let prefix = format!("  {:<8}:  ", label);
+    let dw = label.chars().map(|c| if c > '\u{7e}' { 2 } else { 1 }).sum::<usize>();
+    let prefix = if dw >= 8 { format!("  {}:  ", label) } else { format!("  {}{}:  ", label, " ".repeat(8 - dw)) };
     let indent = " ".repeat(prefix.len());
     let first_value_w = max_w.saturating_sub(prefix.len());
     let (first_part, rest_lines) = split_value(value, first_value_w);

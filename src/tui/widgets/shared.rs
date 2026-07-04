@@ -1,3 +1,4 @@
+use crate::tui::lang;
 use super::super::theme;
 use ratatui::{
     layout::Rect,
@@ -19,11 +20,12 @@ pub fn centered_rect(w: u16, h: u16, r: Rect) -> Rect {
 
 /// Render a search box input widget
 pub fn render_search_box(f: &mut Frame, area: Rect, query: &str, is_searching: bool) {
+    let l = lang::current();
     let cursor = if is_searching { "\u{258c}" } else { "" };
     let text = if query.is_empty() && !is_searching {
-        "\u{2315} Search (/ to focus)".to_string()
+        format!("\u{2315} {}", l.search_hint)
     } else if !query.is_empty() && !is_searching {
-        format!("\u{2315} {} (/) — Esc to clear", query)
+        format!("\u{2315} {} (/) — {} {}", query, l.sc_cancel, l.sc_back)
     } else {
         format!("\u{2315} {}{}", query, cursor)
     };
