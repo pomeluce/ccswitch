@@ -155,9 +155,10 @@ impl Db {
     /// Called from main thread. Fast — no filesystem walk.
     pub fn prepare_scan_context(&self, app_type: &str) -> Result<ScanContext, anyhow::Error> {
         // Cleanup synthetic entries
-        self.conn()
-            .execute("DELETE FROM usage_logs WHERE model = '<synthetic>'", [])
-            .ok();
+        if let Err(e) = self.conn()
+            .execute("DELETE FROM usage_logs WHERE model = '<synthetic>'", []) {
+            tracing::warn!("synthetic cleanup failed: {}", e);
+        }
 
         // Pre-load existing message IDs for dedup
         let known_msg_ids: Vec<String> = {
@@ -233,9 +234,6 @@ impl Db {
 }
 
 fn file_mtime(path: &PathBuf) -> Option<i64> {
-    let meta = std::fs::metadata(path).ok()?;
-    let dur = meta.modified().ok()?;
-    let secs = dur.duration_since(std::time::UNIX_EPOCH).ok()?;
-    Some(secs.as_secs() as i64)
+    crate::core::import::file_mtime(path)
 }
 

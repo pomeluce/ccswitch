@@ -113,7 +113,7 @@ fn migrate_old_dbs(dir: &Path, new_path: &Path) -> Result<(), anyhow::Error> {
                                  VALUES (?1, 'claude', ?2, ?3, ?4, 'anthropic')",
                                 rusqlite::params![id, name, api_url, api_key],
                             )
-                            .map_err(|e| tracing::warn!("Migration insert failed: {}", e)).ok();
+                            .map_err(|e| anyhow::anyhow!("Migration insert failed: {}", e))?;
                     }
                 }
 
@@ -147,7 +147,7 @@ fn migrate_old_dbs(dir: &Path, new_path: &Path) -> Result<(), anyhow::Error> {
                                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                                 rusqlite::params![id, provider_id, name, opus, sonnet, haiku, subagent, is_default],
                             )
-                            .map_err(|e| tracing::warn!("Migration insert failed: {}", e)).ok();
+                            .map_err(|e| anyhow::anyhow!("Migration insert failed: {}", e))?;
                     }
                 }
 
@@ -167,7 +167,7 @@ fn migrate_old_dbs(dir: &Path, new_path: &Path) -> Result<(), anyhow::Error> {
                                 "INSERT OR IGNORE INTO settings (key, value) VALUES (?1, ?2)",
                                 rusqlite::params![key, value],
                             )
-                            .map_err(|e| tracing::warn!("Migration insert failed: {}", e)).ok();
+                            .map_err(|e| anyhow::anyhow!("Migration insert failed: {}", e))?;
                     }
                 }
             }
@@ -218,7 +218,7 @@ fn migrate_old_dbs(dir: &Path, new_path: &Path) -> Result<(), anyhow::Error> {
                                          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                                         rusqlite::params![at, pid, pfid, sid, model, pt, ct, cr, cc, total, ts, ds],
                                     )
-                                    .map_err(|e| tracing::warn!("Migration insert failed: {}", e)).ok();
+                                    .map_err(|e| anyhow::anyhow!("Migration insert failed: {}", e))?;
                                 count += 1;
                             }
                         }
@@ -250,7 +250,7 @@ fn migrate_old_dbs(dir: &Path, new_path: &Path) -> Result<(), anyhow::Error> {
                                  VALUES (?1, ?2, 'usage')",
                                 rusqlite::params![format!("usage:{}", sid), mtime],
                             )
-                            .map_err(|e| tracing::warn!("Migration insert failed: {}", e)).ok();
+                            .map_err(|e| anyhow::anyhow!("Migration insert failed: {}", e))?;
                     }
                 }
             }
@@ -295,7 +295,7 @@ fn migrate_old_dbs(dir: &Path, new_path: &Path) -> Result<(), anyhow::Error> {
                                          VALUES (?1, 'claude', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                                         rusqlite::params![id, pp, pf, mode, st, et, pt, ct, mc, title, sz, fm],
                                     )
-                                    .map_err(|e| tracing::warn!("Migration insert failed: {}", e)).ok();
+                                    .map_err(|e| anyhow::anyhow!("Migration insert failed: {}", e))?;
                                 count += 1;
                             }
                         }
@@ -327,7 +327,7 @@ fn migrate_old_dbs(dir: &Path, new_path: &Path) -> Result<(), anyhow::Error> {
                                  VALUES (?1, ?2, 'session')",
                                 rusqlite::params![format!("session:{}", sid), mtime],
                             )
-                            .map_err(|e| tracing::warn!("Migration insert failed: {}", e)).ok();
+                            .map_err(|e| anyhow::anyhow!("Migration insert failed: {}", e))?;
                     }
                 }
             }

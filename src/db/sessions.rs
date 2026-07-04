@@ -17,6 +17,9 @@ pub struct SessionRecord {
     pub size_bytes: i64,
     /// JSONL file modification time (ISO string) — used for relative-time display
     pub file_mtime: String,
+    /// Pre-computed lowercase search text (title + project_path)
+    #[serde(skip)]
+    pub search_text: String,
 }
 
 impl Db {
@@ -86,9 +89,21 @@ impl Db {
                     title: row.get(9)?,
                     size_bytes: row.get::<_, i64>(10).unwrap_or(0),
                     file_mtime: row.get::<_, String>(11).unwrap_or_default(),
+                    search_text: String::new(), // populated below
                 })
             },
         )?;
-        rows.collect()
+        let mut rows: Vec<SessionRecord> = rows.collect::<Result<Vec<_>, _>>()?;
+        for s in &mut rows {
+            if s.search_text.is_empty() {
+                s.search_text = format!(
+                    "{} {}",
+                    s.title.as_deref().unwrap_or(""),
+                    s.project_path
+                )
+                .to_lowercase();
+            }
+        }
+        Ok(rows)
     }
 }

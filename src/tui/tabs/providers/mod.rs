@@ -53,8 +53,8 @@ impl ProvidersTab {
         }
         // Sort by profile name alphabetically (case-insensitive)
         all_profiles.sort_by(|(_, a), (_, b)| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-        let active_provider = mgr.db().get_setting("active_provider").unwrap_or_default();
-        let active_profile = mgr.db().get_setting("active_profile").unwrap_or_default();
+        let active_provider = mgr.get_setting("active_provider").unwrap_or_default();
+        let active_profile = mgr.get_setting("active_profile").unwrap_or_default();
         let filtered: Vec<usize> = (0..all_profiles.len()).collect();
         let mut state = ListState::default();
         // Select the active profile by default, fallback to first
@@ -172,7 +172,7 @@ impl ProvidersTab {
             let Some((prov, prof)) = self.selected_profile() else { return };
             (prov.id.clone(), prof.id.clone())
         };
-        let mode = if self.mgr.db().get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false) {
+        let mode = if self.mgr.get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false) {
             crate::core::models::SwitchMode::Proxy
         } else {
             crate::core::models::SwitchMode::Local
@@ -183,10 +183,10 @@ impl ProvidersTab {
         }
         self.active_provider = prov_id;
         self.active_profile = prof_id;
-        if let Err(e) = self.mgr.db().set_setting("active_provider", &self.active_provider) {
+        if let Err(e) = self.mgr.set_setting("active_provider", &self.active_provider) {
             tracing::error!("Failed to save active_provider: {}", e);
         }
-        if let Err(e) = self.mgr.db().set_setting("active_profile", &self.active_profile) {
+        if let Err(e) = self.mgr.set_setting("active_profile", &self.active_profile) {
             tracing::error!("Failed to save active_profile: {}", e);
         }
     }

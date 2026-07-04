@@ -26,14 +26,14 @@ pub struct SettingsTab {
 impl SettingsTab {
     pub fn new(mgr: Arc<ConfigManager>) -> Self {
         // Restore theme from DB (persisted across restarts)
-        let saved_theme = mgr.db().get_setting("theme").unwrap_or_default();
+        let saved_theme = mgr.get_setting("theme").unwrap_or_default();
         if !saved_theme.is_empty() {
             theme::set_theme(&saved_theme);
         }
         let current_theme = theme::current_theme();
         let theme_idx = THEMES.iter().position(|&t| t == current_theme).unwrap_or(0);
 
-        let mode_idx = if mgr.db().get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false) {
+        let mode_idx = if mgr.get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false) {
             1
         } else {
             0
@@ -65,7 +65,7 @@ impl SettingsTab {
             self.theme_idx = if self.theme_idx == 0 { THEMES.len() - 1 } else { self.theme_idx - 1 };
         }
         theme::set_theme(THEMES[self.theme_idx]);
-        self.mgr.db().set_setting("theme", THEMES[self.theme_idx]).ok();
+        self.mgr.set_setting("theme", THEMES[self.theme_idx]).ok();
     }
 
     fn cycle_mode(&mut self, forward: bool) {
@@ -75,7 +75,7 @@ impl SettingsTab {
             self.mode_idx = if self.mode_idx == 0 { MODES.len() - 1 } else { self.mode_idx - 1 };
         }
         let val = (self.mode_idx == 1).to_string();
-        self.mgr.db().set_setting("proxy_mode", &val).ok();
+        self.mgr.set_setting("proxy_mode", &val).ok();
     }
 
     fn cycle_lang(&mut self, _forward: bool) {

@@ -22,8 +22,8 @@ pub fn record_metrics(mgr: &ConfigManager, resp: &Response) -> anyhow::Result<()
         .unwrap_or(0);
 
     if prompt_tokens > 0 || completion_tokens > 0 {
-        let provider = mgr.db().get_setting("active_provider").unwrap_or_default();
-        let profile = mgr.db().get_setting("active_profile").unwrap_or_default();
+        let provider = mgr.get_setting("active_provider").unwrap_or_default();
+        let profile = mgr.get_setting("active_profile").unwrap_or_default();
         mgr.db()
             .insert_usage_log("claude", &provider, &profile, None, prompt_tokens, completion_tokens, 0, 0, "proxy")?;
     }

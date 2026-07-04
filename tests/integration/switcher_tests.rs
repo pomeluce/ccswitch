@@ -79,7 +79,7 @@ subagent = "sub-model"
     // In proxy mode, settings.json points to localhost
     assert_eq!(config.base_url, "http://127.0.0.1:15721");
     // SQLite should have active settings
-    assert_eq!(mgr.db().get_setting("active_provider"), Some("p1".into()));
-    assert_eq!(mgr.db().get_setting("active_profile"), Some("prof1".into()));
-    assert_eq!(mgr.db().get_setting("proxy_mode"), Some("true".into()));
+    assert_eq!(mgr.get_setting("active_provider"), Some("p1".into()));
+    assert_eq!(mgr.get_setting("active_profile"), Some("prof1".into()));
+    assert_eq!(mgr.get_setting("proxy_mode"), Some("true".into()));
 }

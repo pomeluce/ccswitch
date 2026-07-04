@@ -33,10 +33,10 @@ pub fn sync_active_from_settings(mgr: &ConfigManager) {
             .iter()
             .any(|p| p.id == pid && p.profiles.iter().any(|pr| pr.id == pfid))
         {
-            if let Err(e) = mgr.db().set_setting("active_provider", pid) {
+            if let Err(e) = mgr.set_setting("active_provider", pid) {
                 tracing::error!("sync: failed to save active_provider: {}", e);
             }
-            if let Err(e) = mgr.db().set_setting("active_profile", pfid) {
+            if let Err(e) = mgr.set_setting("active_profile", pfid) {
                 tracing::error!("sync: failed to save active_profile: {}", e);
             }
         }

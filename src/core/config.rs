@@ -90,7 +90,10 @@ impl ConfigManager {
         Ok(ConfigManager { db, system_providers })
     }
 
-    pub fn db(&self) -> &Db { &self.db }
+    pub(crate) fn db(&self) -> &Db { &self.db }
+
+    pub fn get_setting(&self, key: &str) -> Option<String> { self.db.get_setting(key) }
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<(), rusqlite::Error> { self.db.set_setting(key, value) }
 
     /// Return merged list: user providers override system by id,
     /// user profiles merge into their parent provider

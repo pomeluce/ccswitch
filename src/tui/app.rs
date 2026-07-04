@@ -17,8 +17,6 @@ pub struct App {
     pub history_tab: HistoryTab,
     pub settings_tab: SettingsTab,
     pub should_quit: bool,
-    pub status_message: String,
-    pub proxy_running: bool,
     pub app_type: String,
     /// 30s polling channel — receives true when JSONL files change
     poll_rx: Option<mpsc::Receiver<bool>>,
@@ -27,7 +25,6 @@ pub struct App {
 impl App {
     pub fn new(db_path: PathBuf, defaults_path: PathBuf) -> anyhow::Result<Self> {
         let mgr = Arc::new(ConfigManager::new(&db_path, Some(&defaults_path))?);
-        let proxy_running = mgr.db().get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false);
         let providers_tab = ProvidersTab::new(mgr.clone());
         let usage_tab = UsageTab::new(mgr.clone());
         let history_tab = HistoryTab::new(mgr.clone());
@@ -43,8 +40,6 @@ impl App {
             history_tab,
             settings_tab,
             should_quit: false,
-            status_message: String::new(),
-            proxy_running,
             app_type: "claude".to_string(),
             poll_rx,
         })
@@ -91,7 +86,9 @@ impl App {
                 ratatui::restore();
                 if let Some(ref project) = self.history_tab.launch_project.take() {
                     println!("\n  Launching Claude Code in {}\n", project);
-                    let _ = std::process::Command::new("claude").current_dir(project).status();
+                    if let Err(e) = std::process::Command::new("claude").current_dir(project).status() {
+                        eprintln!("Failed to launch Claude: {}", e);
+                    }
                     print!("\n  Returning to CCSwitch...\n");
                 }
                 *terminal = ratatui::init();
@@ -221,7 +218,7 @@ impl App {
             ])
             .areas(main_area);
 
-        render_sidebar(f, sidebar_area, self.active_tab, self.proxy_running);
+        render_sidebar(f, sidebar_area, self.active_tab, self.mgr.db());
         render_app_bar(f, app_bar_area, &self.app_type);
 
         match self.active_tab {

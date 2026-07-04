@@ -7,7 +7,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use rayon::prelude::*;
 use serde::Deserialize;
 
 use crate::db::connection::Db;
@@ -194,7 +193,7 @@ pub fn import_claude_sessions_with_progress(
                 )?;
             }
             Ok(None) => {}
-            Err(_) => {}
+            Err(e) => { tracing::warn!("Failed to parse session file {:?}: {}", path, e); }
         }
 
         let files_done = idx + 1;
@@ -331,6 +330,7 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
         .or(fallback_title)
         .unwrap_or(project_name);
 
+    let search_text = format!("{} {}", title, cwd).to_lowercase();
     Ok(Some(SessionRecord {
         id: session_id,
         project_path: cwd,
@@ -341,6 +341,7 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
         prompt_tokens: 0,
         completion_tokens: 0,
         message_count,
+        search_text,
         title: Some(title),
         size_bytes,
         file_mtime,
@@ -440,7 +441,7 @@ fn parse_single_file(
     };
 
     content
-        .par_lines()
+        .lines()
         .filter_map(|line| {
             let parsed: UsageLine = serde_json::from_str(line).ok()?;
             if parsed.msg_type.as_deref() != Some("assistant") {

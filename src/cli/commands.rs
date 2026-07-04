@@ -44,8 +44,8 @@ pub fn run_cli(args: CliArgs) -> Result<()> {
             let mode = if proxy { SwitchMode::Proxy } else { SwitchMode::Local };
             handle_switch(&mgr, target, mode)?;
         }
-        Commands::List { providers, profiles: _ } => {
-            handle_list(&mgr, providers)?;
+        Commands::List { providers, profiles } => {
+            handle_list(&mgr, providers, profiles)?;
         }
         Commands::Add { what, provider } => {
             handle_add(&mgr, &what, provider.as_deref())?;
@@ -99,7 +99,7 @@ fn handle_switch(mgr: &ConfigManager, target: Option<String>, mode: SwitchMode) 
     Ok(())
 }
 
-fn handle_list(mgr: &ConfigManager, providers_only: bool) -> Result<()> {
+fn handle_list(mgr: &ConfigManager, providers_only: bool, _profiles_only: bool) -> Result<()> {
     let providers = mgr.list_providers()?;
     for p in &providers {
         let source_icon = if p.source.can_delete() { "👤" } else { "🔒" };

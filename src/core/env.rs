@@ -14,12 +14,6 @@ pub fn resolve_api_key(raw: &str) -> String {
     }
 }
 
-/// Extract variable name from env:XXX reference, returns None if not a reference
-#[allow(dead_code)]
-pub fn parse_env_ref(raw: &str) -> Option<String> {
-    raw.strip_prefix("env:").map(|s| s.to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -49,15 +43,5 @@ mod tests {
         std::env::set_var("CLAUDE_API_KEY", "default-key");
         let result = resolve_api_key("");
         assert_eq!(result, "default-key");
-    }
-
-    #[test]
-    fn test_parse_env_ref_some() {
-        assert_eq!(parse_env_ref("env:FOO"), Some("FOO".to_string()));
-    }
-
-    #[test]
-    fn test_parse_env_ref_none() {
-        assert_eq!(parse_env_ref("literal"), None);
     }
 }

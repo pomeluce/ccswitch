@@ -27,7 +27,6 @@ pub fn switch_profile(mgr: &ConfigManager, provider_id: &str, profile_id: &str, 
         profile_name: profile.name.clone(),
         base_url: base_url.clone(),
         auth_token: auth_token.clone(),
-        api_key: provider.api_key.clone(),
         opus_model: profile.opus.clone(),
         sonnet_model: profile.sonnet.clone(),
         haiku_model: profile.haiku.clone(),
@@ -42,10 +41,10 @@ pub fn switch_profile(mgr: &ConfigManager, provider_id: &str, profile_id: &str, 
             // Settings.json should point to localhost proxy
             write_settings_json(&config, settings_path)?;
             // Persist active selection in SQLite for the proxy to read
-            mgr.db().set_setting("active_provider", &config.provider_id)?;
-            mgr.db().set_setting("active_profile", &config.profile_id)?;
-            mgr.db().set_setting("proxy_mode", "true")?;
-            mgr.db().set_setting("proxy_port", &DEFAULT_PROXY_PORT.to_string())?;
+            mgr.set_setting("active_provider", &config.provider_id)?;
+            mgr.set_setting("active_profile", &config.profile_id)?;
+            mgr.set_setting("proxy_mode", "true")?;
+            mgr.set_setting("proxy_port", &DEFAULT_PROXY_PORT.to_string())?;
         }
     }
 

@@ -1,5 +1,6 @@
 use super::super::tabs::Tab;
 use super::super::theme;
+use crate::db::Db;
 use ratatui::{
     layout::Rect,
     style::Style,
@@ -8,7 +9,7 @@ use ratatui::{
     Frame,
 };
 
-pub fn render_sidebar(f: &mut Frame, area: Rect, active_tab: Tab, proxy_running: bool) {
+pub fn render_sidebar(f: &mut Frame, area: Rect, active_tab: Tab, db: &Db) {
     let tabs = [
         (Tab::Providers, "模型"),
         (Tab::Usage, "用量"),
@@ -16,6 +17,7 @@ pub fn render_sidebar(f: &mut Frame, area: Rect, active_tab: Tab, proxy_running:
         (Tab::Settings, "设置"),
     ];
 
+    let proxy_running = db.get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false);
     let mode_label = if proxy_running {
         "proxy"
     } else {

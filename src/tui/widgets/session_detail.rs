@@ -107,10 +107,10 @@ fn split_path(path: &str, max_w: usize) -> (String, Vec<String>) {
         let cut = &remaining[..max_w];
         if let Some(sep) = cut.rfind('/') {
             let part = &remaining[..=sep];
-            if rest.is_empty() && part.len() < max_w / 2 {
-                // First line too short — just cut at max_w
-                first = remaining[..max_w].to_string();
+            // If the part before separator is too short (< max_w/2), just cut at max_w
+            if part.len() < max_w / 2 {
                 rest.push(remaining[max_w..].to_string());
+                first = remaining[..max_w].to_string();
                 break;
             }
             rest.push(part.trim_end_matches('/').to_string());

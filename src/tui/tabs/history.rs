@@ -74,8 +74,7 @@ impl HistoryTab {
                 if tokens.is_empty() {
                     return true;
                 }
-                let haystack = format!("{} {}", s.title.as_deref().unwrap_or(""), s.project_path).to_lowercase();
-                tokens.iter().all(|t| haystack.contains(t))
+                tokens.iter().all(|t| s.search_text.contains(t))
             })
             .cloned()
             .collect();
@@ -88,17 +87,6 @@ impl HistoryTab {
         if let Some(idx) = self.state.selected() {
             if idx < self.sessions.len() {
                 if let Some(session) = self.sessions.get(idx) {
-                    // Physically delete Claude Code session files
-                    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-                    let project_hash = session.project_path.replace('/', "-");
-                    let jsonl_path = std::path::PathBuf::from(&home)
-                        .join(".claude/projects")
-                        .join(&project_hash)
-                        .join(format!("{}.jsonl", session.id));
-                    if let Err(e) = std::fs::remove_file(&jsonl_path) {
-                        tracing::warn!("Failed to delete session file {:?}: {}", jsonl_path, e);
-                    }
-
                     if let Err(e) = self.mgr.db().delete_session(&session.id) {
                         tracing::warn!("Failed to delete session from database: {}", e);
                     }
