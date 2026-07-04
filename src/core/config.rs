@@ -111,16 +111,17 @@ impl ConfigManager {
             } else {
                 result.push(up.clone());
             }
+        }
 
-            let user_profiles = self.db.get_claude_profiles(&up.id)?;
-            if let Some(provider) = result.iter_mut().find(|p| p.id == up.id) {
-                for uprof in &user_profiles {
-                    if let Some(existing_prof) = provider.profiles.iter_mut().find(|p| p.id == uprof.id) {
-                        *existing_prof = uprof.clone();
-                        existing_prof.source = Source::User;
-                    } else {
-                        provider.profiles.push(uprof.clone());
-                    }
+        // Merge DB profiles for ALL providers (both system and user)
+        for provider in &mut result {
+            let user_profiles = self.db.get_claude_profiles(&provider.id)?;
+            for uprof in &user_profiles {
+                if let Some(existing_prof) = provider.profiles.iter_mut().find(|p| p.id == uprof.id) {
+                    *existing_prof = uprof.clone();
+                    existing_prof.source = Source::User;
+                } else {
+                    provider.profiles.push(uprof.clone());
                 }
             }
         }

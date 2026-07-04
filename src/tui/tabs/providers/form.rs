@@ -121,7 +121,7 @@ pub fn render_edit_form(form: &EditForm, f: &mut Frame, area: Rect) {
         Block::bordered()
             .border_set(ratatui::symbols::border::ROUNDED)
             .title(Line::from(" Edit Profile ").centered())
-            .border_style(Style::default().fg(theme::current().comment)),
+            .border_style(Style::default().fg(theme::current().cyan)),
     );
     f.render_widget(Clear, popup);
     f.render_widget(p, popup);

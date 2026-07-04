@@ -2,11 +2,10 @@ pub mod form;
 
 use form::EditForm;
 use super::super::theme;
-use super::super::widgets::detail_panel::DetailPanel;
 use super::super::widgets::shared::{render_confirm_popup as shared_confirm, render_message_popup as shared_msg};
 use super::TabContent;
 use crate::core::config::ConfigManager;
-use crate::core::models::Provider;
+use crate::core::models::{Profile, Provider};
 use crossterm::event::KeyCode;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -16,7 +15,14 @@ use ratatui::{
     Frame,
 };
 
+use std::cmp::Ordering;
 use std::sync::Arc;
+
+#[derive(Clone, Copy, PartialEq)]
+enum Panel {
+    ProviderList,
+    ProfileList,
+}
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum ProviderAction {
@@ -26,13 +32,23 @@ pub enum ProviderAction {
 
 pub struct ProvidersTab {
     mgr: Arc<ConfigManager>,
-    all_profiles: Vec<(Provider, crate::core::models::Profile)>,
-    filtered: Vec<usize>,
-    pub state: ListState,
-    pub search_query: String,
-    pub is_searching: bool,
+    // Provider list
+    providers: Vec<Provider>,
+    provider_state: ListState,
+    selected_provider_idx: usize,
+    // Profile list
+    profiles: Vec<Profile>,
+    profile_state: ListState,
+    selected_profile_idx: usize,
+    // Active state
     pub active_provider: String,
     pub active_profile: String,
+    // Navigation
+    panel: Panel,
+    // Search
+    pub search_query: String,
+    pub is_searching: bool,
+    // Popups
     pub confirm_action: Option<ProviderAction>,
     confirm_button: usize,
     pub message: Option<String>,
@@ -41,36 +57,49 @@ pub struct ProvidersTab {
 
 impl ProvidersTab {
     pub fn new(mgr: Arc<ConfigManager>) -> Self {
-        // Sync active state from settings.json's last_switch.source
         crate::core::sync::sync_active_from_settings(&mgr);
 
-        let providers = mgr.list_providers().unwrap_or_default();
-        let mut all_profiles = Vec::new();
-        for p in &providers {
-            for pr in &p.profiles {
-                all_profiles.push((p.clone(), pr.clone()));
-            }
-        }
-        // Sort by profile name alphabetically (case-insensitive)
-        all_profiles.sort_by(|(_, a), (_, b)| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        let mut providers = mgr.list_providers().unwrap_or_default();
+        providers.sort_by(|a, b| match (a.source.can_delete(), b.source.can_delete()) {
+            (false, true) => Ordering::Less,
+            (true, false) => Ordering::Greater,
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        });
         let active_provider = mgr.get_setting("active_provider").unwrap_or_default();
         let active_profile = mgr.get_setting("active_profile").unwrap_or_default();
-        let filtered: Vec<usize> = (0..all_profiles.len()).collect();
-        let mut state = ListState::default();
-        // Select the active profile by default, fallback to first
-        if !filtered.is_empty() {
-            let active_idx = all_profiles.iter().position(|(p, pr)| p.id == active_provider && pr.id == active_profile);
-            state.select(active_idx.or(Some(0)));
-        }
+
+        let selected_provider_idx = providers.iter()
+            .position(|p| p.id == active_provider)
+            .unwrap_or(0);
+
+        let profiles = if let Some(p) = providers.get(selected_provider_idx) {
+            p.profiles.clone()
+        } else {
+            vec![]
+        };
+
+        let selected_profile_idx = profiles.iter()
+            .position(|pr| pr.id == active_profile)
+            .unwrap_or(0);
+
+        let mut provider_state = ListState::default();
+        provider_state.select(Some(selected_provider_idx));
+        let mut profile_state = ListState::default();
+        profile_state.select(Some(selected_profile_idx));
+
         ProvidersTab {
             mgr,
-            all_profiles,
-            filtered,
-            state,
-            search_query: String::new(),
-            is_searching: false,
+            providers,
+            provider_state,
+            selected_provider_idx,
+            profiles,
+            profile_state,
+            selected_profile_idx,
             active_provider,
             active_profile,
+            panel: Panel::ProviderList,
+            search_query: String::new(),
+            is_searching: false,
             confirm_action: None,
             confirm_button: 0,
             message: None,
@@ -78,99 +107,69 @@ impl ProvidersTab {
         }
     }
 
-    pub fn refresh_filter(&mut self) {
-        let q = self.search_query.trim().to_lowercase();
-        let tokens: Vec<&str> = q.split_whitespace().collect();
-        self.filtered = self
-            .all_profiles
-            .iter()
-            .enumerate()
-            .filter(|(_, (prov, prof))| {
-                if tokens.is_empty() {
-                    return true;
-                }
-                let hay = format!("{} {} {} {}", prov.name, prov.id, prof.name, prof.id).to_lowercase();
-                tokens.iter().all(|t| hay.contains(t))
-            })
-            .map(|(i, _)| i)
-            .collect();
-        if self.state.selected().unwrap_or(0) >= self.filtered.len() {
-            self.state.select(if self.filtered.is_empty() { None } else { Some(0) });
+    fn load_profiles(&mut self) {
+        // Re-fetch from list_providers() to get merged system + user profiles
+        let mut providers = self.mgr.list_providers().unwrap_or_default();
+        // Sort: system first, then user, each group alphabetically
+        providers.sort_by(|a, b| match (a.source.can_delete(), b.source.can_delete()) {
+            (false, true) => Ordering::Less,
+            (true, false) => Ordering::Greater,
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        });
+        self.providers = providers;
+        if self.selected_provider_idx >= self.providers.len() {
+            self.selected_provider_idx = 0;
         }
-    }
-
-    fn render_search_box(&self, f: &mut Frame, area: Rect) {
-        let cursor = if self.is_searching { "\u{258c}" } else { "" };
-        let text = if self.search_query.is_empty() && !self.is_searching {
-            "\u{2315} Search (/ to focus)".to_string()
-        } else if !self.search_query.is_empty() && !self.is_searching {
-            format!("\u{2315} {} (/) — Esc to clear", self.search_query)
+        self.profiles = if let Some(p) = self.providers.get(self.selected_provider_idx) {
+            p.profiles.clone()
         } else {
-            format!("\u{2315} {}{}", self.search_query, cursor)
+            vec![]
         };
-        let color = if self.is_searching { theme::current().cyan } else { theme::current().comment };
-        let p = Paragraph::new(Line::from(Span::styled(text, Style::default().fg(color)))).block(
-            Block::bordered()
-                .border_set(ratatui::symbols::border::ROUNDED)
-                .border_style(Style::default().fg(theme::current().dim)),
-        );
-        f.render_widget(p, area);
+        if self.selected_profile_idx >= self.profiles.len() {
+            self.selected_profile_idx = 0;
+        }
+        self.profile_state.select(if self.profiles.is_empty() { None } else { Some(self.selected_profile_idx) });
+        self.active_provider = self.providers.get(self.selected_provider_idx)
+            .map(|p| p.id.clone()).unwrap_or_default();
     }
 
-    fn selected_profile(&self) -> Option<&(Provider, crate::core::models::Profile)> {
-        let idx = self.state.selected()?;
-        let &ai = self.filtered.get(idx)?;
-        self.all_profiles.get(ai)
+    fn selected_profile(&self) -> Option<&Profile> {
+        self.profiles.get(self.selected_profile_idx)
+    }
+
+    fn selected_provider(&self) -> Option<&Provider> {
+        self.providers.get(self.selected_provider_idx)
     }
 
     fn do_edit(&mut self) {
-        let Some((prov, prof)) = self.selected_profile() else { return };
+        let Some(prof) = self.selected_profile() else { return };
         let fields = [prof.name.clone(), prof.opus.clone(), prof.sonnet.clone(), prof.haiku.clone(), prof.subagent.clone()];
         let cursors = [fields[0].len(), fields[1].len(), fields[2].len(), fields[3].len(), fields[4].len()];
+        let prov_id = self.selected_provider().map(|p| p.id.clone()).unwrap_or_default();
         self.edit_form = Some(EditForm {
-            fields,
-            cursors,
-            focused: 0,
-            prov_id: prov.id.clone(),
-            prof_id: prof.id.clone(),
+            fields, cursors, focused: 0, prov_id, prof_id: prof.id.clone(),
         });
     }
 
     fn commit_edit(&mut self) {
         let Some(form) = self.edit_form.take() else { return };
-        let pr = crate::core::models::Profile {
-            id: form.prof_id.clone(),
-            name: form.fields[0].clone(),
-            opus: form.fields[1].clone(),
-            sonnet: form.fields[2].clone(),
-            haiku: form.fields[3].clone(),
-            subagent: form.fields[4].clone(),
-            default: false,
-            source: crate::core::models::Source::User,
+        let pr = Profile {
+            id: form.prof_id.clone(), name: form.fields[0].clone(),
+            opus: form.fields[1].clone(), sonnet: form.fields[2].clone(),
+            haiku: form.fields[3].clone(), subagent: form.fields[4].clone(),
+            default: false, source: crate::core::models::Source::User,
         };
         if let Err(e) = self.mgr.db().insert_claude_profile(&form.prov_id, &pr) {
             tracing::error!("Failed to insert user profile: {}", e);
         }
-        if let Some((_, p)) = self.all_profiles.iter_mut().find(|(prov, prof)| prov.id == form.prov_id && prof.id == form.prof_id) {
-            p.name = pr.name;
-            p.opus = pr.opus;
-            p.sonnet = pr.sonnet;
-            p.haiku = pr.haiku;
-            p.subagent = pr.subagent;
-        }
-        self.refresh_filter();
-    }
-
-    fn render_edit_form(&self, f: &mut Frame, area: Rect) {
-        if let Some(ref form) = self.edit_form {
-            form::render_edit_form(form, f, area);
-        }
+        self.load_profiles();
     }
 
     fn do_switch(&mut self) {
-        let (prov_id, prof_id) = {
-            let Some((prov, prof)) = self.selected_profile() else { return };
-            (prov.id.clone(), prof.id.clone())
+        let prov_id = self.active_provider.clone();
+        let prof_id = {
+            let Some(prof) = self.selected_profile() else { return };
+            prof.id.clone()
         };
         let mode = if self.mgr.get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false) {
             crate::core::models::SwitchMode::Proxy
@@ -181,11 +180,7 @@ impl ProvidersTab {
             self.message = Some(format!("Error: {}", e));
             return;
         }
-        self.active_provider = prov_id;
         self.active_profile = prof_id;
-        if let Err(e) = self.mgr.set_setting("active_provider", &self.active_provider) {
-            tracing::error!("Failed to save active_provider: {}", e);
-        }
         if let Err(e) = self.mgr.set_setting("active_profile", &self.active_profile) {
             tracing::error!("Failed to save active_profile: {}", e);
         }
@@ -193,17 +188,20 @@ impl ProvidersTab {
 
     fn do_delete(&mut self) {
         let prof_id = {
-            let Some((prov, prof)) = self.selected_profile() else { return };
-            if !prov.source.can_delete() {
-                return;
-            }
+            let Some(prof) = self.selected_profile() else { return };
+            if !prof.source.can_delete() { return; }
             prof.id.clone()
         };
         if let Err(e) = self.mgr.db().delete_claude_profile(&prof_id) {
             tracing::error!("Failed to delete user profile: {}", e);
         }
-        self.all_profiles.retain(|(_, p)| p.id != prof_id);
-        self.refresh_filter();
+        self.load_profiles();
+    }
+
+    fn render_edit_form(&self, f: &mut Frame, area: Rect) {
+        if let Some(ref form) = self.edit_form {
+            form::render_edit_form(form, f, area);
+        }
     }
 
     fn render_confirm_popup(&self, f: &mut Frame, area: Rect) {
@@ -222,84 +220,88 @@ impl ProvidersTab {
 
 impl TabContent for ProvidersTab {
     fn render(&mut self, f: &mut Frame, area: Rect, _app_type: &str) {
-        let main = Layout::default()
+        let [left, right] = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(area);
-        let left = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), Constraint::Min(3)])
-            .split(main[0]);
-        // Right panel: detail preview
-        let right = Layout::default().direction(Direction::Vertical).constraints([Constraint::Min(3)]).split(main[1]);
-        self.render_search_box(f, left[0]);
+            .areas(area);
 
-        let items: Vec<ListItem> = self
-            .filtered
-            .iter()
-            .enumerate()
-            .map(|(fi, &ai)| {
-                let (prov, prof) = &self.all_profiles[ai];
-                let is_sel = self.state.selected() == Some(fi);
-                let arrow = if is_sel { "\u{276f} " } else { "  " };
-                let tc = if is_sel { theme::current().cyan } else { theme::current().fg };
-                let active = self.active_provider == prov.id && self.active_profile == prof.id;
-                ListItem::new(vec![
-                    Line::from(vec![
-                        Span::styled(format!("{}{}", arrow, prof.name), Style::default().fg(tc)),
-                        if active {
-                            Span::styled(" (in use)", Style::default().fg(theme::current().green))
-                        } else {
-                            Span::styled("", Style::default())
-                        },
-                    ]),
-                    Line::from(vec![
-                        Span::styled("  ", Style::default()),
-                        Span::styled(&prov.name, Style::default().fg(theme::current().comment)),
-                        Span::styled(" \u{b7} ", Style::default().fg(theme::current().dim)),
-                        Span::styled(&prov.id, Style::default().fg(theme::current().comment)),
-                        Span::styled(" \u{b7} ", Style::default().fg(theme::current().dim)),
-                        Span::styled(&prof.id, Style::default().fg(theme::current().comment)),
-                        if active {
-                            Span::styled(" \u{2605} active", Style::default().fg(theme::current().yellow))
-                        } else {
-                            Span::styled("", Style::default())
-                        },
-                    ]),
-                    Line::from(""),
-                ])
-            })
-            .collect();
+        // ── Left: Provider list ──
+        let provider_items: Vec<ListItem> = self.providers.iter().enumerate().map(|(i, p)| {
+            let is_sel = self.panel == Panel::ProviderList && self.selected_provider_idx == i;
+            let arrow = if is_sel { "❯ " } else { "  " };
+            let tc = if is_sel { theme::current().cyan } else { theme::current().fg };
+            ListItem::new(vec![
+                Line::from(vec![
+                    Span::styled(format!("{}{}", arrow, p.name), Style::default().fg(tc)),
+                ]),
+                Line::from(vec![
+                    Span::styled("  ", Style::default()),
+                    Span::styled(&p.id, Style::default().fg(theme::current().comment)),
+                    Span::styled(" \u{b7} ", Style::default().fg(theme::current().dim)),
+                    Span::styled(source_label(p.source), Style::default().fg(theme::current().comment)),
+                    Span::styled(" \u{b7} ", Style::default().fg(theme::current().dim)),
+                    Span::styled(format!("{} profiles", p.profiles.len()), Style::default().fg(theme::current().comment)),
+                ]),
+                Line::from(""),
+            ])
+        }).collect();
 
-        let list = List::new(items)
-            .block(
-                Block::bordered()
-                    .border_set(ratatui::symbols::border::ROUNDED)
-                    .title(format!("Profiles ({})", self.filtered.len()))
-                    .border_style(Style::default().fg(theme::current().dim)),
-            )
+        let prov_list = List::new(provider_items)
+            .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
+                .title(format!("Providers ({})", self.providers.len()))
+                .border_style(Style::default().fg(theme::current().dim)))
             .highlight_style(Style::default());
-        f.render_stateful_widget(list, left[1], &mut self.state);
+        f.render_stateful_widget(prov_list, left, &mut self.provider_state);
 
-        if let Some(idx) = self.state.selected() {
-            if let Some(&ai) = self.filtered.get(idx) {
-                let (prov, prof) = &self.all_profiles[ai];
-                let active = self.active_provider == prov.id && self.active_profile == prof.id;
-                DetailPanel::render_profile_detail(f, right[0], &prov.name, prof, &prov.api_url, &prov.api_key, active, prov.source.can_delete());
-            }
+        // ── Right: Profile list ──
+        let profile_items: Vec<ListItem> = self.profiles.iter().enumerate().map(|(i, pr)| {
+            let is_sel = self.panel == Panel::ProfileList && self.selected_profile_idx == i;
+            let arrow = if is_sel { "❯ " } else { "  " };
+            let tc = if is_sel { theme::current().cyan } else { theme::current().fg };
+            let active = self.active_profile == pr.id;
+            ListItem::new(vec![
+                Line::from(vec![
+                    Span::styled(format!("{}{}", arrow, pr.name), Style::default().fg(tc)),
+                    if active { Span::styled(" (in use)", Style::default().fg(theme::current().green)) } else { Span::raw("") },
+                    if active { Span::styled(" ★ active", Style::default().fg(theme::current().yellow)) } else { Span::raw("") },
+                ]),
+                Line::from(vec![
+                    Span::styled("     ", Style::default()),
+                    Span::styled(&pr.id, Style::default().fg(theme::current().comment)),
+                    Span::styled(" \u{b7} ", Style::default().fg(theme::current().dim)),
+                    Span::styled(&pr.opus, Style::default().fg(theme::current().comment)),
+                    Span::styled(" \u{b7} ", Style::default().fg(theme::current().dim)),
+                    Span::styled(source_label(pr.source), Style::default().fg(theme::current().comment)),
+                ]),
+                Line::from(""),
+            ])
+        }).collect();
+
+        if self.profiles.is_empty() {
+            let p = Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled("  No profiles configured", Style::default().fg(theme::current().comment))).centered(),
+            ]).block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
+                .title("Profiles (0)")
+                .border_style(Style::default().fg(theme::current().dim)));
+            f.render_widget(p, right);
         } else {
-            DetailPanel::render_empty(f, right[0], "No profiles available");
+            let prof_list = List::new(profile_items)
+                .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
+                    .title(format!("Profiles ({})", self.profiles.len()))
+                    .border_style(if self.panel == Panel::ProfileList {
+                        Style::default().fg(theme::current().cyan)
+                    } else {
+                        Style::default().fg(theme::current().dim)
+                    }))
+                .highlight_style(Style::default());
+            f.render_stateful_widget(prof_list, right, &mut self.profile_state);
         }
 
-        if self.confirm_action.is_some() {
-            self.render_confirm_popup(f, area);
-        }
-        if self.message.is_some() {
-            self.render_message_popup(f, area);
-        }
-        if self.edit_form.is_some() {
-            self.render_edit_form(f, area);
-        }
+        // Popups
+        if self.confirm_action.is_some() { self.render_confirm_popup(f, area); }
+        if self.message.is_some() { self.render_message_popup(f, area); }
+        if self.edit_form.is_some() { self.render_edit_form(f, area); }
     }
 
     fn handle_key(&mut self, code: KeyCode) -> bool {
@@ -320,8 +322,10 @@ impl TabContent for ProvidersTab {
         }
         if self.confirm_action.is_some() {
             match code {
-                KeyCode::Tab | KeyCode::Right | KeyCode::Char('j') | KeyCode::Char('l') => self.confirm_button = (self.confirm_button + 1) % 2,
-                KeyCode::BackTab | KeyCode::Left | KeyCode::Char('k') | KeyCode::Char('h') => self.confirm_button = if self.confirm_button == 0 { 1 } else { 0 },
+                KeyCode::Tab | KeyCode::Right | KeyCode::Char('j') | KeyCode::Char('l') =>
+                    self.confirm_button = (self.confirm_button + 1) % 2,
+                KeyCode::BackTab | KeyCode::Left | KeyCode::Char('k') | KeyCode::Char('h') =>
+                    self.confirm_button = if self.confirm_button == 0 { 1 } else { 0 },
                 KeyCode::Enter => {
                     if self.confirm_button == 0 {
                         match self.confirm_action {
@@ -330,56 +334,118 @@ impl TabContent for ProvidersTab {
                             _ => {}
                         }
                     }
-                    self.confirm_action = None;
-                    self.confirm_button = 0;
+                    self.confirm_action = None; self.confirm_button = 0;
                 }
                 KeyCode::Esc | KeyCode::Char('q') => {
-                    self.confirm_action = None;
-                    self.confirm_button = 0;
+                    self.confirm_action = None; self.confirm_button = 0;
                 }
                 _ => {}
             }
             return true;
         }
+
+        match self.panel {
+            Panel::ProviderList => self.handle_provider_keys(code),
+            Panel::ProfileList => self.handle_profile_keys(code),
+        }
+    }
+
+    fn shortcut_groups(&self) -> Vec<Vec<(String, Color)>> {
+        match self.panel {
+            Panel::ProviderList => vec![
+                vec![(" J/K ".into(), theme::current().comment), ("Nav".into(), theme::current().comment)],
+                vec![(" ⏎  ".into(), theme::current().comment), ("Profiles".into(), theme::current().comment)],
+                vec![(" Q ".into(), theme::current().comment), ("Quit".into(), theme::current().comment)],
+            ],
+            Panel::ProfileList => vec![
+                vec![(" J/K ".into(), theme::current().comment), ("Nav".into(), theme::current().comment)],
+                vec![(" ⏎  ".into(), theme::current().comment), ("Switch".into(), theme::current().comment)],
+                vec![(" D ".into(), theme::current().comment), ("Delete".into(), theme::current().comment)],
+                vec![(" E ".into(), theme::current().comment), ("Edit".into(), theme::current().comment)],
+                vec![(" Esc ".into(), theme::current().comment), ("Back".into(), theme::current().comment)],
+                vec![(" Q ".into(), theme::current().comment), ("Quit".into(), theme::current().comment)],
+            ],
+        }
+    }
+
+    fn shortcut_lines(&self, available_width: u16) -> usize {
+        let widths: &[usize] = match self.panel {
+            Panel::ProviderList => &[8, 12, 7],
+            Panel::ProfileList => &[8, 10, 8, 7, 9, 7],
+        };
+        let sep = 2usize;
+        let w = available_width.saturating_sub(2).max(10) as usize;
+        let mut lines = 1usize;
+        let mut cur = 0usize;
+        for gw in widths {
+            if cur + gw > w && cur > 0 { lines += 1; cur = 0; }
+            if cur > 0 { cur += sep; }
+            cur += gw;
+        }
+        lines
+    }
+}
+
+// ── Key handlers ──
+
+impl ProvidersTab {
+    fn handle_provider_keys(&mut self, code: KeyCode) -> bool {
+        match code {
+            KeyCode::Tab | KeyCode::BackTab => return false,
+            KeyCode::Char('j') | KeyCode::Down => {
+                let l = self.providers.len();
+                if l > 0 {
+                    self.selected_provider_idx = if self.selected_provider_idx + 1 < l { self.selected_provider_idx + 1 } else { 0 };
+                    self.provider_state.select(Some(self.selected_provider_idx));
+                    self.load_profiles();
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                let l = self.providers.len();
+                if l > 0 {
+                    self.selected_provider_idx = if self.selected_provider_idx > 0 { self.selected_provider_idx - 1 } else { l - 1 };
+                    self.provider_state.select(Some(self.selected_provider_idx));
+                    self.load_profiles();
+                }
+            }
+            KeyCode::Enter => {
+                self.panel = Panel::ProfileList;
+                self.profile_state.select(Some(self.selected_profile_idx));
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    fn handle_profile_keys(&mut self, code: KeyCode) -> bool {
         if self.is_searching {
             match code {
-                KeyCode::Esc => {
-                    self.is_searching = false;
-                    self.search_query.clear();
-                    self.refresh_filter();
-                }
-                KeyCode::Enter => {
-                    self.is_searching = false;
-                    if !self.filtered.is_empty() {
-                        self.state.select(Some(0));
-                    }
-                }
-                KeyCode::Backspace | KeyCode::Delete => {
-                    self.search_query.pop();
-                    self.refresh_filter();
-                }
-                KeyCode::Char(c) => {
-                    self.search_query.push(c);
-                    self.refresh_filter();
-                }
+                KeyCode::Esc => { self.is_searching = false; self.search_query.clear(); }
+                KeyCode::Enter => self.is_searching = false,
+                KeyCode::Backspace | KeyCode::Delete => { self.search_query.pop(); }
+                KeyCode::Char(c) => { self.search_query.push(c); }
                 _ => {}
             }
             return true;
         }
         match code {
             KeyCode::Tab | KeyCode::BackTab => return false,
+            KeyCode::Esc => {
+                self.panel = Panel::ProviderList;
+                self.provider_state.select(Some(self.selected_provider_idx));
+            }
             KeyCode::Char('j') | KeyCode::Down => {
-                let l = self.filtered.len();
+                let l = self.profiles.len();
                 if l > 0 {
-                    let i = self.state.selected().unwrap_or(0);
-                    self.state.select(Some(if i + 1 < l { i + 1 } else { 0 }));
+                    self.selected_profile_idx = if self.selected_profile_idx + 1 < l { self.selected_profile_idx + 1 } else { 0 };
+                    self.profile_state.select(Some(self.selected_profile_idx));
                 }
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                let l = self.filtered.len();
+                let l = self.profiles.len();
                 if l > 0 {
-                    let i = self.state.selected().unwrap_or(0);
-                    self.state.select(Some(if i > 0 { i - 1 } else { l - 1 }));
+                    self.selected_profile_idx = if self.selected_profile_idx > 0 { self.selected_profile_idx - 1 } else { l - 1 };
+                    self.profile_state.select(Some(self.selected_profile_idx));
                 }
             }
             KeyCode::Enter => {
@@ -387,8 +453,8 @@ impl TabContent for ProvidersTab {
                 self.confirm_button = 0;
             }
             KeyCode::Char('d') | KeyCode::Char('D') => {
-                if let Some(&ai) = self.filtered.get(self.state.selected().unwrap_or(0)) {
-                    if !self.all_profiles[ai].0.source.can_delete() {
+                if let Some(pr) = self.selected_profile() {
+                    if !pr.source.can_delete() {
                         self.message = Some("Cannot delete system default profile".into());
                         return true;
                     }
@@ -397,49 +463,20 @@ impl TabContent for ProvidersTab {
                 self.confirm_button = 0;
             }
             KeyCode::Char('e') | KeyCode::Char('E') => {
-                if let Some(&ai) = self.filtered.get(self.state.selected().unwrap_or(0)) {
-                    if !self.all_profiles[ai].0.source.can_delete() {
+                if let Some(pr) = self.selected_profile() {
+                    if !pr.source.can_delete() {
                         self.message = Some("Cannot edit system default profile".into());
                         return true;
                     }
                 }
                 self.do_edit();
             }
-            KeyCode::Char('/') => {
-                self.is_searching = true;
-            }
             _ => return false,
         }
         true
     }
+}
 
-    fn shortcut_groups(&self) -> Vec<Vec<(String, Color)>> {
-        vec![
-            vec![(" J/K ".into(), theme::current().comment), ("Nav".into(), theme::current().comment)],
-            vec![(" / ".into(), theme::current().comment), ("Search".into(), theme::current().comment)],
-            vec![(" ⏎  ".into(), theme::current().comment), ("Switch".into(), theme::current().comment)],
-            vec![(" D ".into(), theme::current().comment), ("Delete".into(), theme::current().comment)],
-            vec![(" E ".into(), theme::current().comment), ("Edit".into(), theme::current().comment)],
-            vec![(" Q ".into(), theme::current().comment), ("Quit".into(), theme::current().comment)],
-        ]
-    }
-
-    fn shortcut_lines(&self, available_width: u16) -> usize {
-        let group_widths = [8usize, 9, 12, 8, 7, 7];
-        let sep = 2usize;
-        let w = available_width.saturating_sub(2).max(10) as usize;
-        let mut lines = 1usize;
-        let mut cur = 0usize;
-        for gw in &group_widths {
-            if cur + gw > w && cur > 0 {
-                lines += 1;
-                cur = 0;
-            }
-            if cur > 0 {
-                cur += sep;
-            }
-            cur += gw;
-        }
-        lines
-    }
+fn source_label(s: crate::core::models::Source) -> &'static str {
+    if s.can_delete() { "user" } else { "system" }
 }

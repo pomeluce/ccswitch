@@ -139,9 +139,6 @@ fn handle_add(mgr: &ConfigManager, what: &str, parent_provider: Option<&str>) ->
             let provider = providers.iter().find(|p| p.id == provider_id)
                 .with_context(|| format!("Provider '{}' not found. Create it first: ccs add provider", provider_id))?;
             // Auto-insert into user_providers if it's a system default (FK needs a row)
-            if !provider.source.can_delete() {
-                mgr.db().insert_provider(provider, "claude")?;
-            }
             use dialoguer::Input;
             let id: String = Input::new().with_prompt("Profile ID").interact_text()?;
             let name: String = Input::new().with_prompt("Name").interact_text()?;
