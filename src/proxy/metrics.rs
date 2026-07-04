@@ -25,7 +25,7 @@ pub fn record_metrics(mgr: &ConfigManager, resp: &Response) -> anyhow::Result<()
         let provider = mgr.db().get_setting("active_provider").unwrap_or_default();
         let profile = mgr.db().get_setting("active_profile").unwrap_or_default();
         mgr.db()
-            .insert_usage_log(&provider, &profile, "proxy", None, prompt_tokens, completion_tokens, 0, 0)?;
+            .insert_usage_log("claude", &provider, &profile, None, prompt_tokens, completion_tokens, 0, 0, "proxy")?;
     }
     Ok(())
 }

@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 use crate::core::models::Profile;
-use super::super::theme::Theme;
+use super::super::theme;
 
 pub struct DetailPanel;
 
@@ -32,45 +32,45 @@ impl DetailPanel {
                 Span::styled(pad, Style::default()),
                 Span::styled(
                     format!("{} / {}", provider_name, profile.name),
-                    Style::default().fg(Theme::CYAN),
+                    Style::default().fg(theme::current().cyan),
                 ),
-                Span::styled(active_tag, Style::default().fg(Theme::YELLOW)),
+                Span::styled(active_tag, Style::default().fg(theme::current().yellow)),
                 Span::styled(
                     format!("  [{}]", source_tag),
-                    Style::default().fg(Theme::COMMENT),
+                    Style::default().fg(theme::current().comment),
                 ),
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled(format!("{}Opus:     ", pad), Style::default().fg(Theme::PURPLE)),
-                Span::styled(&profile.opus, Style::default().fg(Theme::FG)),
+                Span::styled(format!("{}Opus:     ", pad), Style::default().fg(theme::current().purple)),
+                Span::styled(&profile.opus, Style::default().fg(theme::current().fg)),
             ]),
             Line::from(vec![
-                Span::styled(format!("{}Sonnet:   ", pad), Style::default().fg(Theme::PURPLE)),
-                Span::styled(&profile.sonnet, Style::default().fg(Theme::FG)),
+                Span::styled(format!("{}Sonnet:   ", pad), Style::default().fg(theme::current().purple)),
+                Span::styled(&profile.sonnet, Style::default().fg(theme::current().fg)),
             ]),
             Line::from(vec![
-                Span::styled(format!("{}Haiku:    ", pad), Style::default().fg(Theme::PURPLE)),
-                Span::styled(&profile.haiku, Style::default().fg(Theme::FG)),
+                Span::styled(format!("{}Haiku:    ", pad), Style::default().fg(theme::current().purple)),
+                Span::styled(&profile.haiku, Style::default().fg(theme::current().fg)),
             ]),
             Line::from(vec![
-                Span::styled(format!("{}SubAgent: ", pad), Style::default().fg(Theme::PURPLE)),
-                Span::styled(&profile.subagent, Style::default().fg(Theme::FG)),
+                Span::styled(format!("{}SubAgent: ", pad), Style::default().fg(theme::current().purple)),
+                Span::styled(&profile.subagent, Style::default().fg(theme::current().fg)),
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled(format!("{}URL:      ", pad), Style::default().fg(Theme::PURPLE)),
-                Span::styled(api_url, Style::default().fg(Theme::DIM)),
+                Span::styled(format!("{}URL:      ", pad), Style::default().fg(theme::current().purple)),
+                Span::styled(api_url, Style::default().fg(theme::current().dim)),
             ]),
             Line::from(vec![
-                Span::styled(format!("{}Key:      ", pad), Style::default().fg(Theme::PURPLE)),
-                Span::styled(&masked_key, Style::default().fg(Theme::GREEN)),
+                Span::styled(format!("{}Key:      ", pad), Style::default().fg(theme::current().purple)),
+                Span::styled(&masked_key, Style::default().fg(theme::current().green)),
             ]),
         ];
         // Continuation lines — align with value text (width of "  Key:      ")
         let indent = "            ";
         let max_w = (area.width as usize).saturating_sub(indent.len()).max(10);
-        for &(val, color) in &[(api_url, Theme::DIM), (masked_key.as_str(), Theme::GREEN)] {
+        for &(val, color) in &[(api_url, theme::current().dim), (masked_key.as_str(), theme::current().green)] {
             if val.len() > max_w {
                 let remainder: String = val.chars().skip(max_w).collect();
                 for chunk in remainder.chars().collect::<Vec<_>>().chunks(max_w) {
@@ -88,7 +88,7 @@ impl DetailPanel {
             .block(
                 Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
                     .title("Detail")
-                    .border_style(Style::default().fg(Theme::DIM)),
+                    .border_style(Style::default().fg(theme::current().dim)),
             )
             .style(Style::default());
         f.render_widget(p, area);
@@ -97,13 +97,13 @@ impl DetailPanel {
     pub fn render_empty(f: &mut Frame, area: Rect, hint: &str) {
         let p = Paragraph::new(Line::from(Span::styled(
             hint,
-            Style::default().fg(Theme::COMMENT),
+            Style::default().fg(theme::current().comment),
         )))
         .block(
             Block::bordered()
                 .border_set(ratatui::symbols::border::ROUNDED)
                 .title("Detail")
-                .border_style(Style::default().fg(Theme::DIM)),
+                .border_style(Style::default().fg(theme::current().dim)),
         );
         f.render_widget(p, area);
     }

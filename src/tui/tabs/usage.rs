@@ -1,4 +1,4 @@
-use super::super::theme::Theme;
+use super::super::theme;
 use super::super::widgets::shared::{format_tokens, render_search_box as shared_search};
 use super::TabContent;
 use crate::core::config::ConfigManager;
@@ -13,6 +13,8 @@ use ratatui::{
 };
 use std::sync::mpsc;
 use std::sync::Arc;
+
+const APP_TYPE: &str = "claude";
 
 /// Background scan state, updated by poll_scan_events()
 enum ScanState {
@@ -44,7 +46,7 @@ impl UsageTab {
 
         // Check if this is first launch (no usage data yet)
         let is_first_launch = {
-            let db = mgr.usage_db();
+            let db = mgr.db();
             let count: i64 = db.conn().query_row("SELECT COUNT(*) FROM usage_logs", [], |r| r.get(0)).unwrap_or(0);
             count == 0
         };
@@ -52,7 +54,7 @@ impl UsageTab {
         // Prepare scan context on main thread (DB access only, fast) then spawn background parser
         {
             let (tx, rx) = mpsc::channel();
-            let ctx = match mgr.usage_db().prepare_scan_context() {
+            let ctx = match mgr.db().prepare_scan_context(APP_TYPE) {
                 Ok(c) => {
                     tracing::info!("Scan prep: {} known msg IDs, {} files in index", c.known_msg_ids.len(), c.file_index.len());
                     c
@@ -67,7 +69,7 @@ impl UsageTab {
             };
             // Always spawn background thread — it does its own file collection
             let handle = std::thread::spawn(move || {
-                crate::db::usage::parse_files_in_background(ctx, 10, tx);
+                crate::db::usage::parse_files_in_background(APP_TYPE.into(), ctx, 10, tx);
             });
             scan_rx = Some(rx);
             scan_handle = Some(handle);
@@ -82,7 +84,7 @@ impl UsageTab {
             }
         }
 
-        let summaries = mgr.usage_db().query_usage("all").unwrap_or_default();
+        let summaries = mgr.db().query_usage(APP_TYPE, "all").unwrap_or_default();
         let mut state = ListState::default();
         if !summaries.is_empty() {
             state.select(Some(0));
@@ -112,7 +114,7 @@ impl UsageTab {
         if self.scan_handle.is_some() {
             return; // Already running
         }
-        let ctx = match self.mgr.usage_db().prepare_scan_context() {
+        let ctx = match self.mgr.db().prepare_scan_context(APP_TYPE) {
             Ok(c) => c,
             Err(e) => {
                 tracing::error!("Failed to prepare incremental scan: {}", e);
@@ -121,7 +123,7 @@ impl UsageTab {
         };
         let (tx, rx) = mpsc::channel();
         let handle = std::thread::spawn(move || {
-            crate::db::usage::parse_files_in_background(ctx, 10, tx);
+            crate::db::usage::parse_files_in_background(APP_TYPE.into(), ctx, 10, tx);
         });
         self.scan_rx = Some(rx);
         self.scan_handle = Some(handle);
@@ -131,8 +133,6 @@ impl UsageTab {
     /// Gracefully wait for background scan thread to finish.
     pub fn shutdown(&mut self) {
         if let Some(handle) = self.scan_handle.take() {
-            // Drop the sender side (scan_rx) so the background thread's
-            // channel send will fail, causing it to exit quickly.
             self.scan_rx = None;
             let _ = handle.join();
         }
@@ -165,9 +165,9 @@ impl UsageTab {
         };
 
         match event {
-            ScanEvent::Batch { sid, file_path, records } => {
+            ScanEvent::Batch { sid, file_path, records, .. } => {
                 if !records.is_empty() {
-                    if let Err(e) = self.mgr.usage_db().insert_usage_batch(&sid, &file_path, &records) {
+                    if let Err(e) = self.mgr.db().insert_usage_batch(APP_TYPE, &sid, &file_path, &records) {
                         tracing::error!("Failed to insert usage batch: {}", e);
                     }
                 }
@@ -184,7 +184,7 @@ impl UsageTab {
                 if let Some(h) = self.scan_handle.take() {
                     let _ = h.join();
                 }
-                self.summaries = self.mgr.usage_db().query_usage(&self.range).unwrap_or_default();
+                self.summaries = self.mgr.db().query_usage(APP_TYPE, &self.range).unwrap_or_default();
                 if !self.summaries.is_empty() && self.state.selected().is_none() {
                     self.state.select(Some(0));
                 }
@@ -266,7 +266,7 @@ impl TabContent for UsageTab {
                     _ => "day",
                 }
                 .into();
-                self.summaries = self.mgr.usage_db().query_usage(&self.range).unwrap_or_default();
+                self.summaries = self.mgr.db().query_usage(APP_TYPE, &self.range).unwrap_or_default();
             }
             KeyCode::Char('/') => {
                 self.is_searching = true;
@@ -284,11 +284,11 @@ impl TabContent for UsageTab {
 
     fn shortcut_groups(&self) -> Vec<Vec<(String, Color)>> {
         vec![
-            vec![(" J/K ".into(), Theme::COMMENT), ("Nav".into(), Theme::COMMENT)],
-            vec![(" / ".into(), Theme::COMMENT), ("Search".into(), Theme::COMMENT)],
-            vec![(" T ".into(), Theme::COMMENT), ("Toggle".into(), Theme::COMMENT)],
-            vec![(" PgUp/Dn ".into(), Theme::COMMENT), ("Scroll".into(), Theme::COMMENT)],
-            vec![(" Q ".into(), Theme::COMMENT), ("Quit".into(), Theme::COMMENT)],
+            vec![(" J/K ".into(), theme::current().comment), ("Nav".into(), theme::current().comment)],
+            vec![(" / ".into(), theme::current().comment), ("Search".into(), theme::current().comment)],
+            vec![(" T ".into(), theme::current().comment), ("Toggle".into(), theme::current().comment)],
+            vec![(" PgUp/Dn ".into(), theme::current().comment), ("Scroll".into(), theme::current().comment)],
+            vec![(" Q ".into(), theme::current().comment), ("Quit".into(), theme::current().comment)],
         ]
     }
 
@@ -321,8 +321,7 @@ impl UsageTab {
         let cards = Layout::default().direction(Direction::Horizontal).constraints([Constraint::Ratio(1, 4); 4]).split(area);
 
         let (today, week, total, reqs) = if let Some(s) = self.summaries.get(self.selected_index) {
-            // Query actual daily breakdown for today/week calculation
-            let daily = self.mgr.usage_db().query_daily_usage(&s.model).unwrap_or_default();
+            let daily = self.mgr.db().query_daily_usage(APP_TYPE, &s.model).unwrap_or_default();
             let today_date = chrono::Local::now().format("%Y-%m-%d").to_string();
             let today_tokens = daily
                 .iter()
@@ -337,21 +336,21 @@ impl UsageTab {
         };
 
         let card_data = [
-            ("Today", &format_tokens(today), Theme::GREEN),
-            ("Week", &format_tokens(week), Theme::CYAN),
-            ("Total", &format_tokens(total), Theme::PURPLE),
-            ("Reqs", &format!("{}", reqs), Theme::YELLOW),
+            ("Today", &format_tokens(today), theme::current().green),
+            ("Week", &format_tokens(week), theme::current().cyan),
+            ("Total", &format_tokens(total), theme::current().purple),
+            ("Reqs", &format!("{}", reqs), theme::current().yellow),
         ];
 
         for (i, (label, value, color)) in card_data.iter().enumerate() {
             let lines = vec![
-                Line::from(Span::styled(*label, Style::default().fg(Theme::COMMENT))).centered(),
+                Line::from(Span::styled(*label, Style::default().fg(theme::current().comment))).centered(),
                 Line::from(Span::styled(value.to_string(), Style::default().fg(*color))).centered(),
             ];
             let p = Paragraph::new(lines).block(
                 Block::bordered()
                     .border_set(ratatui::symbols::border::ROUNDED)
-                    .border_style(Style::default().fg(Theme::DIM)),
+                    .border_style(Style::default().fg(theme::current().dim)),
             );
             f.render_widget(p, cards[i]);
         }
@@ -372,14 +371,14 @@ impl UsageTab {
                 let label = title_case(&s.model);
                 let is_sel = i == self.selected_index;
                 let arrow = if is_sel { "\u{276f} " } else { "  " };
-                let tc = if is_sel { Theme::CYAN } else { Theme::FG };
+                let tc = if is_sel { theme::current().cyan } else { theme::current().fg };
                 let bar_text = if total > 0 { format!("{} {}%", bar, pct) } else { String::new() };
                 ListItem::new(vec![
                     Line::from(vec![
                         Span::styled(format!("{}{}", arrow, label), Style::default().fg(tc)),
-                        Span::styled(format!("  {}", format_tokens(total)), Style::default().fg(Theme::DIM)),
+                        Span::styled(format!("  {}", format_tokens(total)), Style::default().fg(theme::current().dim)),
                     ]),
-                    Line::from(vec![Span::styled("  ", Style::default()), Span::styled(bar_text, Style::default().fg(Theme::PURPLE))]),
+                    Line::from(vec![Span::styled("  ", Style::default()), Span::styled(bar_text, Style::default().fg(theme::current().purple))]),
                     Line::from(""),
                 ])
             })
@@ -390,7 +389,7 @@ impl UsageTab {
                 Block::bordered()
                     .border_set(ratatui::symbols::border::ROUNDED)
                     .title(format!("Models — \u{3a3} {}", format_tokens(self.total_tokens())))
-                    .border_style(Style::default().fg(Theme::DIM)),
+                    .border_style(Style::default().fg(theme::current().dim)),
             )
             .highlight_style(Style::default());
         f.render_stateful_widget(list, area, &mut self.state);
@@ -399,7 +398,7 @@ impl UsageTab {
     fn render_daily_chart(&mut self, f: &mut Frame, area: Rect) {
         if let Some(s) = self.summaries.get(self.selected_index) {
             let label = title_case(&s.model);
-            let daily = self.mgr.usage_db().query_daily_usage(&s.model).unwrap_or_default();
+            let daily = self.mgr.db().query_daily_usage(APP_TYPE, &s.model).unwrap_or_default();
             let today_date = chrono::Local::now().format("%Y-%m-%d").to_string();
 
             let days: Vec<(String, i64, i64, i64, i64, bool)> = (0..7)
@@ -420,18 +419,17 @@ impl UsageTab {
                 })
                 .collect();
 
-            // If no usage data in the last 7 days, show a hint instead of empty chart
             if days.is_empty() {
                 let p = Paragraph::new(vec![
                     Line::from(""),
-                    Line::from(Span::styled("  最近 7 天没有使用该模型", Style::default().fg(Theme::COMMENT))).centered(),
+                    Line::from(Span::styled("  最近 7 天没有使用该模型", Style::default().fg(theme::current().comment))).centered(),
                     Line::from(""),
                 ])
                 .block(
                     Block::bordered()
                         .border_set(ratatui::symbols::border::ROUNDED)
                         .title(format!("{} — This Week", label))
-                        .border_style(Style::default().fg(Theme::DIM)),
+                        .border_style(Style::default().fg(theme::current().dim)),
                 );
                 f.render_widget(p, area);
                 return;
@@ -445,7 +443,7 @@ impl UsageTab {
                     let w = if max_val > 0 { (total as f64 / max_val as f64 * 30.0) as usize } else { 0 };
                     let w = if total > 0 { w.max(1) } else { 0 };
                     let bar = "\u{2500}".repeat(w.min(35));
-                    let color = if *is_today { Theme::ORANGE } else { Theme::PURPLE };
+                    let color = if *is_today { theme::current().orange } else { theme::current().purple };
                     let indent = "       ";
                     let detail_lines: Vec<Line> = if total > 0 {
                         let text = format!(
@@ -458,13 +456,13 @@ impl UsageTab {
                         let max_w = (area.width as usize).saturating_sub(indent.len() + 2).max(10);
                         let mut result = vec![Line::from(vec![
                             Span::styled(indent, Style::default()),
-                            Span::styled(text.chars().take(max_w).collect::<String>(), Style::default().fg(Theme::COMMENT)),
+                            Span::styled(text.chars().take(max_w).collect::<String>(), Style::default().fg(theme::current().comment)),
                         ])];
                         let remainder: String = text.chars().skip(max_w).collect();
                         for chunk in remainder.chars().collect::<Vec<_>>().chunks(max_w) {
                             let cont: String = chunk.iter().collect();
                             if !cont.is_empty() {
-                                result.push(Line::from(Span::styled(format!("{}{}", indent, cont), Style::default().fg(Theme::COMMENT))));
+                                result.push(Line::from(Span::styled(format!("{}{}", indent, cont), Style::default().fg(theme::current().comment))));
                             }
                         }
                         result
@@ -473,11 +471,11 @@ impl UsageTab {
                     };
                     let mut day_lines = vec![Line::from(vec![
                         Span::styled("  ", Style::default()),
-                        Span::styled(format!("{}  ", date), Style::default().fg(Theme::COMMENT)),
+                        Span::styled(format!("{}  ", date), Style::default().fg(theme::current().comment)),
                         Span::styled(bar, Style::default().fg(color)),
                         Span::styled(
                             format!(" {}", format_tokens(total)),
-                            Style::default().fg(if *is_today { Theme::ORANGE } else { Theme::DIM }),
+                            Style::default().fg(if *is_today { theme::current().orange } else { theme::current().dim }),
                         ),
                     ])];
                     day_lines.extend(detail_lines);
@@ -495,27 +493,26 @@ impl UsageTab {
                 Block::bordered()
                     .border_set(ratatui::symbols::border::ROUNDED)
                     .title(format!("{} — This Week", label))
-                    .border_style(Style::default().fg(Theme::DIM)),
+                    .border_style(Style::default().fg(theme::current().dim)),
             );
             f.render_widget(p, area);
         } else {
             let p = Paragraph::new(vec![
                 Line::from(""),
-                Line::from(Span::styled("  No usage data yet", Style::default().fg(Theme::COMMENT))).centered(),
+                Line::from(Span::styled("  No usage data yet", Style::default().fg(theme::current().comment))).centered(),
                 Line::from(""),
-                Line::from(Span::styled("  Scan starts automatically on first launch", Style::default().fg(Theme::DIM))).centered(),
+                Line::from(Span::styled("  Scan starts automatically on first launch", Style::default().fg(theme::current().dim))).centered(),
             ])
             .block(
                 Block::bordered()
                     .border_set(ratatui::symbols::border::ROUNDED)
                     .title(" Usage ")
-                    .border_style(Style::default().fg(Theme::DIM)),
+                    .border_style(Style::default().fg(theme::current().dim)),
             );
             f.render_widget(p, area);
         }
     }
 
-    /// Render scan progress in the right panel（扫描进度视图）
     fn render_scan_progress(&self, f: &mut Frame, area: Rect, files_done: usize, files_total: usize, records: usize) {
         let pct = if files_total > 0 {
             (files_done as f64 / files_total as f64 * 100.0) as usize
@@ -538,26 +535,24 @@ impl UsageTab {
             Line::from(""),
             Line::from(Span::styled(
                 format!("    {}  Scanning Claude Code sessions...", spinner),
-                Style::default().fg(Theme::COMMENT),
-            ))
-            .centered(),
+                Style::default().fg(theme::current().comment),
+            )).centered(),
             Line::from(""),
             Line::from(Span::styled(
                 format!("    {} {}  {} / {} files", bar, pct, files_done, files_total),
-                Style::default().fg(Theme::COMMENT),
-            ))
-            .centered(),
+                Style::default().fg(theme::current().comment),
+            )).centered(),
             Line::from(""),
-            Line::from(Span::styled(format!("    {} records imported", records), Style::default().fg(Theme::COMMENT))).centered(),
+            Line::from(Span::styled(format!("    {} records imported", records), Style::default().fg(theme::current().comment))).centered(),
             Line::from(""),
-            Line::from(Span::styled("    Data refreshes automatically when complete", Style::default().fg(Theme::DIM))).centered(),
+            Line::from(Span::styled("    Data refreshes automatically when complete", Style::default().fg(theme::current().dim))).centered(),
         ];
 
         let p = Paragraph::new(lines).block(
             Block::bordered()
                 .border_set(ratatui::symbols::border::ROUNDED)
                 .title(" Scanning ")
-                .border_style(Style::default().fg(Theme::COMMENT)),
+                .border_style(Style::default().fg(theme::current().comment)),
         );
         f.render_widget(p, area);
     }

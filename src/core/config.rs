@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 
 fn default_config_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    // Priority: ~/.config/ccswitch (XDG) > /etc/ccswitch (system fallback)
     let xdg = PathBuf::from(&home).join(".config/ccswitch/defaults.toml");
     if xdg.exists() { return xdg; }
     PathBuf::from("/etc/ccswitch/defaults.toml")
@@ -45,20 +44,14 @@ struct ProfileToml {
 
 pub struct ConfigManager {
     db: Db,
-    usage_db: Db,
-    session_db: Db,
     system_providers: Vec<Provider>,
 }
 
 impl ConfigManager {
     pub fn new(db_path: &Path, defaults_path: Option<&Path>) -> Result<Self, anyhow::Error> {
         let dir = db_path.parent().unwrap_or_else(|| Path::new("."));
-        let db = Db::open(&dir.join("model.db"))
-            .context("Failed to open model.db")?;
-        let usage_db = Db::open(&dir.join("usage.db"))
-            .context("Failed to open usage.db")?;
-        let session_db = Db::open(&dir.join("session.db"))
-            .context("Failed to open session.db")?;
+        let db = Db::open(&dir.join("ccswitch.db"))
+            .context("Failed to open ccswitch.db")?;
 
         let default_path = default_config_path();
         let defaults_path = defaults_path.unwrap_or_else(|| &default_path);
@@ -94,22 +87,20 @@ impl ConfigManager {
             vec![]
         };
 
-        Ok(ConfigManager { db, usage_db, session_db, system_providers })
+        Ok(ConfigManager { db, system_providers })
     }
 
     pub fn db(&self) -> &Db { &self.db }
-    pub fn usage_db(&self) -> &Db { &self.usage_db }
-    pub fn session_db(&self) -> &Db { &self.session_db }
 
     /// Return merged list: user providers override system by id,
     /// user profiles merge into their parent provider
     pub fn list_providers(&self) -> Result<Vec<Provider>, anyhow::Error> {
-        let user_providers = self.db.get_user_providers()?;
+        const APP: &str = "claude";
+        let user_providers = self.db.get_providers(APP)?;
         let mut result = self.system_providers.clone();
 
         for up in &user_providers {
             if let Some(existing) = result.iter_mut().find(|p| p.id == up.id) {
-                // Override system provider fields
                 existing.name = up.name.clone();
                 existing.api_url = up.api_url.clone();
                 existing.api_key = up.api_key.clone();
@@ -118,8 +109,7 @@ impl ConfigManager {
                 result.push(up.clone());
             }
 
-            // Add user profiles to the matching provider
-            let user_profiles = self.db.get_user_profiles(&up.id)?;
+            let user_profiles = self.db.get_claude_profiles(&up.id)?;
             if let Some(provider) = result.iter_mut().find(|p| p.id == up.id) {
                 for uprof in &user_profiles {
                     if let Some(existing_prof) = provider.profiles.iter_mut().find(|p| p.id == uprof.id) {
@@ -149,6 +139,4 @@ impl ConfigManager {
         }
         Ok(None)
     }
-
 }
-

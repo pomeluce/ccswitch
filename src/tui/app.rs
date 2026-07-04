@@ -6,8 +6,8 @@ use ratatui::{backend::CrosstermBackend, Frame, Terminal};
 
 use crate::core::config::ConfigManager;
 
-use super::tabs::{history::HistoryTab, providers::ProvidersTab, usage::UsageTab, Tab, TabContent};
-use super::theme::Theme;
+use super::tabs::{history::HistoryTab, providers::ProvidersTab, settings::SettingsTab, usage::UsageTab, Tab, TabContent};
+use super::theme;
 
 #[allow(dead_code)]
 pub struct App {
@@ -16,6 +16,7 @@ pub struct App {
     pub providers_tab: ProvidersTab,
     pub usage_tab: UsageTab,
     pub history_tab: HistoryTab,
+    pub settings_tab: SettingsTab,
     pub should_quit: bool,
     pub status_message: String,
     pub proxy_running: bool,
@@ -30,6 +31,7 @@ impl App {
         let providers_tab = ProvidersTab::new(mgr.clone());
         let usage_tab = UsageTab::new(mgr.clone());
         let history_tab = HistoryTab::new(mgr.clone());
+        let settings_tab = SettingsTab::new(mgr.clone());
         // Start 30s background file watcher for live incremental updates
         let poll_rx = Some(super::file_watcher::spawn_polling_thread(30));
 
@@ -39,6 +41,7 @@ impl App {
             providers_tab,
             usage_tab,
             history_tab,
+            settings_tab,
             should_quit: false,
             status_message: String::new(),
             proxy_running,
@@ -99,14 +102,14 @@ impl App {
                 Ok(true) => {
                     tracing::info!("File watcher: changes detected, running incremental imports");
                     // Incremental session import (updates existing + imports new)
-                    if let Err(e) = self.mgr.session_db().import_claude_sessions() {
+                    if let Err(e) = self.mgr.db().import_claude_sessions() {
                         tracing::warn!("Polling session import failed: {}", e);
                     } else {
                         // Refresh history tab data
                         let sessions = self
                             .mgr
-                            .session_db()
-                            .query_sessions(None, None, 200)
+                            .db()
+                            .query_sessions("claude", None, None, 200)
                             .unwrap_or_default()
                             .into_iter()
                             .filter(|s| s.size_bytes > 0)
@@ -134,6 +137,7 @@ impl App {
             Tab::Providers => self.providers_tab.handle_key(code),
             Tab::Usage => self.usage_tab.handle_key(code),
             Tab::History => self.history_tab.handle_key(code),
+            Tab::Settings => self.settings_tab.handle_key(code),
         };
         if handled {
             return;
@@ -145,6 +149,7 @@ impl App {
             KeyCode::Char('1') => self.active_tab = Tab::Providers,
             KeyCode::Char('2') => self.active_tab = Tab::Usage,
             KeyCode::Char('3') => self.active_tab = Tab::History,
+            KeyCode::Char('4') => self.active_tab = Tab::Settings,
             KeyCode::Char('q') | KeyCode::Char('Q') => self.should_quit = true,
             _ => {}
         }
@@ -154,13 +159,15 @@ impl App {
         self.active_tab = match self.active_tab {
             Tab::Providers => Tab::Usage,
             Tab::Usage => Tab::History,
-            Tab::History => Tab::Providers,
+            Tab::History => Tab::Settings,
+            Tab::Settings => Tab::Providers,
         };
     }
 
     fn prev_tab(&mut self) {
         self.active_tab = match self.active_tab {
-            Tab::Providers => Tab::History,
+            Tab::Providers => Tab::Settings,
+            Tab::Settings => Tab::History,
             Tab::Usage => Tab::Providers,
             Tab::History => Tab::Usage,
         };
@@ -177,6 +184,7 @@ impl App {
             Tab::Providers => self.providers_tab.shortcut_lines(area.width),
             Tab::Usage => self.usage_tab.shortcut_lines(area.width),
             Tab::History => self.history_tab.shortcut_lines(area.width),
+            Tab::Settings => self.settings_tab.shortcut_lines(area.width),
         };
 
         let chunks = Layout::default()
@@ -195,12 +203,14 @@ impl App {
             Tab::Providers => self.providers_tab.render(f, chunks[1]),
             Tab::Usage => self.usage_tab.render(f, chunks[1]),
             Tab::History => self.history_tab.render(f, chunks[1]),
+            Tab::Settings => self.settings_tab.render(f, chunks[1]),
         }
         // Global shortcut bar
         let groups = match self.active_tab {
             Tab::Providers => self.providers_tab.shortcut_groups(),
             Tab::Usage => self.usage_tab.shortcut_groups(),
             Tab::History => self.history_tab.shortcut_groups(),
+            Tab::Settings => self.settings_tab.shortcut_groups(),
         };
         render_shortcut_bar(f, chunks[2], &groups);
     }
@@ -213,16 +223,16 @@ impl App {
             widgets::{Block, Paragraph},
         };
 
-        let tabs = [(Tab::Providers, " 模型 "), (Tab::Usage, " 用量 "), (Tab::History, " 会话 ")];
+        let tabs = [(Tab::Providers, " 模型 "), (Tab::Usage, " 用量 "), (Tab::History, " 会话 "), (Tab::Settings, " 设置 ")];
 
         // Build tab spans: active = cyan block, inactive = dim text
         let tab_spans: Vec<Span> = tabs
             .iter()
             .flat_map(|(tab, label)| {
                 if *tab == self.active_tab {
-                    vec![Span::styled(*label, Style::default().fg(Theme::CYAN))]
+                    vec![Span::styled(*label, Style::default().fg(theme::current().cyan))]
                 } else {
-                    vec![Span::styled(*label, Style::default().fg(Theme::DIM))]
+                    vec![Span::styled(*label, Style::default().fg(theme::current().dim))]
                 }
             })
             .collect();
@@ -240,23 +250,23 @@ impl App {
         let pad_right = inner_width - pad_left;
 
         let mut all_spans: Vec<Span> = Vec::new();
-        all_spans.push(Span::styled(left_label, Style::default().fg(Theme::DIM)));
+        all_spans.push(Span::styled(left_label, Style::default().fg(theme::current().dim)));
         all_spans.push(Span::styled(" ".repeat(pad_left as usize), Style::default()));
         all_spans.extend(tab_spans);
         all_spans.push(Span::styled(" ".repeat(pad_right as usize), Style::default()));
         all_spans.push(Span::styled(
             mode_label,
             if self.proxy_running {
-                Style::default().fg(Theme::GREEN)
+                Style::default().fg(theme::current().green)
             } else {
-                Style::default().fg(Theme::DIM)
+                Style::default().fg(theme::current().dim)
             },
         ));
 
         let p = Paragraph::new(Line::from(all_spans)).block(
             Block::bordered()
                 .border_set(ratatui::symbols::border::ROUNDED)
-                .border_style(Style::default().fg(Theme::DIM)),
+                .border_style(Style::default().fg(theme::current().dim)),
         );
         f.render_widget(p, area);
     }

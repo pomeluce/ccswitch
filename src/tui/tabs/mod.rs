@@ -1,5 +1,6 @@
 pub mod history;
 pub mod providers;
+pub mod settings;
 pub mod usage;
 
 use ratatui::Frame;
@@ -9,6 +10,7 @@ pub enum Tab {
     Providers,
     Usage,
     History,
+    Settings,
 }
 
 pub trait TabContent {

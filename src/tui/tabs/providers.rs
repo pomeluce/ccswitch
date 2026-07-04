@@ -1,4 +1,4 @@
-use super::super::theme::Theme;
+use super::super::theme;
 use super::super::widgets::detail_panel::DetailPanel;
 use super::super::widgets::shared::{centered_rect, render_confirm_popup as shared_confirm, render_message_popup as shared_msg};
 use super::TabContent;
@@ -116,11 +116,11 @@ impl ProvidersTab {
         } else {
             format!("\u{2315} {}{}", self.search_query, cursor)
         };
-        let color = if self.is_searching { Theme::CYAN } else { Theme::COMMENT };
+        let color = if self.is_searching { theme::current().cyan } else { theme::current().comment };
         let p = Paragraph::new(Line::from(Span::styled(text, Style::default().fg(color)))).block(
             Block::bordered()
                 .border_set(ratatui::symbols::border::ROUNDED)
-                .border_style(Style::default().fg(Theme::DIM)),
+                .border_style(Style::default().fg(theme::current().dim)),
         );
         f.render_widget(p, area);
     }
@@ -156,7 +156,7 @@ impl ProvidersTab {
             default: false,
             source: crate::core::models::Source::User,
         };
-        if let Err(e) = self.mgr.db().insert_user_profile(&form.prov_id, &pr) {
+        if let Err(e) = self.mgr.db().insert_claude_profile(&form.prov_id, &pr) {
             tracing::error!("Failed to insert user profile: {}", e);
         }
         if let Some((_, p)) = self.all_profiles.iter_mut().find(|(prov, prof)| prov.id == form.prov_id && prof.id == form.prof_id) {
@@ -191,12 +191,12 @@ impl ProvidersTab {
             let (left, right) = vis.text.split_at(cur);
             let cursor = if i == form.focused { "▌" } else { "" };
             let style = if i == form.focused {
-                Style::default().fg(Theme::COMMENT)
+                Style::default().fg(theme::current().comment)
             } else {
-                Style::default().fg(Theme::FG)
+                Style::default().fg(theme::current().fg)
             };
             lines.push(Line::from(vec![
-                Span::styled(format!("{}{:<15}: ", pad, label), Style::default().fg(Theme::FG)),
+                Span::styled(format!("{}{:<15}: ", pad, label), Style::default().fg(theme::current().fg)),
                 Span::styled(left.to_string(), style),
                 Span::styled(cursor.to_string(), style),
                 Span::styled(right.to_string(), style),
@@ -210,12 +210,12 @@ impl ProvidersTab {
         // Hints at bottom (centered)
         lines.push(
             Line::from(vec![
-                Span::styled(" Enter ", Style::default().fg(Theme::COMMENT)),
-                Span::styled(" Save  ", Style::default().fg(Theme::COMMENT)),
-                Span::styled(" Esc ", Style::default().fg(Theme::DIM)),
-                Span::styled(" Cancel  ", Style::default().fg(Theme::COMMENT)),
-                Span::styled(" Tab ", Style::default().fg(Theme::COMMENT)),
-                Span::styled(" Next field", Style::default().fg(Theme::COMMENT)),
+                Span::styled(" Enter ", Style::default().fg(theme::current().comment)),
+                Span::styled(" Save  ", Style::default().fg(theme::current().comment)),
+                Span::styled(" Esc ", Style::default().fg(theme::current().dim)),
+                Span::styled(" Cancel  ", Style::default().fg(theme::current().comment)),
+                Span::styled(" Tab ", Style::default().fg(theme::current().comment)),
+                Span::styled(" Next field", Style::default().fg(theme::current().comment)),
             ])
             .centered(),
         );
@@ -224,7 +224,7 @@ impl ProvidersTab {
             Block::bordered()
                 .border_set(ratatui::symbols::border::ROUNDED)
                 .title(Line::from(" Edit Profile ").centered())
-                .border_style(Style::default().fg(Theme::COMMENT)),
+                .border_style(Style::default().fg(theme::current().comment)),
         );
         f.render_widget(Clear, popup);
         f.render_widget(p, popup);
@@ -262,7 +262,7 @@ impl ProvidersTab {
             }
             prof.id.clone()
         };
-        if let Err(e) = self.mgr.db().delete_user_profile(&prof_id) {
+        if let Err(e) = self.mgr.db().delete_claude_profile(&prof_id) {
             tracing::error!("Failed to delete user profile: {}", e);
         }
         self.all_profiles.retain(|(_, p)| p.id != prof_id);
@@ -271,8 +271,8 @@ impl ProvidersTab {
 
     fn render_confirm_popup(&self, f: &mut Frame, area: Rect) {
         let (title, msg, c) = match self.confirm_action {
-            Some(ProviderAction::Switch) => (" Switch Model ", " Switch to this profile? ", Theme::CYAN),
-            Some(ProviderAction::Delete) => (" Delete Profile ", " Delete this profile? ", Theme::RED),
+            Some(ProviderAction::Switch) => (" Switch Model ", " Switch to this profile? ", theme::current().cyan),
+            Some(ProviderAction::Delete) => (" Delete Profile ", " Delete this profile? ", theme::current().red),
             _ => return,
         };
         shared_confirm(f, area, title, msg, "Confirm", "Cancel", c, self.confirm_button);
@@ -305,26 +305,26 @@ impl TabContent for ProvidersTab {
                 let (prov, prof) = &self.all_profiles[ai];
                 let is_sel = self.state.selected() == Some(fi);
                 let arrow = if is_sel { "\u{276f} " } else { "  " };
-                let tc = if is_sel { Theme::CYAN } else { Theme::FG };
+                let tc = if is_sel { theme::current().cyan } else { theme::current().fg };
                 let active = self.active_provider == prov.id && self.active_profile == prof.id;
                 ListItem::new(vec![
                     Line::from(vec![
                         Span::styled(format!("{}{}", arrow, prof.name), Style::default().fg(tc)),
                         if active {
-                            Span::styled(" (in use)", Style::default().fg(Theme::COMMENT))
+                            Span::styled(" (in use)", Style::default().fg(theme::current().comment))
                         } else {
                             Span::styled("", Style::default())
                         },
                     ]),
                     Line::from(vec![
                         Span::styled("  ", Style::default()),
-                        Span::styled(&prov.name, Style::default().fg(Theme::COMMENT)),
-                        Span::styled(" \u{b7} ", Style::default().fg(Theme::DIM)),
-                        Span::styled(&prov.id, Style::default().fg(Theme::COMMENT)),
-                        Span::styled(" \u{b7} ", Style::default().fg(Theme::DIM)),
-                        Span::styled(&prof.id, Style::default().fg(Theme::COMMENT)),
+                        Span::styled(&prov.name, Style::default().fg(theme::current().comment)),
+                        Span::styled(" \u{b7} ", Style::default().fg(theme::current().dim)),
+                        Span::styled(&prov.id, Style::default().fg(theme::current().comment)),
+                        Span::styled(" \u{b7} ", Style::default().fg(theme::current().dim)),
+                        Span::styled(&prof.id, Style::default().fg(theme::current().comment)),
                         if active {
-                            Span::styled(" \u{2605} active", Style::default().fg(Theme::YELLOW))
+                            Span::styled(" \u{2605} active", Style::default().fg(theme::current().yellow))
                         } else {
                             Span::styled("", Style::default())
                         },
@@ -339,7 +339,7 @@ impl TabContent for ProvidersTab {
                 Block::bordered()
                     .border_set(ratatui::symbols::border::ROUNDED)
                     .title(format!("Profiles ({})", self.filtered.len()))
-                    .border_style(Style::default().fg(Theme::DIM)),
+                    .border_style(Style::default().fg(theme::current().dim)),
             )
             .highlight_style(Style::default());
         f.render_stateful_widget(list, left[1], &mut self.state);
@@ -517,12 +517,12 @@ impl TabContent for ProvidersTab {
 
     fn shortcut_groups(&self) -> Vec<Vec<(String, Color)>> {
         vec![
-            vec![(" J/K ".into(), Theme::COMMENT), ("Nav".into(), Theme::COMMENT)],
-            vec![(" / ".into(), Theme::COMMENT), ("Search".into(), Theme::COMMENT)],
-            vec![(" ⏎  ".into(), Theme::COMMENT), ("Switch".into(), Theme::COMMENT)],
-            vec![(" D ".into(), Theme::COMMENT), ("Delete".into(), Theme::COMMENT)],
-            vec![(" E ".into(), Theme::COMMENT), ("Edit".into(), Theme::COMMENT)],
-            vec![(" Q ".into(), Theme::COMMENT), ("Quit".into(), Theme::COMMENT)],
+            vec![(" J/K ".into(), theme::current().comment), ("Nav".into(), theme::current().comment)],
+            vec![(" / ".into(), theme::current().comment), ("Search".into(), theme::current().comment)],
+            vec![(" ⏎  ".into(), theme::current().comment), ("Switch".into(), theme::current().comment)],
+            vec![(" D ".into(), theme::current().comment), ("Delete".into(), theme::current().comment)],
+            vec![(" E ".into(), theme::current().comment), ("Edit".into(), theme::current().comment)],
+            vec![(" Q ".into(), theme::current().comment), ("Quit".into(), theme::current().comment)],
         ]
     }
 

@@ -94,7 +94,6 @@ fn parse_timestamp(val: &serde_json::Value) -> Option<i64> {
     match val {
         serde_json::Value::Number(n) => {
             let ts = n.as_f64()? as i64;
-            // > 1e12 = milliseconds, <= 1e12 = seconds → convert to ms
             Some(if ts > 1_000_000_000_000 { ts } else { ts * 1000 })
         }
         serde_json::Value::String(s) => {
@@ -106,8 +105,7 @@ fn parse_timestamp(val: &serde_json::Value) -> Option<i64> {
     }
 }
 
-/// Extract a readable command string from XML content like
-/// "<command-name>/clear</command-name> <command-message>clear</command-message> <command-args>foo</command-args>"
+/// Extract a readable command string from XML content
 fn extract_command(text: &str) -> Option<String> {
     let name = text
         .split("<command-name>").nth(1)?
@@ -135,8 +133,7 @@ fn ts_to_iso(ts_ms: i64) -> String {
 
 impl Db {
     /// Import with progress callback. Incremental: only processes files whose
-    /// mtime differs from the stored index in session_file_track.
-    /// Changed/new files get INSERT OR REPLACE (full field refresh).
+    /// mtime differs from the stored index in session_log_sync.
     pub fn import_claude_sessions_with_progress(
         &self,
         on_progress: impl Fn(usize, usize, usize),
@@ -146,10 +143,10 @@ impl Db {
             return Ok(0);
         }
 
-        // Load stored file index: session_id -> mtime
+        // Load stored file index from session_log_sync (scan_type = 'session' or 'both')
         let file_index: std::collections::HashMap<String, i64> = {
             let mut stmt = self.conn().prepare(
-                "SELECT session_id, file_mtime FROM session_file_track"
+                "SELECT file_path, file_mtime FROM session_log_sync WHERE scan_type IN ('session','both')",
             )?;
             let rows = stmt.query_map([], |r| {
                 Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
@@ -162,7 +159,10 @@ impl Db {
         let mut imported = 0usize;
         let mut updated = 0usize;
         let mut last_report = 0usize;
-        let now_iso = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let now_iso = chrono::Local::now()
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
+        const APP_TYPE: &str = "claude";
 
         for (idx, path) in jsonl_files.iter().enumerate() {
             let sid = path.file_stem().and_then(|n| n.to_str()).unwrap_or("");
@@ -172,25 +172,26 @@ impl Db {
 
             // Check if file mtime changed (incremental)
             let current_mtime = file_mtime_secs(path);
-            if let Some(&stored_mtime) = file_index.get(sid) {
+            let file_path_str = path.to_string_lossy().to_string();
+            if let Some(&stored_mtime) = file_index.get(&file_path_str) {
                 if stored_mtime == current_mtime {
-                    continue; // Unchanged — skip
+                    continue;
                 }
             }
 
             match parse_session_file(path) {
                 Ok(Some(record)) => {
-                    // INSERT OR REPLACE refreshes all fields when file changed
-                    self.insert_session(&record)?;
-                    if file_index.contains_key(sid) {
+                    self.insert_session(&record, APP_TYPE)?;
+                    if file_index.contains_key(&file_path_str) {
                         updated += 1;
                     } else {
                         imported += 1;
                     }
-                    // Update file index
+                    // Update session_log_sync
                     self.conn().execute(
-                        "INSERT OR REPLACE INTO session_file_track (session_id, file_mtime, scanned_at) VALUES (?1, ?2, ?3)",
-                        rusqlite::params![sid, current_mtime, now_iso],
+                        "INSERT OR REPLACE INTO session_log_sync (file_path, file_mtime, scan_type, last_synced_at)
+                         VALUES (?1, ?2, 'session', ?3)",
+                        rusqlite::params![file_path_str, current_mtime, now_iso],
                     )?;
                 }
                 Ok(None) => {}
@@ -261,7 +262,6 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
 
     let head_count = 50.min(lines.len());
     let tail_count = 30.min(lines.len());
-    // Approximate message count from total lines (skip empty)
     let message_count = lines.iter().filter(|l| !l.trim().is_empty()).count() as i64;
 
     let mut session_id: Option<String> = None;
@@ -271,11 +271,9 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
     let mut ai_title: Option<String> = None;
     let mut last_prompt: Option<String> = None;
 
-    // Single pass: parse head+tail for metadata, all lines for titles
     for (i, line) in lines.iter().enumerate() {
         let in_range = i < head_count || i >= lines.len().saturating_sub(tail_count);
         if !in_range {
-            // Only parse titles from middle lines (skip full JSON parse)
             if let Some(title) = parse_title_only(line) {
                 match title {
                     TitleField::Custom(t) => { custom_title = Some(t); }
@@ -321,7 +319,6 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
         }
     }
 
-    // Session ID fallback: use filename stem (UUID)
     let session_id = session_id.or_else(|| {
         path.file_stem().and_then(|n| n.to_str()).map(|s| s.to_string())
     }).unwrap_or_default();
@@ -332,13 +329,10 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
 
     let cwd = cwd.unwrap_or_default();
     let start_time = created_at.map(ts_to_iso).unwrap_or_default();
-
-    // Title: custom-title > first user message > project basename
     let project_name = std::path::Path::new(&cwd)
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
-    // Title priority: custom-title > ai-title > last-prompt > fallback user msg > project name
     let title = custom_title
         .or(ai_title)
         .or(last_prompt)

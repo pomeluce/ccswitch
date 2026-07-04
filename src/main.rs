@@ -17,7 +17,9 @@ fn main() {
         pre_tui_import(&home);
 
         // Init tracing to file in TUI mode — stderr output corrupts the terminal.
-        let log_path = std::path::PathBuf::from(&home).join(".config/ccswitch/ccs.log");
+        let log_dir = std::path::PathBuf::from(&home).join(".local/share/ccswitch");
+        std::fs::create_dir_all(&log_dir).ok();
+        let log_path = log_dir.join("ccs.log");
         let file = match std::fs::OpenOptions::new().create(true).append(true).open(&log_path) {
             Ok(f) => f,
             Err(_) => match std::fs::File::create("/dev/null") {
@@ -48,9 +50,9 @@ fn main() {
 /// If this is the first launch (no session data yet), run session import
 /// with a terminal progress bar before the TUI starts.
 fn pre_tui_import(home: &str) {
-    let session_db_path = std::path::PathBuf::from(home).join(".config/ccswitch/session.db");
+    let db_path = std::path::PathBuf::from(home).join(".config/ccswitch/ccswitch.db");
 
-    let db = match db::Db::open(&session_db_path) {
+    let db = match db::Db::open(&db_path) {
         Ok(db) => db,
         Err(e) => {
             eprintln!("Warning: cannot open session DB: {}", e);

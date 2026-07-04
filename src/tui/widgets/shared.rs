@@ -1,4 +1,4 @@
-use super::super::theme::Theme;
+use super::super::theme;
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
@@ -27,11 +27,11 @@ pub fn render_search_box(f: &mut Frame, area: Rect, query: &str, is_searching: b
     } else {
         format!("\u{2315} {}{}", query, cursor)
     };
-    let color = if is_searching { Theme::CYAN } else { Theme::COMMENT };
+    let color = if is_searching { theme::current().cyan } else { theme::current().comment };
     let p = Paragraph::new(Line::from(Span::styled(text, Style::default().fg(color)))).block(
         Block::bordered()
             .border_set(ratatui::symbols::border::ROUNDED)
-            .border_style(Style::default().fg(Theme::DIM)),
+            .border_style(Style::default().fg(theme::current().dim)),
     );
     f.render_widget(p, area);
 }
@@ -42,7 +42,7 @@ pub fn render_shortcut_bar(f: &mut Frame, area: Rect, groups: &[Vec<(String, Col
     let group_spans: Vec<Vec<Span>> = groups
         .iter()
         .map(|grp| {
-            let label = Span::styled(format!(" {}", grp[1].0.clone()), Style::default().fg(Theme::COMMENT));
+            let label = Span::styled(format!(" {}", grp[1].0.clone()), Style::default().fg(theme::current().comment));
             vec![Span::styled(grp[0].0.clone(), Style::default().fg(grp[0].1)), label]
         })
         .collect();
@@ -76,7 +76,7 @@ pub fn render_shortcut_bar(f: &mut Frame, area: Rect, groups: &[Vec<(String, Col
         Paragraph::new(rows).centered().block(
             Block::bordered()
                 .border_set(ratatui::symbols::border::ROUNDED)
-                .border_style(Style::default().fg(Theme::DIM)),
+                .border_style(Style::default().fg(theme::current().dim)),
         ),
         area,
     );
@@ -97,12 +97,12 @@ pub fn render_confirm_popup(
     let cs = if selected == 0 {
         Style::default().fg(Color::Black).bg(confirm_color)
     } else {
-        Style::default().fg(Theme::DIM)
+        Style::default().fg(theme::current().dim)
     };
     let xs = if selected == 1 {
-        Style::default().fg(Color::Black).bg(Theme::CYAN)
+        Style::default().fg(Color::Black).bg(theme::current().cyan)
     } else {
-        Style::default().fg(Theme::DIM)
+        Style::default().fg(theme::current().dim)
     };
 
     let p = Paragraph::new(vec![
@@ -132,13 +132,13 @@ pub fn render_message_popup(f: &mut Frame, area: Rect, msg: &str) {
         Line::from(""),
         Line::from(msg).centered(),
         Line::from(""),
-        Line::from(Span::styled("  OK  ", Style::default().fg(Color::Black).bg(Theme::CYAN))).centered(),
+        Line::from(Span::styled("  OK  ", Style::default().fg(Color::Black).bg(theme::current().cyan))).centered(),
     ])
     .block(
         Block::bordered()
             .border_set(ratatui::symbols::border::ROUNDED)
             .title(Line::from(" Notice ").centered())
-            .border_style(Style::default().fg(Theme::YELLOW)),
+            .border_style(Style::default().fg(theme::current().yellow)),
     );
     f.render_widget(Clear, popup);
     f.render_widget(p, popup);

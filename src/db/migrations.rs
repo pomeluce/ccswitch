@@ -1,83 +1,188 @@
-pub const MIGRATIONS: &[&str] = &[
-    // v1: initial schema
-    "CREATE TABLE IF NOT EXISTS user_providers (
-        id TEXT PRIMARY KEY,
-        system_id TEXT,
-        name TEXT NOT NULL,
-        api_url TEXT NOT NULL,
-        api_key TEXT NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );",
-    "CREATE TABLE IF NOT EXISTS user_profiles (
-        id TEXT PRIMARY KEY,
-        provider_id TEXT NOT NULL REFERENCES user_providers(id) ON DELETE CASCADE,
-        system_profile_id TEXT,
-        name TEXT NOT NULL,
-        opus_model TEXT NOT NULL,
-        sonnet_model TEXT NOT NULL,
-        haiku_model TEXT NOT NULL,
-        subagent_model TEXT NOT NULL,
-        is_default INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );",
-    "CREATE TABLE IF NOT EXISTS usage_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        provider_id TEXT NOT NULL,
-        profile_id TEXT NOT NULL,
-        mode TEXT NOT NULL CHECK(mode IN ('local', 'proxy')),
-        session_id TEXT,
-        prompt_tokens INTEGER NOT NULL DEFAULT 0,
-        completion_tokens INTEGER NOT NULL DEFAULT 0,
-        timestamp TEXT NOT NULL DEFAULT (datetime('now'))
-    );",
-    "CREATE TABLE IF NOT EXISTS proxy_sessions (
-        id TEXT PRIMARY KEY,
-        profile_id TEXT NOT NULL,
-        started_at TEXT NOT NULL DEFAULT (datetime('now')),
-        ended_at TEXT,
-        total_prompt_tokens INTEGER NOT NULL DEFAULT 0,
-        total_completion_tokens INTEGER NOT NULL DEFAULT 0
-    );",
-    "CREATE TABLE IF NOT EXISTS session_history (
-        id TEXT PRIMARY KEY,
-        project_path TEXT NOT NULL,
-        profile_id TEXT,
-        mode TEXT NOT NULL CHECK(mode IN ('local', 'proxy')),
-        start_time TEXT NOT NULL,
-        end_time TEXT,
-        prompt_tokens INTEGER NOT NULL DEFAULT 0,
-        completion_tokens INTEGER NOT NULL DEFAULT 0,
-        message_count INTEGER NOT NULL DEFAULT 0,
-        title TEXT
-    );",
-    "CREATE TABLE IF NOT EXISTS settings (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-    );",
-    "CREATE INDEX IF NOT EXISTS idx_usage_profile ON usage_logs(profile_id, timestamp);",
-    "CREATE INDEX IF NOT EXISTS idx_session_project ON session_history(project_path, start_time);",
-    // v2: add size_bytes column
-    "ALTER TABLE session_history ADD COLUMN size_bytes INTEGER NOT NULL DEFAULT 0;",
-    // v3: add cache_tokens column
-    "ALTER TABLE usage_logs ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0;",
-    "ALTER TABLE usage_logs ADD COLUMN cache_create_tokens INTEGER NOT NULL DEFAULT 0;",
-    "ALTER TABLE usage_logs ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0;",
-    "ALTER TABLE usage_logs ADD COLUMN message_id TEXT;",
-    "ALTER TABLE usage_logs ADD COLUMN model TEXT NOT NULL DEFAULT '';",
-    // v4: track session mtime + message IDs for incremental usage scanning
-    "CREATE TABLE IF NOT EXISTS session_usage_track (
-        session_id TEXT PRIMARY KEY,
-        file_mtime INTEGER NOT NULL
-    );",
-    "CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_msg_id ON usage_logs(message_id) WHERE message_id IS NOT NULL;",
-    // v5: scanned_at for incremental scan tracking
-    "ALTER TABLE session_usage_track ADD COLUMN scanned_at TEXT NOT NULL DEFAULT '';",
-    // v6: file mtime for session relative-time display
-    "ALTER TABLE session_history ADD COLUMN file_mtime TEXT NOT NULL DEFAULT '';",
-    // v7: track session file mtimes for incremental import
-    "CREATE TABLE IF NOT EXISTS session_file_track (
-        session_id TEXT PRIMARY KEY,
-        file_mtime  INTEGER NOT NULL,
-        scanned_at  TEXT NOT NULL DEFAULT ''
-    );",
-];
+use anyhow::Context;
+use rusqlite::Connection;
+
+/// Current schema version. Increment each time we add a migration step.
+pub(crate) const CURRENT_USER_VERSION: i32 = 1;
+
+/// Apply schema migrations on the given connection.
+/// - user_version == 0  → fresh install: run v1 DDL, set version = 1
+/// - user_version < CURRENT → run incremental steps
+/// - user_version > CURRENT → error (DB from newer app version)
+pub(crate) fn apply_migrations(conn: &Connection) -> Result<(), anyhow::Error> {
+    let version: i32 = conn
+        .pragma_query_value(None, "user_version", |r| r.get(0))
+        .context("read user_version")?;
+
+    if version > CURRENT_USER_VERSION {
+        anyhow::bail!(
+            "Database version {} is newer than this app (max {}). \
+             Please upgrade CCSwitch.",
+            version,
+            CURRENT_USER_VERSION
+        );
+    }
+
+    if version < 1 {
+        migrate_v1(conn).context("migrate v1")?;
+    }
+    // Future: if version < 2 { migrate_v2(conn)?; }
+
+    Ok(())
+}
+
+fn migrate_v1(conn: &Connection) -> Result<(), anyhow::Error> {
+    conn.execute_batch(
+        "BEGIN;
+         -- ── 配置层 ──
+         CREATE TABLE IF NOT EXISTS providers (
+             id TEXT NOT NULL,
+             app_type TEXT NOT NULL CHECK(app_type IN ('claude','codex')),
+             name TEXT NOT NULL,
+             api_url TEXT NOT NULL,
+             api_key TEXT NOT NULL DEFAULT '',
+             env_key TEXT NOT NULL DEFAULT '',
+             wire_api TEXT NOT NULL DEFAULT 'responses',
+             provider_type TEXT,
+             website_url TEXT,
+             icon TEXT,
+             sort_index INTEGER,
+             is_current BOOLEAN NOT NULL DEFAULT 0,
+             created_at TEXT NOT NULL DEFAULT (datetime('now')),
+             PRIMARY KEY (id, app_type)
+         );
+
+         CREATE TABLE IF NOT EXISTS claude_profiles (
+             id TEXT PRIMARY KEY,
+             provider_id TEXT NOT NULL REFERENCES providers(id),
+             name TEXT NOT NULL,
+             opus_model TEXT NOT NULL,
+             sonnet_model TEXT NOT NULL,
+             haiku_model TEXT NOT NULL,
+             subagent_model TEXT NOT NULL,
+             is_default BOOLEAN NOT NULL DEFAULT 0,
+             created_at TEXT NOT NULL DEFAULT (datetime('now'))
+         );
+
+         CREATE TABLE IF NOT EXISTS codex_profiles (
+             id TEXT PRIMARY KEY,
+             provider_id TEXT NOT NULL REFERENCES providers(id),
+             name TEXT NOT NULL,
+             model TEXT NOT NULL,
+             reasoning_effort TEXT NOT NULL DEFAULT 'medium',
+             reasoning_summary TEXT NOT NULL DEFAULT 'auto',
+             verbosity TEXT NOT NULL DEFAULT 'medium',
+             review_model TEXT NOT NULL DEFAULT '',
+             plan_reasoning_effort TEXT NOT NULL DEFAULT '',
+             is_default BOOLEAN NOT NULL DEFAULT 0,
+             created_at TEXT NOT NULL DEFAULT (datetime('now'))
+         );
+
+         CREATE TABLE IF NOT EXISTS settings (
+             key TEXT PRIMARY KEY,
+             value TEXT NOT NULL
+         );
+
+         -- ── 数据层 ──
+         CREATE TABLE IF NOT EXISTS usage_logs (
+             id INTEGER PRIMARY KEY AUTOINCREMENT,
+             app_type TEXT NOT NULL CHECK(app_type IN ('claude','codex')),
+             provider_id TEXT NOT NULL DEFAULT '',
+             profile_id TEXT NOT NULL DEFAULT '',
+             session_id TEXT,
+             model TEXT NOT NULL,
+             prompt_tokens INTEGER NOT NULL DEFAULT 0,
+             completion_tokens INTEGER NOT NULL DEFAULT 0,
+             cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+             cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+             total_tokens INTEGER NOT NULL DEFAULT 0,
+             timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+             data_source TEXT NOT NULL DEFAULT 'import',
+             message_id TEXT
+         );
+
+         CREATE INDEX IF NOT EXISTS idx_usage_app_model ON usage_logs(app_type, model, timestamp);
+         CREATE INDEX IF NOT EXISTS idx_usage_session ON usage_logs(session_id);
+         CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_msg_id ON usage_logs(message_id) WHERE message_id IS NOT NULL;
+
+         CREATE TABLE IF NOT EXISTS session_history (
+             id TEXT PRIMARY KEY,
+             app_type TEXT NOT NULL CHECK(app_type IN ('claude','codex')),
+             project_path TEXT NOT NULL,
+             profile_id TEXT,
+             mode TEXT NOT NULL CHECK(mode IN ('local','proxy')),
+             start_time TEXT NOT NULL,
+             end_time TEXT,
+             prompt_tokens INTEGER NOT NULL DEFAULT 0,
+             completion_tokens INTEGER NOT NULL DEFAULT 0,
+             message_count INTEGER NOT NULL DEFAULT 0,
+             title TEXT,
+             size_bytes INTEGER NOT NULL DEFAULT 0,
+             file_mtime TEXT NOT NULL DEFAULT ''
+         );
+
+         CREATE INDEX IF NOT EXISTS idx_session_app_project ON session_history(app_type, project_path, start_time DESC);
+         CREATE INDEX IF NOT EXISTS idx_session_mtime ON session_history(file_mtime DESC);
+
+         CREATE TABLE IF NOT EXISTS proxy_request_logs (
+             request_id TEXT PRIMARY KEY,
+             app_type TEXT NOT NULL CHECK(app_type IN ('claude','codex')),
+             provider_id TEXT NOT NULL,
+             model TEXT NOT NULL,
+             request_model TEXT,
+             pricing_model TEXT,
+             input_tokens INTEGER NOT NULL DEFAULT 0,
+             output_tokens INTEGER NOT NULL DEFAULT 0,
+             cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+             cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+             input_cost_usd TEXT NOT NULL DEFAULT '0',
+             output_cost_usd TEXT NOT NULL DEFAULT '0',
+             cache_read_cost_usd TEXT NOT NULL DEFAULT '0',
+             cache_creation_cost_usd TEXT NOT NULL DEFAULT '0',
+             total_cost_usd TEXT NOT NULL DEFAULT '0',
+             latency_ms INTEGER NOT NULL,
+             first_token_ms INTEGER,
+             duration_ms INTEGER,
+             status_code INTEGER NOT NULL,
+             error_message TEXT,
+             session_id TEXT,
+             is_streaming INTEGER NOT NULL DEFAULT 0,
+             cost_multiplier TEXT NOT NULL DEFAULT '1.0',
+             created_at INTEGER NOT NULL
+         );
+
+         -- ── 追踪层 ──
+         CREATE TABLE IF NOT EXISTS session_log_sync (
+             file_path TEXT PRIMARY KEY,
+             file_mtime INTEGER NOT NULL,
+             scan_type TEXT NOT NULL DEFAULT '',
+             last_synced_at TEXT NOT NULL DEFAULT (datetime('now'))
+         );
+
+         -- ── 支撑层 ──
+         CREATE TABLE IF NOT EXISTS model_pricing (
+             model_id TEXT PRIMARY KEY,
+             display_name TEXT NOT NULL,
+             input_cost_per_million REAL NOT NULL DEFAULT 0,
+             output_cost_per_million REAL NOT NULL DEFAULT 0,
+             cache_read_cost_per_million REAL NOT NULL DEFAULT 0,
+             cache_creation_cost_per_million REAL NOT NULL DEFAULT 0
+         );
+
+         CREATE TABLE IF NOT EXISTS provider_health (
+             provider_id TEXT NOT NULL,
+             app_type TEXT NOT NULL,
+             is_healthy BOOLEAN NOT NULL DEFAULT 1,
+             consecutive_failures INTEGER NOT NULL DEFAULT 0,
+             last_failure_at TEXT,
+             last_error TEXT,
+             PRIMARY KEY (provider_id, app_type),
+             FOREIGN KEY (provider_id, app_type) REFERENCES providers(id, app_type) ON DELETE CASCADE
+         );
+
+         PRAGMA user_version = 1;
+         COMMIT;",
+    )?;
+
+    tracing::info!("Migration v1 complete: 10 tables created");
+    Ok(())
+}

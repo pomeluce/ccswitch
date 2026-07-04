@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::super::theme::Theme;
+use super::super::theme;
 use super::super::widgets::session_detail::{render_empty_detail, render_session_detail};
 use super::super::widgets::shared::{format_size, relative_time, render_confirm_popup as shared_confirm, render_search_box as shared_search, truncate};
 use super::TabContent;
@@ -39,8 +39,8 @@ impl HistoryTab {
         // Session import is handled before TUI launch (in main.rs with progress bar).
         // Just load whatever is already in the DB.
         let all = mgr
-            .session_db()
-            .query_sessions(None, None, 200)
+            .db()
+            .query_sessions("claude", None, None, 200)
             .unwrap_or_default()
             .into_iter()
             .filter(|s| s.size_bytes > 0)
@@ -99,7 +99,7 @@ impl HistoryTab {
                         tracing::warn!("Failed to delete session file {:?}: {}", jsonl_path, e);
                     }
 
-                    if let Err(e) = self.mgr.session_db().delete_session(&session.id) {
+                    if let Err(e) = self.mgr.db().delete_session(&session.id) {
                         tracing::warn!("Failed to delete session from database: {}", e);
                     }
                     self.all_sessions.retain(|s| s.id != session.id);
@@ -180,17 +180,17 @@ impl TabContent for HistoryTab {
                 let size = format_size(s.size_bytes);
 
                 let arrow = if is_selected { "❯ " } else { "  " };
-                let title_color = if is_selected { Theme::CYAN } else { Theme::FG };
+                let title_color = if is_selected { theme::current().cyan } else { theme::current().fg };
 
                 ListItem::new(vec![
                     Line::from(Span::styled(format!("{}{}", arrow, title), Style::default().fg(title_color))),
                     Line::from(vec![
                         Span::styled("  ", Style::default()),
-                        Span::styled(date, Style::default().fg(Theme::COMMENT)),
-                        Span::styled(" · ", Style::default().fg(Theme::DIM)),
-                        Span::styled(project, Style::default().fg(Theme::COMMENT)),
-                        Span::styled(" · ", Style::default().fg(Theme::DIM)),
-                        Span::styled(size, Style::default().fg(Theme::COMMENT)),
+                        Span::styled(date, Style::default().fg(theme::current().comment)),
+                        Span::styled(" · ", Style::default().fg(theme::current().dim)),
+                        Span::styled(project, Style::default().fg(theme::current().comment)),
+                        Span::styled(" · ", Style::default().fg(theme::current().dim)),
+                        Span::styled(size, Style::default().fg(theme::current().comment)),
                     ]),
                     // Spacing between items
                     Line::from(""),
@@ -204,7 +204,7 @@ impl TabContent for HistoryTab {
                 Block::bordered()
                     .border_set(ratatui::symbols::border::ROUNDED)
                     .title(format!("Sessions ({})", count))
-                    .border_style(Style::default().fg(Theme::DIM)),
+                    .border_style(Style::default().fg(theme::current().dim)),
             )
             .highlight_style(Style::default());
 
@@ -213,7 +213,7 @@ impl TabContent for HistoryTab {
         // Right panel: detail preview
         if let Some(idx) = self.state.selected() {
             if let Some(s) = self.sessions.get(idx) {
-                let tokens = self.mgr.usage_db().query_session_tokens(&s.id).ok();
+                let tokens = self.mgr.db().query_session_tokens(&s.id).ok();
                 render_session_detail(f, right_chunks[0], s, tokens);
             } else {
                 render_empty_detail(f, right_chunks[0], "No session selected");
@@ -325,11 +325,11 @@ impl TabContent for HistoryTab {
 
     fn shortcut_groups(&self) -> Vec<Vec<(String, Color)>> {
         vec![
-            vec![(" J/K ".into(), Theme::COMMENT), ("Nav".into(), Theme::COMMENT)],
-            vec![(" / ".into(), Theme::COMMENT), ("Search".into(), Theme::COMMENT)],
-            vec![(" ⏎  ".into(), Theme::COMMENT), ("Open".into(), Theme::COMMENT)],
-            vec![(" D ".into(), Theme::COMMENT), ("Delete".into(), Theme::COMMENT)],
-            vec![(" Q ".into(), Theme::COMMENT), ("Quit".into(), Theme::COMMENT)],
+            vec![(" J/K ".into(), theme::current().comment), ("Nav".into(), theme::current().comment)],
+            vec![(" / ".into(), theme::current().comment), ("Search".into(), theme::current().comment)],
+            vec![(" ⏎  ".into(), theme::current().comment), ("Open".into(), theme::current().comment)],
+            vec![(" D ".into(), theme::current().comment), ("Delete".into(), theme::current().comment)],
+            vec![(" Q ".into(), theme::current().comment), ("Quit".into(), theme::current().comment)],
         ]
     }
 
@@ -357,9 +357,9 @@ impl HistoryTab {
     fn render_confirm_popup(&self, f: &mut Frame, area: Rect) {
         let is_delete = self.confirm_action == Some(ConfirmAction::Delete);
         let (title, msg, c) = if is_delete {
-            (" Confirm Delete ", " Delete this session? ", Theme::RED)
+            (" Confirm Delete ", " Delete this session? ", theme::current().red)
         } else {
-            (" Open Session ", " Open this session in Claude Code? ", Theme::CYAN)
+            (" Open Session ", " Open this session in Claude Code? ", theme::current().cyan)
         };
         shared_confirm(f, area, title, msg, "Confirm", "Cancel", c, self.confirm_button);
     }

@@ -129,7 +129,7 @@ fn handle_add(mgr: &ConfigManager, what: &str, parent_provider: Option<&str>) ->
                 profiles: vec![],
                 source: crate::core::models::Source::User,
             };
-            mgr.db().insert_user_provider(&p)?;
+            mgr.db().insert_provider(&p, "claude")?;
             println!("Provider added.");
         }
         "profile" => {
@@ -140,7 +140,7 @@ fn handle_add(mgr: &ConfigManager, what: &str, parent_provider: Option<&str>) ->
                 .with_context(|| format!("Provider '{}' not found. Create it first: ccs add provider", provider_id))?;
             // Auto-insert into user_providers if it's a system default (FK needs a row)
             if !provider.source.can_delete() {
-                mgr.db().insert_user_provider(provider)?;
+                mgr.db().insert_provider(provider, "claude")?;
             }
             use dialoguer::Input;
             let id: String = Input::new().with_prompt("Profile ID").interact_text()?;
@@ -154,7 +154,7 @@ fn handle_add(mgr: &ConfigManager, what: &str, parent_provider: Option<&str>) ->
                 default: false,
                 source: crate::core::models::Source::User,
             };
-            mgr.db().insert_user_profile(provider_id, &pr)?;
+            mgr.db().insert_claude_profile(provider_id, &pr)?;
             println!("Profile added to provider '{}'.", provider.name);
         }
         _ => anyhow::bail!("Usage: ccs add <provider|profile> [parent_provider]"),
@@ -191,7 +191,7 @@ fn handle_remove(mgr: &ConfigManager, target: &str) -> Result<()> {
                 anyhow::bail!("Cannot delete system default profile '{}'", target);
             }
         }
-        mgr.db().delete_user_profile(profile_id)?;
+        mgr.db().delete_claude_profile(profile_id)?;
         println!("Removed profile: {}", target);
     } else {
         let providers = mgr.list_providers()?;
@@ -200,7 +200,7 @@ fn handle_remove(mgr: &ConfigManager, target: &str) -> Result<()> {
                 anyhow::bail!("Cannot delete system default provider '{}'", target);
             }
         }
-        mgr.db().delete_user_provider(target)?;
+        mgr.db().delete_provider(target, "claude")?;
         println!("Removed provider: {}", target);
     }
     Ok(())
@@ -230,7 +230,7 @@ fn handle_proxy(action: ProxyAction) -> Result<()> {
 }
 
 fn handle_usage(mgr: &ConfigManager, range: &str, profile: Option<&str>) -> Result<()> {
-    let summaries = mgr.usage_db().query_usage(range)?;
+    let summaries = mgr.db().query_usage("claude", range)?;
     let total_tokens: i64 = summaries.iter().map(|s| s.total_prompt + s.total_completion).sum();
     println!("Token Usage ({})", range);
     println!("{:<30} {:>10} {:>10} {:>8}", "Model", "Prompt", "Completion", "Reqs");
@@ -254,12 +254,12 @@ fn project_name(s: &crate::db::sessions::SessionRecord) -> Option<String> {
 
 fn handle_history(mgr: &ConfigManager, project: Option<&str>, search: Option<&str>) -> Result<()> {
     // Auto-import Claude Code sessions before listing
-    match mgr.session_db().import_claude_sessions() {
+    match mgr.db().import_claude_sessions() {
         Ok(n) if n > 0 => eprintln!("Imported {} new session(s)", n),
         Err(e) => eprintln!("Warning: failed to import sessions: {}", e),
         _ => {}
     }
-    let sessions = mgr.session_db().query_sessions(project, search, 200)?;
+    let sessions = mgr.db().query_sessions("claude", project, search, 200)?;
     println!("Session History");
     println!("{:<6} {:<40} {:<12} {:>8} {:>6} Profile", "Date", "Title", "Project", "Tokens", "Msgs");
     println!("{}", "-".repeat(100));
