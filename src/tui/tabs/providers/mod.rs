@@ -1,6 +1,9 @@
+pub mod form;
+
+use form::EditForm;
 use super::super::theme;
 use super::super::widgets::detail_panel::DetailPanel;
-use super::super::widgets::shared::{centered_rect, render_confirm_popup as shared_confirm, render_message_popup as shared_msg};
+use super::super::widgets::shared::{render_confirm_popup as shared_confirm, render_message_popup as shared_msg};
 use super::TabContent;
 use crate::core::config::ConfigManager;
 use crate::core::models::Provider;
@@ -9,7 +12,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Clear, List, ListItem, ListState, Paragraph},
+    widgets::{Block, List, ListItem, ListState, Paragraph},
     Frame,
 };
 
@@ -33,19 +36,8 @@ pub struct ProvidersTab {
     pub confirm_action: Option<ProviderAction>,
     confirm_button: usize,
     pub message: Option<String>,
-    /// Edit form state
     edit_form: Option<EditForm>,
 }
-
-struct EditForm {
-    fields: [String; 5], // name, opus, sonnet, haiku, subagent
-    cursors: [usize; 5], // cursor position in each field
-    focused: usize,      // 0..4
-    prov_id: String,
-    prof_id: String,
-}
-
-const EDIT_LABELS: [&str; 5] = ["Profile Name", "Opus model", "Sonnet model", "Haiku model", "SubAgent model"];
 
 impl ProvidersTab {
     pub fn new(mgr: Arc<ConfigManager>) -> Self {
@@ -169,65 +161,10 @@ impl ProvidersTab {
         self.refresh_filter();
     }
 
-    fn render_edit_form(&mut self, f: &mut Frame, area: Rect) {
-        let Some(ref mut form) = self.edit_form else { return };
-        let popup = centered_rect(60, 20, area);
-        let inner_w = popup.width.saturating_sub(2) as usize;
-        // Equal left/right padding, label(15) + ": " (2) → value_w = inner - pad*2 - 17
-        let pad_w = (inner_w.saturating_sub(40)) / 2;
-        let pad = " ".repeat(pad_w);
-        let value_w = inner_w.saturating_sub(pad_w * 2 + 17);
-
-        let mut lines: Vec<Line> = Vec::new();
-        // Top padding (3 lines)
-        lines.push(Line::from(""));
-        lines.push(Line::from(""));
-        lines.push(Line::from(""));
-        for (i, label) in EDIT_LABELS.iter().enumerate() {
-            let val = &form.fields[i];
-            let pos = form.cursors[i].min(val.len());
-            let vis = slice_value(val, pos, value_w);
-            let cur = (pos - vis.skip).min(vis.text.len());
-            let (left, right) = vis.text.split_at(cur);
-            let cursor = if i == form.focused { "▌" } else { "" };
-            let style = if i == form.focused {
-                Style::default().fg(theme::current().cyan)
-            } else {
-                Style::default().fg(theme::current().fg)
-            };
-            lines.push(Line::from(vec![
-                Span::styled(format!("{}{:<15}: ", pad, label), Style::default().fg(theme::current().fg)),
-                Span::styled(left.to_string(), style),
-                Span::styled(cursor.to_string(), style),
-                Span::styled(right.to_string(), style),
-                Span::styled(pad.clone(), Style::default()), // right padding
-            ]));
-            lines.push(Line::from(""));
+    fn render_edit_form(&self, f: &mut Frame, area: Rect) {
+        if let Some(ref form) = self.edit_form {
+            form::render_edit_form(form, f, area);
         }
-        // Padding before hints
-        lines.push(Line::from(""));
-        lines.push(Line::from(""));
-        // Hints at bottom (centered)
-        lines.push(
-            Line::from(vec![
-                Span::styled(" Enter ", Style::default().fg(theme::current().comment)),
-                Span::styled(" Save  ", Style::default().fg(theme::current().comment)),
-                Span::styled(" Esc ", Style::default().fg(theme::current().dim)),
-                Span::styled(" Cancel  ", Style::default().fg(theme::current().comment)),
-                Span::styled(" Tab ", Style::default().fg(theme::current().comment)),
-                Span::styled(" Next field", Style::default().fg(theme::current().comment)),
-            ])
-            .centered(),
-        );
-
-        let p = Paragraph::new(lines).block(
-            Block::bordered()
-                .border_set(ratatui::symbols::border::ROUNDED)
-                .title(Line::from(" Edit Profile ").centered())
-                .border_style(Style::default().fg(theme::current().comment)),
-        );
-        f.render_widget(Clear, popup);
-        f.render_widget(p, popup);
     }
 
     fn do_switch(&mut self) {
@@ -284,7 +221,7 @@ impl ProvidersTab {
 }
 
 impl TabContent for ProvidersTab {
-    fn render(&mut self, f: &mut Frame, area: Rect) {
+    fn render(&mut self, f: &mut Frame, area: Rect, _app_type: &str) {
         let main = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
@@ -368,49 +305,10 @@ impl TabContent for ProvidersTab {
     fn handle_key(&mut self, code: KeyCode) -> bool {
         // Edit form mode
         if let Some(ref mut f) = self.edit_form {
-            let field = &mut f.fields[f.focused];
-            let cur = &mut f.cursors[f.focused];
             match code {
-                KeyCode::Esc => {
-                    self.edit_form = None;
-                }
-                KeyCode::Enter => {
-                    self.commit_edit();
-                }
-                KeyCode::Tab => {
-                    f.focused = (f.focused + 1) % 5;
-                }
-                KeyCode::BackTab => {
-                    f.focused = if f.focused == 0 { 4 } else { f.focused - 1 };
-                }
-                KeyCode::Left => {
-                    *cur = cur.saturating_sub(1);
-                }
-                KeyCode::Right => {
-                    *cur = (*cur + 1).min(field.len());
-                }
-                KeyCode::Home => {
-                    *cur = 0;
-                }
-                KeyCode::End => {
-                    *cur = field.len();
-                }
-                KeyCode::Backspace => {
-                    if *cur > 0 {
-                        *cur -= 1;
-                        field.remove(*cur);
-                    }
-                }
-                KeyCode::Delete => {
-                    if *cur < field.len() {
-                        field.remove(*cur);
-                    }
-                }
-                KeyCode::Char(c) => {
-                    field.insert(*cur, c);
-                    *cur += 1;
-                }
-                _ => {}
+                KeyCode::Esc => { self.edit_form = None; }
+                KeyCode::Enter => { self.commit_edit(); }
+                _ => { f.handle_key(code); }
             }
             return true;
         }
@@ -543,29 +441,5 @@ impl TabContent for ProvidersTab {
             cur += gw;
         }
         lines
-    }
-}
-
-struct VisSlice {
-    text: String,
-    skip: usize,
-}
-
-/// Show a windowed slice of text centered around cursor position
-fn slice_value(text: &str, cursor: usize, max_w: usize) -> VisSlice {
-    if text.len() <= max_w || max_w < 4 {
-        return VisSlice { text: text.to_string(), skip: 0 };
-    }
-    // Try to center cursor
-    let half = max_w / 2;
-    let mut start = if cursor > half { cursor - half } else { 0 };
-    let end = (start + max_w).min(text.len());
-    // Adjust if we hit the end
-    if end == text.len() && end > max_w {
-        start = end - max_w;
-    }
-    VisSlice {
-        text: text[start..end].to_string(),
-        skip: start,
     }
 }

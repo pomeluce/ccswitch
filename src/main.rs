@@ -72,7 +72,7 @@ fn pre_tui_import(home: &str) {
     }
 
     // Always run import — incremental (mtime-based) on subsequent launches
-    let result = db.import_claude_sessions_with_progress(|files_done, files_total, imported| {
+    let result = crate::core::import::import_claude_sessions_with_progress(&db, |files_done, files_total, imported| {
         if is_first_launch {
             let pct = if files_total > 0 {
                 (files_done as f64 / files_total as f64 * 100.0) as usize

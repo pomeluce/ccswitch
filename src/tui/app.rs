@@ -7,7 +7,6 @@ use ratatui::{backend::CrosstermBackend, Frame, Terminal};
 use crate::core::config::ConfigManager;
 
 use super::tabs::{history::HistoryTab, providers::ProvidersTab, settings::SettingsTab, usage::UsageTab, Tab, TabContent};
-use super::theme;
 
 #[allow(dead_code)]
 pub struct App {
@@ -20,6 +19,7 @@ pub struct App {
     pub should_quit: bool,
     pub status_message: String,
     pub proxy_running: bool,
+    pub app_type: String,
     /// 30s polling channel — receives true when JSONL files change
     poll_rx: Option<mpsc::Receiver<bool>>,
 }
@@ -45,6 +45,7 @@ impl App {
             should_quit: false,
             status_message: String::new(),
             proxy_running,
+            app_type: "claude".to_string(),
             poll_rx,
         })
     }
@@ -72,7 +73,13 @@ impl App {
             if event::poll(std::time::Duration::from_millis(100))? {
                 if let Event::Key(key) = event::read()? {
                     if key.kind == KeyEventKind::Press {
+                        // Ctrl+J/K: sidebar tab navigation
                         if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+                            match key.code {
+                                KeyCode::Char('j') => self.next_tab(),
+                                KeyCode::Char('k') => self.prev_tab(),
+                                _ => {}
+                            }
                             continue;
                         }
                         self.handle_key(key.code);
@@ -102,14 +109,14 @@ impl App {
                 Ok(true) => {
                     tracing::info!("File watcher: changes detected, running incremental imports");
                     // Incremental session import (updates existing + imports new)
-                    if let Err(e) = self.mgr.db().import_claude_sessions() {
+                    if let Err(e) = crate::core::import::import_claude_sessions(self.mgr.db()) {
                         tracing::warn!("Polling session import failed: {}", e);
                     } else {
                         // Refresh history tab data
                         let sessions = self
                             .mgr
                             .db()
-                            .query_sessions("claude", None, None, 200)
+                            .query_sessions(&self.app_type, None, None, 200)
                             .unwrap_or_default()
                             .into_iter()
                             .filter(|s| s.size_bytes > 0)
@@ -132,7 +139,20 @@ impl App {
     }
 
     fn handle_key(&mut self, code: KeyCode) {
-        // Let active tab handle Tab/BackTab first (for confirm popups etc.)
+        // Tab / Shift+Tab switch app type (global priority)
+        match code {
+            KeyCode::Tab => {
+                self.app_type = super::widgets::app_bar::toggle_app_type(&self.app_type).to_string();
+                return;
+            }
+            KeyCode::BackTab => {
+                self.app_type = if self.app_type == "claude" { "codex".into() } else { "claude".into() };
+                return;
+            }
+            _ => {}
+        }
+
+        // Let active tab handle keys
         let handled = match self.active_tab {
             Tab::Providers => self.providers_tab.handle_key(code),
             Tab::Usage => self.usage_tab.handle_key(code),
@@ -144,12 +164,7 @@ impl App {
         }
 
         match code {
-            KeyCode::Tab => self.next_tab(),
-            KeyCode::BackTab => self.prev_tab(),
-            KeyCode::Char('1') => self.active_tab = Tab::Providers,
-            KeyCode::Char('2') => self.active_tab = Tab::Usage,
-            KeyCode::Char('3') => self.active_tab = Tab::History,
-            KeyCode::Char('4') => self.active_tab = Tab::Settings,
+            KeyCode::Enter => {} // sidebar Enter — tab switches happen via J/K navigation
             KeyCode::Char('q') | KeyCode::Char('Q') => self.should_quit = true,
             _ => {}
         }
@@ -174,100 +189,54 @@ impl App {
     }
 
     fn render(&mut self, f: &mut Frame) {
+        use super::widgets::app_bar::render_app_bar;
         use super::widgets::shared::render_shortcut_bar;
+        use super::widgets::sidebar::render_sidebar;
         use ratatui::layout::{Constraint, Direction, Layout};
 
         let area = f.area();
 
-        // Calculate shortcut bar height for the active tab
+        // Calculate shortcut bar height for the active tab (width = main area, ~sidebar 14 cols)
+        let main_width = area.width.saturating_sub(16);
         let sc_lines = match self.active_tab {
-            Tab::Providers => self.providers_tab.shortcut_lines(area.width),
-            Tab::Usage => self.usage_tab.shortcut_lines(area.width),
-            Tab::History => self.history_tab.shortcut_lines(area.width),
-            Tab::Settings => self.settings_tab.shortcut_lines(area.width),
+            Tab::Providers => self.providers_tab.shortcut_lines(main_width),
+            Tab::Usage => self.usage_tab.shortcut_lines(main_width),
+            Tab::History => self.history_tab.shortcut_lines(main_width),
+            Tab::Settings => self.settings_tab.shortcut_lines(main_width),
         };
 
-        let chunks = Layout::default()
+        // Level 1: sidebar | main
+        let [sidebar_area, main_area] = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(16), Constraint::Min(20)])
+            .areas(area);
+
+        // Level 2: main → app_bar | content | shortcuts
+        let [app_bar_area, content_area, sc_area] = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),                   // tab bar
-                Constraint::Min(3),                      // tab content
-                Constraint::Length(2 + sc_lines as u16), // shortcut bar
+                Constraint::Length(3),
+                Constraint::Min(3),
+                Constraint::Length(2 + sc_lines as u16),
             ])
-            .split(area);
+            .areas(main_area);
 
-        // Tab bar
-        self.render_tab_bar(f, chunks[0]);
-        // Content
+        render_sidebar(f, sidebar_area, self.active_tab, self.proxy_running);
+        render_app_bar(f, app_bar_area, &self.app_type);
+
         match self.active_tab {
-            Tab::Providers => self.providers_tab.render(f, chunks[1]),
-            Tab::Usage => self.usage_tab.render(f, chunks[1]),
-            Tab::History => self.history_tab.render(f, chunks[1]),
-            Tab::Settings => self.settings_tab.render(f, chunks[1]),
+            Tab::Providers => self.providers_tab.render(f, content_area, &self.app_type),
+            Tab::Usage => self.usage_tab.render(f, content_area, &self.app_type),
+            Tab::History => self.history_tab.render(f, content_area, &self.app_type),
+            Tab::Settings => self.settings_tab.render(f, content_area, &self.app_type),
         }
-        // Global shortcut bar
+
         let groups = match self.active_tab {
             Tab::Providers => self.providers_tab.shortcut_groups(),
             Tab::Usage => self.usage_tab.shortcut_groups(),
             Tab::History => self.history_tab.shortcut_groups(),
             Tab::Settings => self.settings_tab.shortcut_groups(),
         };
-        render_shortcut_bar(f, chunks[2], &groups);
-    }
-
-    fn render_tab_bar(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        use super::tabs::Tab;
-        use ratatui::{
-            style::Style,
-            text::{Line, Span},
-            widgets::{Block, Paragraph},
-        };
-
-        let tabs = [(Tab::Providers, " 模型 "), (Tab::Usage, " 用量 "), (Tab::History, " 会话 "), (Tab::Settings, " 设置 ")];
-
-        // Build tab spans: active = cyan block, inactive = dim text
-        let tab_spans: Vec<Span> = tabs
-            .iter()
-            .flat_map(|(tab, label)| {
-                if *tab == self.active_tab {
-                    vec![Span::styled(*label, Style::default().fg(theme::current().cyan))]
-                } else {
-                    vec![Span::styled(*label, Style::default().fg(theme::current().dim))]
-                }
-            })
-            .collect();
-
-        // Calculate widths
-        let left_label = " ccswitch-tui ";
-        let left_width = left_label.len() as u16;
-        let mode_label = if self.proxy_running { " 模式: proxy " } else { " 模式: local " };
-        let mode_width = mode_label.len() as u16;
-        let tabs_total_width: u16 = tab_spans.iter().map(|s| s.width() as u16).sum();
-
-        // Available space for centering
-        let inner_width = area.width.saturating_sub(left_width + tabs_total_width + mode_width + 4); // +4 for border padding
-        let pad_left = inner_width / 2;
-        let pad_right = inner_width - pad_left;
-
-        let mut all_spans: Vec<Span> = Vec::new();
-        all_spans.push(Span::styled(left_label, Style::default().fg(theme::current().dim)));
-        all_spans.push(Span::styled(" ".repeat(pad_left as usize), Style::default()));
-        all_spans.extend(tab_spans);
-        all_spans.push(Span::styled(" ".repeat(pad_right as usize), Style::default()));
-        all_spans.push(Span::styled(
-            mode_label,
-            if self.proxy_running {
-                Style::default().fg(theme::current().green)
-            } else {
-                Style::default().fg(theme::current().dim)
-            },
-        ));
-
-        let p = Paragraph::new(Line::from(all_spans)).block(
-            Block::bordered()
-                .border_set(ratatui::symbols::border::ROUNDED)
-                .border_style(Style::default().fg(theme::current().dim)),
-        );
-        f.render_widget(p, area);
+        render_shortcut_bar(f, sc_area, &groups);
     }
 }

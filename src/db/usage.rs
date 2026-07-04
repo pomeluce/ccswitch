@@ -1,7 +1,6 @@
 use super::connection::Db;
-use rayon::prelude::*;
 use rusqlite::params;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize)]
@@ -36,36 +35,6 @@ pub enum ScanEvent {
 }
 
 /// Lightweight parser for assistant message usage data in JSONL files
-#[derive(Debug, Deserialize)]
-struct UsageLine {
-    #[serde(rename = "type")]
-    msg_type: Option<String>,
-    message: Option<UsageMessage>,
-    timestamp: Option<String>,
-    #[allow(dead_code)]
-    #[serde(rename = "sessionId")]
-    session_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct UsageMessage {
-    id: Option<String>,
-    #[allow(dead_code)]
-    role: Option<String>,
-    model: Option<String>,
-    usage: Option<UsageData>,
-}
-
-#[derive(Debug, Deserialize)]
-struct UsageData {
-    input_tokens: Option<i64>,
-    output_tokens: Option<i64>,
-    #[allow(dead_code)]
-    cache_read_input_tokens: Option<i64>,
-    #[allow(dead_code)]
-    cache_creation_input_tokens: Option<i64>,
-}
-
 /// Parsed usage record awaiting DB insert
 #[derive(Debug, Clone)]
 pub struct UsageRecord {
@@ -263,111 +232,6 @@ impl Db {
     }
 }
 
-/// Background-thread function: collect changed files, parse them, send batches via channel.
-pub fn parse_files_in_background(
-    app_type: String,
-    ctx: ScanContext,
-    batch_size: usize,
-    tx: std::sync::mpsc::Sender<ScanEvent>,
-) {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    let projects_dir = std::path::PathBuf::from(&home).join(".claude/projects");
-    let mut changed_files: Vec<(PathBuf, String)> = Vec::new();
-    if projects_dir.exists() {
-        collect_changed_files(&projects_dir, &mut changed_files, &ctx.file_index);
-    }
-
-    let total = changed_files.len();
-    if total == 0 {
-        let _ = tx.send(ScanEvent::Done {});
-        return;
-    }
-
-    let known_set: std::collections::HashSet<&str> =
-        ctx.known_msg_ids.iter().map(|s| s.as_str()).collect();
-    let mut total_records = 0usize;
-    let mut last_report = 0usize;
-
-    for (idx, (path, sid)) in changed_files.iter().enumerate() {
-        let records = parse_single_file(path, sid, &known_set);
-        let n = records.len();
-        total_records += n;
-
-        let _ = tx.send(ScanEvent::Batch {
-            app_type: app_type.clone(),
-            sid: sid.clone(),
-            file_path: path.clone(),
-            records,
-        });
-
-        let files_done = idx + 1;
-        if files_done - last_report >= batch_size || files_done == total {
-            let _ = tx.send(ScanEvent::Progress {
-                files_done,
-                files_total: total,
-                records: total_records,
-            });
-            last_report = files_done;
-        }
-    }
-
-    let _ = tx.send(ScanEvent::Done {});
-}
-
-/// Parse a single JSONL file, returning all new (unseen) usage records
-fn parse_single_file(
-    path: &PathBuf,
-    _sid: &str,
-    known_msg_ids: &std::collections::HashSet<&str>,
-) -> Vec<UsageRecord> {
-    let content = match std::fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
-
-    content
-        .par_lines()
-        .filter_map(|line| {
-            let parsed: UsageLine = serde_json::from_str(line).ok()?;
-            if parsed.msg_type.as_deref() != Some("assistant") {
-                return None;
-            }
-            let msg = parsed.message.as_ref()?;
-            let usage = msg.usage.as_ref()?;
-            let msg_id = msg.id.as_deref().unwrap_or("").to_string();
-            if !msg_id.is_empty() && known_msg_ids.contains(msg_id.as_str()) {
-                return None;
-            }
-            let model = msg
-                .model
-                .as_deref()
-                .unwrap_or("unknown")
-                .replace("[1m]", "");
-            if model == "<synthetic>" {
-                return None;
-            }
-            let ts = parsed.timestamp.as_deref().unwrap_or("");
-            let date = if ts.len() >= 19 {
-                format!("{} {}", &ts[..10], &ts[11..19])
-            } else if ts.len() >= 10 {
-                format!("{} 00:00:00", &ts[..10])
-            } else {
-                "today".to_string()
-            };
-            Some(UsageRecord {
-                msg_id,
-                model: model.to_string(),
-                date,
-                input: usage.input_tokens.unwrap_or(0),
-                output: usage.output_tokens.unwrap_or(0),
-                cr: usage.cache_read_input_tokens.unwrap_or(0),
-                cc: usage.cache_creation_input_tokens.unwrap_or(0),
-            })
-        })
-        .collect()
-}
-
-/// Read file mtime as unix timestamp (seconds)
 fn file_mtime(path: &PathBuf) -> Option<i64> {
     let meta = std::fs::metadata(path).ok()?;
     let dur = meta.modified().ok()?;
@@ -375,34 +239,3 @@ fn file_mtime(path: &PathBuf) -> Option<i64> {
     Some(secs.as_secs() as i64)
 }
 
-/// Recursively collect changed .jsonl files under a directory
-fn collect_changed_files(
-    dir: &PathBuf,
-    out: &mut Vec<(PathBuf, String)>,
-    file_index: &std::collections::HashMap<String, i64>,
-) {
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                collect_changed_files(&path, out, file_index);
-            } else if path.extension().map_or(false, |e| e == "jsonl") {
-                let sid = path
-                    .file_stem()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("")
-                    .to_string();
-                if !sid.is_empty() {
-                    let mtime = file_mtime(&path).unwrap_or(0);
-                    let file_path_str = path.to_string_lossy().to_string();
-                    let changed = file_index
-                        .get(&file_path_str)
-                        .map_or(true, |&old| old != mtime);
-                    if changed {
-                        out.push((path, sid));
-                    }
-                }
-            }
-        }
-    }
-}

@@ -1,3 +1,5 @@
+pub mod scan;
+
 use super::super::theme;
 use super::super::widgets::shared::{format_tokens, render_search_box as shared_search};
 use super::TabContent;
@@ -31,6 +33,7 @@ pub struct UsageTab {
     pub search_query: String,
     pub is_searching: bool,
     chart_scroll: usize,
+    app_type: String,
     /// Background scan receiver + state
     scan_rx: Option<mpsc::Receiver<ScanEvent>>,
     scan_state: ScanState,
@@ -69,7 +72,7 @@ impl UsageTab {
             };
             // Always spawn background thread — it does its own file collection
             let handle = std::thread::spawn(move || {
-                crate::db::usage::parse_files_in_background(APP_TYPE.into(), ctx, 10, tx);
+                crate::core::import::parse_files_in_background(APP_TYPE.into(), ctx, 10, tx);
             });
             scan_rx = Some(rx);
             scan_handle = Some(handle);
@@ -98,6 +101,7 @@ impl UsageTab {
             search_query: String::new(),
             is_searching: false,
             chart_scroll: 0,
+            app_type: APP_TYPE.to_string(),
             scan_rx,
             scan_state,
             scan_handle,
@@ -123,7 +127,7 @@ impl UsageTab {
         };
         let (tx, rx) = mpsc::channel();
         let handle = std::thread::spawn(move || {
-            crate::db::usage::parse_files_in_background(APP_TYPE.into(), ctx, 10, tx);
+            crate::core::import::parse_files_in_background(APP_TYPE.into(), ctx, 10, tx);
         });
         self.scan_rx = Some(rx);
         self.scan_handle = Some(handle);
@@ -184,7 +188,7 @@ impl UsageTab {
                 if let Some(h) = self.scan_handle.take() {
                     let _ = h.join();
                 }
-                self.summaries = self.mgr.db().query_usage(APP_TYPE, &self.range).unwrap_or_default();
+                self.summaries = self.mgr.db().query_usage(&self.app_type, &self.range).unwrap_or_default();
                 if !self.summaries.is_empty() && self.state.selected().is_none() {
                     self.state.select(Some(0));
                 }
@@ -194,7 +198,8 @@ impl UsageTab {
 }
 
 impl TabContent for UsageTab {
-    fn render(&mut self, f: &mut Frame, area: Rect) {
+    fn render(&mut self, f: &mut Frame, area: Rect, app_type: &str) {
+        self.app_type = app_type.to_string();
         let main = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
@@ -266,7 +271,7 @@ impl TabContent for UsageTab {
                     _ => "day",
                 }
                 .into();
-                self.summaries = self.mgr.db().query_usage(APP_TYPE, &self.range).unwrap_or_default();
+                self.summaries = self.mgr.db().query_usage(&self.app_type, &self.range).unwrap_or_default();
             }
             KeyCode::Char('/') => {
                 self.is_searching = true;
@@ -321,7 +326,7 @@ impl UsageTab {
         let cards = Layout::default().direction(Direction::Horizontal).constraints([Constraint::Ratio(1, 4); 4]).split(area);
 
         let (today, week, total, reqs) = if let Some(s) = self.summaries.get(self.selected_index) {
-            let daily = self.mgr.db().query_daily_usage(APP_TYPE, &s.model).unwrap_or_default();
+            let daily = self.mgr.db().query_daily_usage(&self.app_type, &s.model).unwrap_or_default();
             let today_date = chrono::Local::now().format("%Y-%m-%d").to_string();
             let today_tokens = daily
                 .iter()
@@ -401,7 +406,7 @@ impl UsageTab {
     fn render_daily_chart(&mut self, f: &mut Frame, area: Rect) {
         if let Some(s) = self.summaries.get(self.selected_index) {
             let label = title_case(&s.model);
-            let daily = self.mgr.db().query_daily_usage(APP_TYPE, &s.model).unwrap_or_default();
+            let daily = self.mgr.db().query_daily_usage(&self.app_type, &s.model).unwrap_or_default();
             let today_date = chrono::Local::now().format("%Y-%m-%d").to_string();
 
             let days: Vec<(String, i64, i64, i64, i64, bool)> = (0..7)
@@ -517,48 +522,7 @@ impl UsageTab {
     }
 
     fn render_scan_progress(&self, f: &mut Frame, area: Rect, files_done: usize, files_total: usize, records: usize) {
-        let pct = if files_total > 0 {
-            (files_done as f64 / files_total as f64 * 100.0) as usize
-        } else {
-            0
-        };
-        let bar_w = if files_total > 0 {
-            ((files_done as f64 / files_total.max(1) as f64) * 30.0) as usize
-        } else {
-            0
-        };
-        let bar_w = bar_w.min(30);
-        let filled = "\u{2588}".repeat(bar_w);
-        let empty = "\u{2591}".repeat(30usize.saturating_sub(bar_w));
-        let bar = format!("{}{}", filled, empty);
-
-        let spinner = ["\u{280b}", "\u{2819}", "\u{2839}", "\u{2833}", "\u{2827}", "\u{280f}", "\u{281f}", "\u{283f}"][files_done % 8];
-
-        let lines = vec![
-            Line::from(""),
-            Line::from(Span::styled(
-                format!("{}  Scanning Claude Code sessions...", spinner),
-                Style::default().fg(theme::current().purple),
-            ))
-            .centered(),
-            Line::from(""),
-            Line::from(Span::styled(format!("{} {}%", bar, pct), Style::default().fg(theme::current().comment))).centered(),
-            Line::from(Span::styled(
-                format!("{} / {} files — {} records imported", files_done, files_total, records),
-                Style::default().fg(theme::current().comment),
-            ))
-            .centered(),
-            Line::from(""),
-            Line::from(Span::styled("Data refreshes automatically when complete", Style::default().fg(theme::current().dim))).centered(),
-        ];
-
-        let p = Paragraph::new(lines).block(
-            Block::bordered()
-                .border_set(ratatui::symbols::border::ROUNDED)
-                .title(" Scanning ")
-                .border_style(Style::default().fg(theme::current().purple)),
-        );
-        f.render_widget(p, area);
+        scan::render_scan_progress(f, area, files_done, files_total, records);
     }
 }
 

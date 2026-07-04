@@ -84,7 +84,7 @@ impl SettingsTab {
 }
 
 impl TabContent for SettingsTab {
-    fn render(&mut self, f: &mut Frame, area: Rect) {
+    fn render(&mut self, f: &mut Frame, area: Rect, _app_type: &str) {
         let main = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])

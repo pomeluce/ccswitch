@@ -254,7 +254,7 @@ fn project_name(s: &crate::db::sessions::SessionRecord) -> Option<String> {
 
 fn handle_history(mgr: &ConfigManager, project: Option<&str>, search: Option<&str>) -> Result<()> {
     // Auto-import Claude Code sessions before listing
-    match mgr.db().import_claude_sessions() {
+    match crate::core::import::import_claude_sessions(mgr.db()) {
         Ok(n) if n > 0 => eprintln!("Imported {} new session(s)", n),
         Err(e) => eprintln!("Warning: failed to import sessions: {}", e),
         _ => {}

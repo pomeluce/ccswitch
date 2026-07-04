@@ -129,7 +129,7 @@ impl HistoryTab {
 }
 
 impl TabContent for HistoryTab {
-    fn render(&mut self, f: &mut Frame, area: Rect) {
+    fn render(&mut self, f: &mut Frame, area: Rect, _app_type: &str) {
         let main = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
