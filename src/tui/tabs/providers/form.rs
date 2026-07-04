@@ -1,3 +1,4 @@
+use crate::tui::lang;
 use super::super::super::theme;
 use super::super::super::widgets::shared::centered_rect;
 use crossterm::event::KeyCode;
@@ -17,14 +18,10 @@ pub struct EditForm {
     pub is_edit: bool,
 }
 
-pub const EDIT_LABELS: [&str; 6] = [
-    "Profile ID",
-    "Profile Name",
-    "Opus model",
-    "Sonnet model",
-    "Haiku model",
-    "SubAgent model",
-];
+pub fn edit_labels() -> [&'static str; 6] {
+    let l = lang::current();
+    [l.label_profile_id, l.label_profile_name, l.label_opus, l.label_sonnet, l.label_haiku, l.label_subagent]
+}
 
 impl EditForm {
     pub fn handle_key(&mut self, code: KeyCode) {
@@ -84,7 +81,8 @@ pub fn render_edit_form(form: &EditForm, f: &mut Frame, area: Rect) {
     lines.push(Line::from(""));
     lines.push(Line::from(""));
     lines.push(Line::from(""));
-    for (i, label) in EDIT_LABELS.iter().enumerate() {
+    let labels = edit_labels();
+    for (i, label) in labels.iter().enumerate() {
         let val = &form.fields[i];
         let pos = form.cursors[i].min(val.len());
         let vis = slice_value(val, pos, value_w);
@@ -111,11 +109,11 @@ pub fn render_edit_form(form: &EditForm, f: &mut Frame, area: Rect) {
     lines.push(Line::from(""));
     lines.push(
         Line::from(vec![
-            Span::styled("Enter: Save", Style::default().fg(theme::current().comment)),
+            Span::styled(lang::current().sc_save, Style::default().fg(theme::current().comment)),
             Span::styled("  ", Style::default()),
-            Span::styled("Esc: Cancel", Style::default().fg(theme::current().comment)),
+            Span::styled(lang::current().sc_cancel, Style::default().fg(theme::current().comment)),
             Span::styled("  ", Style::default()),
-            Span::styled("Tab: Next field", Style::default().fg(theme::current().comment)),
+            Span::styled(lang::current().sc_next_field, Style::default().fg(theme::current().comment)),
         ])
         .centered(),
     );
@@ -123,7 +121,7 @@ pub fn render_edit_form(form: &EditForm, f: &mut Frame, area: Rect) {
     let p = Paragraph::new(lines).block(
         Block::bordered()
             .border_set(ratatui::symbols::border::ROUNDED)
-            .title(Line::from(" Edit Profile ").centered())
+            .title(Line::from(if form.is_edit { lang::current().title_edit_profile } else { lang::current().title_add_profile }).centered())
             .border_style(Style::default().fg(theme::current().cyan)),
     );
     f.render_widget(Clear, popup);
@@ -139,7 +137,10 @@ pub struct ProviderForm {
     pub is_edit: bool, // true = edit (id readonly), false = add
 }
 
-const PROVIDER_LABELS: [&str; 4] = ["Name", "ID", "API URL", "API Key"];
+fn provider_labels() -> [&'static str; 4] {
+    let l = lang::current();
+    [l.label_prov_name, l.label_prov_id, l.label_api_url, l.label_api_key]
+}
 
 impl ProviderForm {
     pub fn handle_key(&mut self, code: KeyCode) {
@@ -174,7 +175,8 @@ pub fn render_provider_form(form: &ProviderForm, f: &mut Frame, area: Rect) {
     let mut lines: Vec<Line> = Vec::new();
     lines.push(Line::from(""));
     lines.push(Line::from(""));
-    for (i, label) in PROVIDER_LABELS.iter().enumerate() {
+    let p_labels = provider_labels();
+    for (i, label) in p_labels.iter().enumerate() {
         let val = &form.fields[i];
         let pos = form.cursors[i].min(val.len());
         let vis = slice_value(val, pos, value_w);
@@ -202,15 +204,15 @@ pub fn render_provider_form(form: &ProviderForm, f: &mut Frame, area: Rect) {
     lines.push(Line::from(""));
     lines.push(
         Line::from(vec![
-            Span::styled("Enter: Save", Style::default().fg(theme::current().comment)),
+            Span::styled(lang::current().sc_save, Style::default().fg(theme::current().comment)),
             Span::styled("  ", Style::default()),
-            Span::styled("Esc: Cancel", Style::default().fg(theme::current().comment)),
+            Span::styled(lang::current().sc_cancel, Style::default().fg(theme::current().comment)),
             Span::styled("  ", Style::default()),
-            Span::styled("Tab: Next field", Style::default().fg(theme::current().comment)),
+            Span::styled(lang::current().sc_next_field, Style::default().fg(theme::current().comment)),
         ]).centered(),
     );
 
-    let title = if form.is_edit { " Edit Provider " } else { " Add Provider " };
+    let title = if form.is_edit { lang::current().title_edit_provider } else { lang::current().title_add_provider };
     let p = Paragraph::new(lines).block(
         Block::bordered()
             .border_set(ratatui::symbols::border::ROUNDED)

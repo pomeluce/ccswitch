@@ -1,5 +1,6 @@
 pub mod app;
 pub mod file_watcher;
+pub mod lang;
 pub mod theme;
 pub mod tabs;
 pub mod widgets;

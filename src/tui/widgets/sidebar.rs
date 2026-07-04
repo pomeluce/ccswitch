@@ -1,4 +1,5 @@
 use super::super::tabs::Tab;
+use crate::tui::lang;
 use super::super::theme;
 use crate::db::Db;
 use ratatui::{
@@ -11,17 +12,17 @@ use ratatui::{
 
 pub fn render_sidebar(f: &mut Frame, area: Rect, active_tab: Tab, db: &Db) {
     let tabs = [
-        (Tab::Providers, "模型"),
-        (Tab::Usage, "用量"),
-        (Tab::History, "会话"),
-        (Tab::Settings, "设置"),
+        (Tab::Providers, lang::current().tab_providers),
+        (Tab::Usage, lang::current().tab_usage),
+        (Tab::History, lang::current().tab_history),
+        (Tab::Settings, lang::current().tab_settings),
     ];
 
     let proxy_running = db.get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false);
     let mode_label = if proxy_running {
-        "proxy"
+        format!("{} proxy", lang::current().mode_prefix)
     } else {
-        "local"
+        format!("{} local", lang::current().mode_prefix)
     };
 
     let tab_lines = (tabs.len() * 2) as u16;

@@ -1,4 +1,5 @@
 pub mod chart;
+use crate::tui::lang;
 pub mod scan;
 
 use super::super::theme;
@@ -294,11 +295,11 @@ impl TabContent for UsageTab {
 
     fn shortcut_groups(&self) -> Vec<Vec<(String, Color)>> {
         vec![
-            vec![(" J/K ".into(), theme::current().comment), ("Nav".into(), theme::current().comment)],
-            vec![(" / ".into(), theme::current().comment), ("Search".into(), theme::current().comment)],
-            vec![(" T ".into(), theme::current().comment), ("Toggle".into(), theme::current().comment)],
-            vec![(" PgUp/Dn ".into(), theme::current().comment), ("Scroll".into(), theme::current().comment)],
-            vec![(" Q ".into(), theme::current().comment), ("Quit".into(), theme::current().comment)],
+            vec![(" J/K ".into(), theme::current().comment), (lang::current().sc_nav.into(), theme::current().comment)],
+            vec![(" / ".into(), theme::current().comment), (lang::current().sc_search.into(), theme::current().comment)],
+            vec![(" T ".into(), theme::current().comment), (lang::current().sc_toggle.into(), theme::current().comment)],
+            vec![(" PgUp/Dn ".into(), theme::current().comment), (lang::current().sc_scroll.into(), theme::current().comment)],
+            vec![(" Q ".into(), theme::current().comment), (lang::current().sc_quit.into(), theme::current().comment)],
         ]
     }
 
@@ -357,10 +358,10 @@ impl UsageTab {
         };
 
         let card_data = [
-            ("Today", &format_tokens(today), theme::current().green),
-            ("Week", &format_tokens(week), theme::current().cyan),
-            ("Total", &format_tokens(total), theme::current().purple),
-            ("Reqs", &format!("{}", reqs), theme::current().yellow),
+            (lang::current().card_today, &format_tokens(today), theme::current().green),
+            (lang::current().card_week, &format_tokens(week), theme::current().cyan),
+            (lang::current().card_total, &format_tokens(total), theme::current().purple),
+            (lang::current().card_reqs, &format!("{}", reqs), theme::current().yellow),
         ];
 
         for (i, (label, value, color)) in card_data.iter().enumerate() {
@@ -428,9 +429,9 @@ impl UsageTab {
             // No data — render empty placeholder
             let p = Paragraph::new(vec![
                 Line::from(""),
-                Line::from(Span::styled("  No usage data yet", Style::default().fg(theme::current().comment))).centered(),
+                Line::from(Span::styled(lang::current().no_usage, Style::default().fg(theme::current().comment))).centered(),
                 Line::from(""),
-                Line::from(Span::styled("  Scan starts automatically on first launch", Style::default().fg(theme::current().dim))).centered(),
+                Line::from(Span::styled(lang::current().no_usage_hint, Style::default().fg(theme::current().dim))).centered(),
             ]).block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED).title(" Usage ").border_style(Style::default().fg(theme::current().dim)));
             f.render_widget(p, area);
         }

@@ -1,4 +1,5 @@
 use super::shared::{format_size, format_tokens};
+use crate::tui::lang;
 use crate::db::sessions::SessionRecord;
 use crate::tui::theme;
 use ratatui::{
@@ -25,16 +26,16 @@ pub fn render_session_detail(f: &mut Frame, area: Rect, session: &SessionRecord,
     lines.push(Line::from(""));
 
     // Project
-    lines.extend(line_with_wrap("Project", &path_short, max_w, theme::current().purple, theme::current().yellow));
+    lines.extend(line_with_wrap(lang::current().detail_project, &path_short, max_w, theme::current().purple, theme::current().yellow));
     lines.push(Line::from(""));
 
     // Profile
     let profile_text = session.profile_id.as_deref().unwrap_or("-");
-    lines.extend(line_with_wrap("Profile", profile_text, max_w, theme::current().purple, theme::current().fg));
+    lines.extend(line_with_wrap(lang::current().detail_profile, profile_text, max_w, theme::current().purple, theme::current().fg));
     lines.push(Line::from(""));
 
     // Mode
-    lines.extend(line_with_wrap("Mode", &session.mode, max_w, theme::current().purple, theme::current().green));
+    lines.extend(line_with_wrap(lang::current().detail_mode, &session.mode, max_w, theme::current().purple, theme::current().green));
     lines.push(Line::from(""));
 
     // Tokens
@@ -43,25 +44,25 @@ pub fn render_session_detail(f: &mut Frame, area: Rect, session: &SessionRecord,
     } else {
         format!("{} prompt / {} completion", format_tokens(session.prompt_tokens), format_tokens(session.completion_tokens))
     };
-    lines.extend(line_with_wrap("Tokens", &token_text, max_w, theme::current().purple, theme::current().fg));
+    lines.extend(line_with_wrap(lang::current().detail_tokens, &token_text, max_w, theme::current().purple, theme::current().fg));
     lines.push(Line::from(""));
 
     // Started
-    lines.extend(line_with_wrap("Started", &session.start_time, max_w, theme::current().purple, theme::current().dim));
+    lines.extend(line_with_wrap(lang::current().detail_started, &session.start_time, max_w, theme::current().purple, theme::current().dim));
     lines.push(Line::from(""));
 
     // Messages
-    lines.extend(line_with_wrap("Messages", &session.message_count.to_string(), max_w, theme::current().purple, theme::current().fg));
+    lines.extend(line_with_wrap(lang::current().detail_messages, &session.message_count.to_string(), max_w, theme::current().purple, theme::current().fg));
     lines.push(Line::from(""));
 
     // Size
-    lines.extend(line_with_wrap("Size", &format_size(session.size_bytes), max_w, theme::current().purple, theme::current().fg));
+    lines.extend(line_with_wrap(lang::current().detail_size, &format_size(session.size_bytes), max_w, theme::current().purple, theme::current().fg));
 
     let p = Paragraph::new(lines)
         .block(
             Block::bordered()
                 .border_set(ratatui::symbols::border::ROUNDED)
-                .title("Session Detail")
+                .title(lang::current().detail_title)
                 .border_style(Style::default().fg(theme::current().dim)),
         )
         .style(Style::default());
@@ -73,7 +74,7 @@ pub fn render_empty_detail(f: &mut Frame, area: Rect, hint: &str) {
     let p = Paragraph::new(vec![Line::from(""), Line::from(Span::styled(hint, Style::default().fg(theme::current().comment))).centered()]).block(
         Block::bordered()
             .border_set(ratatui::symbols::border::ROUNDED)
-            .title("Session Detail")
+            .title(lang::current().detail_title)
             .border_style(Style::default().fg(theme::current().dim)),
     );
     f.render_widget(p, area);

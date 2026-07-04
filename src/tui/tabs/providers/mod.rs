@@ -1,6 +1,7 @@
 pub mod form;
 
 use form::{EditForm, ProviderForm};
+use crate::tui::lang;
 use super::super::theme;
 use super::super::widgets::shared::{render_confirm_popup as shared_confirm, render_message_popup as shared_msg};
 use super::TabContent;
@@ -125,7 +126,7 @@ impl ProvidersTab {
     fn do_edit_provider(&mut self) {
         let Some(prov) = self.selected_provider() else { return };
         if !prov.source.can_delete() {
-            self.message = Some("Cannot edit system default provider".into());
+            self.message = Some(lang::current().msg_cannot_edit_sys_provider.into());
             return;
         }
         self.provider_form = Some(ProviderForm {
@@ -156,7 +157,7 @@ impl ProvidersTab {
     fn do_delete_provider(&mut self) {
         let Some(prov) = self.selected_provider() else { return };
         if !prov.source.can_delete() {
-            self.message = Some("Cannot delete system default provider".into());
+            self.message = Some(lang::current().msg_cannot_delete_sys_provider.into());
             return;
         }
         if let Err(e) = self.mgr.db().delete_provider(&prov.id, "claude") {
@@ -301,17 +302,17 @@ impl ProvidersTab {
 
     fn render_confirm_popup(&self, f: &mut Frame, area: Rect) {
         let (title, msg, c) = match self.confirm_action {
-            Some(ProviderAction::Switch) => (" Switch Model ", " Switch to this profile? ", theme::current().cyan),
+            Some(ProviderAction::Switch) => (lang::current().confirm_switch_title, lang::current().confirm_switch_msg, theme::current().cyan),
             Some(ProviderAction::Delete) => {
                 if self.panel == Panel::ProviderList {
-                    (" Delete Provider ", " Delete this provider? ", theme::current().red)
+                    (lang::current().confirm_delete_provider, " Delete this provider? ", theme::current().red)
                 } else {
-                    (" Delete Profile ", " Delete this profile? ", theme::current().red)
+                    (lang::current().confirm_delete_profile, " Delete this profile? ", theme::current().red)
                 }
             }
             _ => return,
         };
-        shared_confirm(f, area, title, msg, "Confirm", "Cancel", c, self.confirm_button);
+        shared_confirm(f, area, title, msg, lang::current().confirm_confirm, lang::current().confirm_cancel, c, self.confirm_button);
     }
 
     fn render_message_popup(&self, f: &mut Frame, area: Rect) {
@@ -341,7 +342,7 @@ impl TabContent for ProvidersTab {
                     Span::styled(" \u{b7} ", Style::default().fg(theme::current().dim)),
                     Span::styled(source_label(p.source), Style::default().fg(theme::current().comment)),
                     Span::styled(" \u{b7} ", Style::default().fg(theme::current().dim)),
-                    Span::styled(format!("{} profiles", p.profiles.len()), Style::default().fg(theme::current().comment)),
+                    Span::styled(format!("{} {}", p.profiles.len(), lang::current().profiles_count), Style::default().fg(theme::current().comment)),
                 ]),
                 Line::from(""),
             ])
@@ -349,7 +350,7 @@ impl TabContent for ProvidersTab {
 
         let prov_list = List::new(provider_items)
             .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                .title(format!("Providers ({})", self.providers.len()))
+                .title(format!("{} ({})", lang::current().providers_title, self.providers.len()))
                 .border_style(Style::default().fg(theme::current().dim)))
             .highlight_style(Style::default());
         f.render_stateful_widget(prov_list, left, &mut self.provider_state);
@@ -380,7 +381,7 @@ impl TabContent for ProvidersTab {
         if self.profiles.is_empty() {
             let p = Paragraph::new(vec![
                 Line::from(""),
-                Line::from(Span::styled("  No profiles configured", Style::default().fg(theme::current().comment))).centered(),
+                Line::from(Span::styled(lang::current().no_profiles, Style::default().fg(theme::current().comment))).centered(),
             ]).block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
                 .title("Profiles (0)")
                 .border_style(Style::default().fg(theme::current().dim)));
@@ -388,7 +389,7 @@ impl TabContent for ProvidersTab {
         } else {
             let prof_list = List::new(profile_items)
                 .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                    .title(format!("Profiles ({})", self.profiles.len()))
+                    .title(format!("{} ({})", lang::current().profiles_title, self.profiles.len()))
                     .border_style(if self.panel == Panel::ProfileList {
                         Style::default().fg(theme::current().cyan)
                     } else {
@@ -469,21 +470,21 @@ impl TabContent for ProvidersTab {
     fn shortcut_groups(&self) -> Vec<Vec<(String, Color)>> {
         match self.panel {
             Panel::ProviderList => vec![
-                vec![(" J/K ".into(), theme::current().comment), ("Nav".into(), theme::current().comment)],
-                vec![(" ⏎  ".into(), theme::current().comment), ("Profiles".into(), theme::current().comment)],
-                vec![(" A ".into(), theme::current().comment), ("Add".into(), theme::current().comment)],
-                vec![(" E ".into(), theme::current().comment), ("Edit".into(), theme::current().comment)],
-                vec![(" D ".into(), theme::current().comment), ("Del".into(), theme::current().comment)],
-                vec![(" Q ".into(), theme::current().comment), ("Quit".into(), theme::current().comment)],
+                vec![(" J/K ".into(), theme::current().comment), (lang::current().sc_nav.into(), theme::current().comment)],
+                vec![(" ⏎  ".into(), theme::current().comment), (lang::current().sc_profiles.into(), theme::current().comment)],
+                vec![(" A ".into(), theme::current().comment), (lang::current().sc_add.into(), theme::current().comment)],
+                vec![(" E ".into(), theme::current().comment), (lang::current().sc_edit.into(), theme::current().comment)],
+                vec![(" D ".into(), theme::current().comment), (lang::current().sc_delete.into(), theme::current().comment)],
+                vec![(" Q ".into(), theme::current().comment), (lang::current().sc_quit.into(), theme::current().comment)],
             ],
             Panel::ProfileList => vec![
-                vec![(" J/K ".into(), theme::current().comment), ("Nav".into(), theme::current().comment)],
-                vec![(" ⏎  ".into(), theme::current().comment), ("Switch".into(), theme::current().comment)],
-                vec![(" A ".into(), theme::current().comment), ("Add".into(), theme::current().comment)],
-                vec![(" D ".into(), theme::current().comment), ("Delete".into(), theme::current().comment)],
-                vec![(" E ".into(), theme::current().comment), ("Edit".into(), theme::current().comment)],
-                vec![(" Esc ".into(), theme::current().comment), ("Back".into(), theme::current().comment)],
-                vec![(" Q ".into(), theme::current().comment), ("Quit".into(), theme::current().comment)],
+                vec![(" J/K ".into(), theme::current().comment), (lang::current().sc_nav.into(), theme::current().comment)],
+                vec![(" ⏎  ".into(), theme::current().comment), (lang::current().sc_switch.into(), theme::current().comment)],
+                vec![(" A ".into(), theme::current().comment), (lang::current().sc_add.into(), theme::current().comment)],
+                vec![(" D ".into(), theme::current().comment), (lang::current().sc_delete.into(), theme::current().comment)],
+                vec![(" E ".into(), theme::current().comment), (lang::current().sc_edit.into(), theme::current().comment)],
+                vec![(" Esc ".into(), theme::current().comment), (lang::current().sc_back.into(), theme::current().comment)],
+                vec![(" Q ".into(), theme::current().comment), (lang::current().sc_quit.into(), theme::current().comment)],
             ],
         }
     }
@@ -538,7 +539,7 @@ impl ProvidersTab {
             KeyCode::Char('d') | KeyCode::Char('D') => {
                 if let Some(prov) = self.selected_provider() {
                     if !prov.source.can_delete() {
-                        self.message = Some("Cannot delete system default provider".into());
+                        self.message = Some(lang::current().msg_cannot_delete_sys_provider.into());
                     } else {
                         self.confirm_action = Some(ProviderAction::Delete);
                         self.confirm_button = 0;
@@ -588,7 +589,7 @@ impl ProvidersTab {
             KeyCode::Char('d') | KeyCode::Char('D') => {
                 if let Some(pr) = self.selected_profile() {
                     if !pr.source.can_delete() {
-                        self.message = Some("Cannot delete system default profile".into());
+                        self.message = Some(lang::current().msg_cannot_delete_sys_profile.into());
                         return true;
                     }
                 }
@@ -598,7 +599,7 @@ impl ProvidersTab {
             KeyCode::Char('e') | KeyCode::Char('E') => {
                 if let Some(pr) = self.selected_profile() {
                     if !pr.source.can_delete() {
-                        self.message = Some("Cannot edit system default profile".into());
+                        self.message = Some(lang::current().msg_cannot_edit_sys_profile.into());
                         return true;
                     }
                 }
@@ -612,5 +613,5 @@ impl ProvidersTab {
 }
 
 fn source_label(s: crate::core::models::Source) -> &'static str {
-    if s.can_delete() { "user" } else { "system" }
+    if s.can_delete() { lang::current().label_user } else { lang::current().label_system }
 }

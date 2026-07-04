@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use crate::tui::lang;
 
 use super::super::theme;
 use super::super::widgets::session_detail::{render_empty_detail, render_session_detail};
@@ -207,7 +208,7 @@ impl TabContent for HistoryTab {
                 render_empty_detail(f, right_chunks[0], "No session selected");
             }
         } else {
-            render_empty_detail(f, right_chunks[0], "No sessions available");
+            render_empty_detail(f, right_chunks[0], lang::current().no_sessions);
         }
 
         // Shortcut bar under detail preview
@@ -313,11 +314,11 @@ impl TabContent for HistoryTab {
 
     fn shortcut_groups(&self) -> Vec<Vec<(String, Color)>> {
         vec![
-            vec![(" J/K ".into(), theme::current().comment), ("Nav".into(), theme::current().comment)],
-            vec![(" / ".into(), theme::current().comment), ("Search".into(), theme::current().comment)],
-            vec![(" ⏎  ".into(), theme::current().comment), ("Open".into(), theme::current().comment)],
-            vec![(" D ".into(), theme::current().comment), ("Delete".into(), theme::current().comment)],
-            vec![(" Q ".into(), theme::current().comment), ("Quit".into(), theme::current().comment)],
+            vec![(" J/K ".into(), theme::current().comment), (lang::current().sc_nav.into(), theme::current().comment)],
+            vec![(" / ".into(), theme::current().comment), (lang::current().sc_search.into(), theme::current().comment)],
+            vec![(" ⏎  ".into(), theme::current().comment), (lang::current().sc_open.into(), theme::current().comment)],
+            vec![(" D ".into(), theme::current().comment), (lang::current().sc_delete.into(), theme::current().comment)],
+            vec![(" Q ".into(), theme::current().comment), (lang::current().sc_quit.into(), theme::current().comment)],
         ]
     }
 

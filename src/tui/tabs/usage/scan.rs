@@ -1,4 +1,5 @@
 use crate::tui::theme;
+use crate::tui::lang;
 use ratatui::{
     layout::Rect,
     style::Style,
@@ -34,7 +35,7 @@ pub fn render_scan_progress(
     let lines = vec![
         Line::from(""),
         Line::from(Span::styled(
-            format!("{}  Scanning Claude Code sessions...", spinner),
+            format!("{}  {}", spinner, lang::current().scan_scanning),
             Style::default().fg(theme::current().purple),
         )).centered(),
         Line::from(""),
@@ -43,12 +44,12 @@ pub fn render_scan_progress(
             Style::default().fg(theme::current().comment),
         )).centered(),
         Line::from(Span::styled(
-            format!("{} / {} files — {} records imported", files_done, files_total, records),
+            format!("{} / {} {} — {} {}", files_done, files_total, lang::current().scan_files, records, lang::current().scan_records),
             Style::default().fg(theme::current().comment),
         )).centered(),
         Line::from(""),
         Line::from(Span::styled(
-            "Data refreshes automatically when complete",
+            lang::current().scan_complete_hint,
             Style::default().fg(theme::current().dim),
         )).centered(),
     ];

@@ -1,4 +1,5 @@
 //! Daily usage chart rendering — extracted from usage/mod.rs
+use crate::tui::lang;
 use crate::tui::theme;
 use crate::tui::widgets::shared::format_tokens;
 use ratatui::{
@@ -39,7 +40,7 @@ pub fn render_daily_chart(
     if daily.is_empty() {
         let p = Paragraph::new(vec![
             Line::from(""),
-            Line::from(Span::styled("  最近 7 天没有使用该模型", Style::default().fg(theme::current().comment))).centered(),
+            Line::from(Span::styled(lang::current().no_usage_7d, Style::default().fg(theme::current().comment))).centered(),
             Line::from(""),
         ])
         .block(
@@ -74,7 +75,7 @@ pub fn render_daily_chart(
     if days.is_empty() {
         let p = Paragraph::new(vec![
             Line::from(""),
-            Line::from(Span::styled("  最近 7 天没有使用该模型", Style::default().fg(theme::current().comment))).centered(),
+            Line::from(Span::styled(lang::current().no_usage_7d, Style::default().fg(theme::current().comment))).centered(),
             Line::from(""),
         ])
         .block(

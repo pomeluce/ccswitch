@@ -1,4 +1,5 @@
 use super::super::theme;
+use crate::tui::lang;
 use ratatui::{
     layout::Rect,
     style::Style,
@@ -24,7 +25,7 @@ pub fn render_app_bar(f: &mut Frame, area: Rect, app_type: &str) {
             Style::default().fg(theme::current().dim)
         };
         // Capitalize first letter for display
-        let label = if *app == "claude" { "Claude" } else { "Codex" };
+        let label = if *app == "claude" { lang::current().app_claude } else { lang::current().app_codex };
         spans.push(Span::styled(format!(" {} ", label), style));
     }
 
