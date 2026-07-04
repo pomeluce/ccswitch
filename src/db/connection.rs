@@ -100,6 +100,7 @@ fn migrate_old_dbs(dir: &Path, new_path: &Path) -> Result<(), anyhow::Error> {
                                 r.get::<_, String>(3)?,
                             ))
                         })
+                        .map_err(|e| tracing::warn!("Migration query failed: {}", e))
                         .ok()
                         .into_iter()
                         .flat_map(|rows| rows.filter_map(|r| r.ok()))
@@ -112,7 +113,7 @@ fn migrate_old_dbs(dir: &Path, new_path: &Path) -> Result<(), anyhow::Error> {
                                  VALUES (?1, 'claude', ?2, ?3, ?4, 'anthropic')",
                                 rusqlite::params![id, name, api_url, api_key],
                             )
-                            .ok();
+                            .map_err(|e| tracing::warn!("Migration insert failed: {}", e)).ok();
                     }
                 }
 
@@ -133,6 +134,7 @@ fn migrate_old_dbs(dir: &Path, new_path: &Path) -> Result<(), anyhow::Error> {
                                 r.get::<_, i32>(7)?,
                             ))
                         })
+                        .map_err(|e| tracing::warn!("Migration query failed: {}", e))
                         .ok()
                         .into_iter()
                         .flat_map(|rows| rows.filter_map(|r| r.ok()))
@@ -145,7 +147,7 @@ fn migrate_old_dbs(dir: &Path, new_path: &Path) -> Result<(), anyhow::Error> {
                                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                                 rusqlite::params![id, provider_id, name, opus, sonnet, haiku, subagent, is_default],
                             )
-                            .ok();
+                            .map_err(|e| tracing::warn!("Migration insert failed: {}", e)).ok();
                     }
                 }
 
@@ -153,6 +155,7 @@ fn migrate_old_dbs(dir: &Path, new_path: &Path) -> Result<(), anyhow::Error> {
                 if let Ok(mut stmt) = old.prepare("SELECT key, value FROM settings") {
                     let rows: Vec<_> = stmt
                         .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                        .map_err(|e| tracing::warn!("Migration query failed: {}", e))
                         .ok()
                         .into_iter()
                         .flat_map(|rows| rows.filter_map(|r| r.ok()))
@@ -164,7 +167,7 @@ fn migrate_old_dbs(dir: &Path, new_path: &Path) -> Result<(), anyhow::Error> {
                                 "INSERT OR IGNORE INTO settings (key, value) VALUES (?1, ?2)",
                                 rusqlite::params![key, value],
                             )
-                            .ok();
+                            .map_err(|e| tracing::warn!("Migration insert failed: {}", e)).ok();
                     }
                 }
             }
@@ -215,7 +218,7 @@ fn migrate_old_dbs(dir: &Path, new_path: &Path) -> Result<(), anyhow::Error> {
                                          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                                         rusqlite::params![at, pid, pfid, sid, model, pt, ct, cr, cc, total, ts, ds],
                                     )
-                                    .ok();
+                                    .map_err(|e| tracing::warn!("Migration insert failed: {}", e)).ok();
                                 count += 1;
                             }
                         }
@@ -231,6 +234,7 @@ fn migrate_old_dbs(dir: &Path, new_path: &Path) -> Result<(), anyhow::Error> {
                         .query_map([], |r| {
                             Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
                         })
+                        .map_err(|e| tracing::warn!("Migration query failed: {}", e))
                         .ok()
                         .into_iter()
                         .flat_map(|rows| rows.filter_map(|r| r.ok()))
@@ -246,7 +250,7 @@ fn migrate_old_dbs(dir: &Path, new_path: &Path) -> Result<(), anyhow::Error> {
                                  VALUES (?1, ?2, 'usage')",
                                 rusqlite::params![format!("usage:{}", sid), mtime],
                             )
-                            .ok();
+                            .map_err(|e| tracing::warn!("Migration insert failed: {}", e)).ok();
                     }
                 }
             }
@@ -291,7 +295,7 @@ fn migrate_old_dbs(dir: &Path, new_path: &Path) -> Result<(), anyhow::Error> {
                                          VALUES (?1, 'claude', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                                         rusqlite::params![id, pp, pf, mode, st, et, pt, ct, mc, title, sz, fm],
                                     )
-                                    .ok();
+                                    .map_err(|e| tracing::warn!("Migration insert failed: {}", e)).ok();
                                 count += 1;
                             }
                         }
@@ -307,6 +311,7 @@ fn migrate_old_dbs(dir: &Path, new_path: &Path) -> Result<(), anyhow::Error> {
                         .query_map([], |r| {
                             Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
                         })
+                        .map_err(|e| tracing::warn!("Migration query failed: {}", e))
                         .ok()
                         .into_iter()
                         .flat_map(|rows| rows.filter_map(|r| r.ok()))
@@ -322,7 +327,7 @@ fn migrate_old_dbs(dir: &Path, new_path: &Path) -> Result<(), anyhow::Error> {
                                  VALUES (?1, ?2, 'session')",
                                 rusqlite::params![format!("session:{}", sid), mtime],
                             )
-                            .ok();
+                            .map_err(|e| tracing::warn!("Migration insert failed: {}", e)).ok();
                     }
                 }
             }

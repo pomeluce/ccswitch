@@ -95,13 +95,13 @@ impl Db {
         prompt_tokens: i64,
         completion_tokens: i64,
         cache_read_tokens: i64,
-        cache_create_tokens: i64,
+        cache_creation_tokens: i64,
         data_source: &str,
     ) -> Result<(), rusqlite::Error> {
-        let total = prompt_tokens + completion_tokens + cache_read_tokens + cache_create_tokens;
+        let total = prompt_tokens + completion_tokens + cache_read_tokens + cache_creation_tokens;
         self.conn().execute(
             "INSERT INTO usage_logs (app_type, model, provider_id, profile_id, session_id,
-             prompt_tokens, completion_tokens, cache_read_tokens, cache_create_tokens,
+             prompt_tokens, completion_tokens, cache_read_tokens, cache_creation_tokens,
              total_tokens, data_source)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
@@ -113,7 +113,7 @@ impl Db {
                 prompt_tokens,
                 completion_tokens,
                 cache_read_tokens,
-                cache_create_tokens,
+                cache_creation_tokens,
                 total,
                 data_source
             ],
@@ -129,7 +129,7 @@ impl Db {
             _ => "1=1",
         };
         let sql = format!(
-            "SELECT model, SUM(prompt_tokens), SUM(completion_tokens), SUM(cache_read_tokens), SUM(cache_create_tokens), COUNT(*)
+            "SELECT model, SUM(prompt_tokens), SUM(completion_tokens), SUM(cache_read_tokens), SUM(cache_creation_tokens), COUNT(*)
              FROM usage_logs WHERE app_type = ?1 AND {} GROUP BY model ORDER BY MAX(timestamp) DESC",
             date_filter
         );
@@ -155,7 +155,7 @@ impl Db {
     ) -> Result<Vec<(String, i64, i64, i64, i64)>, rusqlite::Error> {
         let sql = "SELECT date(timestamp) as day,
                           SUM(prompt_tokens), SUM(completion_tokens),
-                          SUM(cache_read_tokens), SUM(cache_create_tokens)
+                          SUM(cache_read_tokens), SUM(cache_creation_tokens)
                    FROM usage_logs
                    WHERE app_type = ?1 AND model = ?2
                      AND date(timestamp) >= date('now', '-6 days')
