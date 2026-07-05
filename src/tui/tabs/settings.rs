@@ -66,14 +66,14 @@ impl SettingsTab {
             (self.theme_idx + 1) % THEMES.len()
         } else if self.theme_idx == 0 { THEMES.len() - 1 } else { self.theme_idx - 1 };
         theme::set_theme(THEMES[self.theme_idx]);
-        self.mgr.set_setting("theme", THEMES[self.theme_idx]).ok();
+        if let Err(e) = self.mgr.set_setting("theme", THEMES[self.theme_idx]) { tracing::warn!("Failed to save theme: {}", e); }
     }
 
     fn cycle_mode(&mut self, forward: bool) {
         self.mode_idx = if forward {
             (self.mode_idx + 1) % MODES.len()
         } else if self.mode_idx == 0 { MODES.len() - 1 } else { self.mode_idx - 1 };
-        self.mgr.set_setting("proxy_mode", &(self.mode_idx == 1).to_string()).ok();
+        if let Err(e) = self.mgr.set_setting("proxy_mode", &(self.mode_idx == 1).to_string()) { tracing::warn!("Failed to save mode: {}", e); }
     }
 
     fn cycle_lang(&mut self, forward: bool) {
@@ -83,7 +83,7 @@ impl SettingsTab {
         } else if self.lang_idx == 0 { n - 1 } else { self.lang_idx - 1 };
         let name = lang::LANGS[self.lang_idx].0;
         lang::set_lang(name);
-        self.mgr.set_setting("language", name).ok();
+        if let Err(e) = self.mgr.set_setting("language", name) { tracing::warn!("Failed to save language: {}", e); }
     }
 }
 

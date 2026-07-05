@@ -7,8 +7,8 @@ use super::connection::Db;
 impl Db {
     pub fn insert_provider(&self, p: &Provider, app_type: &str) -> Result<(), rusqlite::Error> {
         self.conn().execute(
-            "INSERT OR REPLACE INTO providers (id, app_type, name, api_url, api_key, provider_type)
-             VALUES (?1, ?2, ?3, ?4, ?5, 'anthropic')",
+            "INSERT OR REPLACE INTO providers (id, app_type, name, api_url, api_key)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
             params![p.id, app_type, p.name, p.api_url, p.api_key],
         )?;
         Ok(())
@@ -40,24 +40,24 @@ impl Db {
     }
 }
 
-// ── Profiles ──
+// ── Profiles (shared between claude/codex) ──
 
 impl Db {
-    pub fn insert_profile(&self, provider_id: &str, p: &Profile, app_type: &str) -> Result<(), rusqlite::Error> {
+    pub fn insert_profile(&self, provider_id: &str, p: &Profile) -> Result<(), rusqlite::Error> {
         self.conn().execute(
-            "INSERT OR REPLACE INTO profiles (id, app_type, name, provider_id, reasoning_model, task_model, is_default)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![p.id, app_type, p.name, provider_id, p.reasoning_model, p.task_model, p.default as i32],
+            "INSERT OR REPLACE INTO profiles (id, name, provider_id, reasoning_model, task_model, is_default)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![p.id, p.name, provider_id, p.reasoning_model, p.task_model, p.default as i32],
         )?;
         Ok(())
     }
 
-    pub fn get_profiles(&self, provider_id: &str, app_type: &str) -> Result<Vec<Profile>, rusqlite::Error> {
+    pub fn get_profiles(&self, provider_id: &str) -> Result<Vec<Profile>, rusqlite::Error> {
         let mut stmt = self.conn().prepare(
             "SELECT id, name, reasoning_model, task_model, is_default
-             FROM profiles WHERE provider_id = ?1 AND app_type = ?2 ORDER BY name",
+             FROM profiles WHERE provider_id = ?1 ORDER BY name",
         )?;
-        let rows = stmt.query_map(params![provider_id, app_type], |row| {
+        let rows = stmt.query_map(params![provider_id], |row| {
             Ok(Profile {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -70,11 +70,8 @@ impl Db {
         rows.collect()
     }
 
-    pub fn delete_profile(&self, id: &str, app_type: &str) -> Result<(), rusqlite::Error> {
-        self.conn().execute(
-            "DELETE FROM profiles WHERE id = ?1 AND app_type = ?2",
-            params![id, app_type],
-        )?;
+    pub fn delete_profile(&self, id: &str) -> Result<(), rusqlite::Error> {
+        self.conn().execute("DELETE FROM profiles WHERE id = ?1", params![id])?;
         Ok(())
     }
 }

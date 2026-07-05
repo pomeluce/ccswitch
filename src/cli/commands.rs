@@ -147,7 +147,7 @@ fn handle_add(mgr: &ConfigManager, what: &str, parent_provider: Option<&str>) ->
                 default: false,
                 source: crate::core::models::Source::User,
             };
-            mgr.db().insert_profile(provider_id, &pr, "claude")?;
+            mgr.db().insert_profile(provider_id, &pr)?;
             println!("Profile added to provider '{}'.", provider.name);
         }
         _ => anyhow::bail!("Usage: ccs add <provider|profile> [parent_provider]"),
@@ -184,7 +184,7 @@ fn handle_remove(mgr: &ConfigManager, target: &str) -> Result<()> {
                 anyhow::bail!("Cannot delete system default profile '{}'", target);
             }
         }
-        mgr.db().delete_profile(profile_id, "claude")?;
+        mgr.db().delete_profile(profile_id)?;
         println!("Removed profile: {}", target);
     } else {
         let providers = mgr.list_providers()?;

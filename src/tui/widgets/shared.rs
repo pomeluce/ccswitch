@@ -134,7 +134,7 @@ pub fn render_message_popup(f: &mut Frame, area: Rect, msg: &str) {
         Line::from(""),
         Line::from(msg).centered(),
         Line::from(""),
-        Line::from(Span::styled("  OK  ", Style::default().fg(Color::Black).bg(theme::current().cyan))).centered(),
+        Line::from(Span::styled(lang::current().confirm_ok, Style::default().fg(Color::Black).bg(theme::current().cyan))).centered(),
     ])
     .block(
         Block::bordered()

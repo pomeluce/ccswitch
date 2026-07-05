@@ -88,7 +88,7 @@ impl ConfigManager {
         }
 
         for provider in &mut result {
-            let user_profiles = self.db.get_profiles(&provider.id, APP)?;
+            let user_profiles = self.db.get_profiles(&provider.id)?;
             for uprof in &user_profiles {
                 if let Some(existing_prof) = provider.profiles.iter_mut().find(|p| p.id == uprof.id) {
                     *existing_prof = uprof.clone(); existing_prof.source = Source::User;

@@ -52,6 +52,11 @@ pub struct Lang {
     pub confirm_delete_provider_msg: &'static str,
     pub confirm_confirm: &'static str,
     pub confirm_cancel: &'static str,
+    pub confirm_ok: &'static str,
+    pub confirm_delete_title: &'static str,
+    pub confirm_delete_session_msg: &'static str,
+    pub confirm_open_title: &'static str,
+    pub confirm_open_msg: &'static str,
     pub notice_title: &'static str,
     pub msg_cannot_delete_sys_profile: &'static str,
     pub msg_cannot_edit_sys_profile: &'static str,
@@ -101,9 +106,6 @@ pub struct Lang {
     pub app_codex: &'static str,
 
     // Confirm popup
-    pub btn_confirm: &'static str,
-    pub btn_cancel: &'static str,
-
     // Profile count
     pub profiles_count: &'static str,
 
@@ -162,6 +164,11 @@ const LANG_ZH: Lang = Lang {
     confirm_confirm: "确认",
     notice_title: " 提示 ",
     confirm_cancel: "取消",
+    confirm_ok: "确定",
+    confirm_delete_title: " 删除会话 ",
+    confirm_delete_session_msg: " 删除此会话？ ",
+    confirm_open_title: " 打开会话 ",
+    confirm_open_msg: " 在 Claude Code 中打开此会话？ ",
     msg_cannot_delete_sys_profile: "无法删除系统默认配置",
     msg_cannot_edit_sys_profile: "无法编辑系统默认配置",
     msg_cannot_delete_sys_provider: "无法删除系统默认供应商",
@@ -205,8 +212,6 @@ const LANG_ZH: Lang = Lang {
     app_claude: " Claude ",
     app_codex: " Codex ",
 
-    btn_confirm: "确认",
-    btn_cancel: "取消",
     profiles_count: "个配置",
     error_launch_claude: "启动 Claude 失败",
 };
@@ -260,6 +265,11 @@ const LANG_EN: Lang = Lang {
     notice_title: " Notice ",
     confirm_confirm: "Confirm",
     confirm_cancel: "Cancel",
+    confirm_ok: "OK",
+    confirm_delete_title: " Confirm Delete ",
+    confirm_delete_session_msg: " Delete this session? ",
+    confirm_open_title: " Open Session ",
+    confirm_open_msg: " Open this session in Claude Code? ",
     msg_cannot_delete_sys_profile: "Cannot delete system default profile",
     msg_cannot_edit_sys_profile: "Cannot edit system default profile",
     msg_cannot_delete_sys_provider: "Cannot delete system default provider",
@@ -303,8 +313,6 @@ const LANG_EN: Lang = Lang {
     app_claude: " Claude ",
     app_codex: " Codex ",
 
-    btn_confirm: "Confirm",
-    btn_cancel: "Cancel",
     profiles_count: "profiles",
     error_launch_claude: "Failed to launch Claude",
 };

@@ -237,7 +237,7 @@ impl ProvidersTab {
             reasoning_model: form.fields[2].clone(), task_model: form.fields[3].clone(),
             default: false, source: crate::core::models::Source::User,
         };
-        if let Err(e) = self.mgr.db().insert_profile(&form.prov_id, &pr, "claude") {
+        if let Err(e) = self.mgr.db().insert_profile(&form.prov_id, &pr) {
             self.message = Some(format!("Failed to save: {}", e));
             tracing::error!("Failed to insert user profile: {}", e);
             return;
@@ -279,7 +279,7 @@ impl ProvidersTab {
             if !prof.source.can_delete() { return; }
             prof.id.clone()
         };
-        if let Err(e) = self.mgr.db().delete_profile(&prof_id, "claude") {
+        if let Err(e) = self.mgr.db().delete_profile(&prof_id) {
             self.message = Some(format!("Failed to delete: {}", e));
             tracing::error!("Failed to delete user profile: {}", e);
             return;
@@ -360,7 +360,7 @@ impl TabContent for ProvidersTab {
 
         // ── Right: Profile list ──
         let profile_items: Vec<ListItem> = self.profiles.iter().enumerate().map(|(i, pr)| {
-            let is_sel = self.panel == Panel::ProfileList && self.selected_profile_idx == i;
+            let is_sel = self.selected_profile_idx == i;
             let arrow = if is_sel { "❯ " } else { "  " };
             let tc = if is_sel { theme::current().cyan } else { theme::current().fg };
             let active = self.active_profile == pr.id;
@@ -386,7 +386,7 @@ impl TabContent for ProvidersTab {
                 Line::from(""),
                 Line::from(Span::styled(lang::current().no_profiles, Style::default().fg(theme::current().comment))).centered(),
             ]).block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
-                .title("Profiles (0)")
+                .title(format!("{} (0)", lang::current().profiles_title))
                 .border_style(if self.panel == Panel::ProfileList {
                     Style::default().fg(theme::current().cyan)
                 } else {
@@ -440,9 +440,9 @@ impl TabContent for ProvidersTab {
         }
         if self.confirm_action.is_some() {
             match code {
-                KeyCode::Tab | KeyCode::Right | KeyCode::Char('j') | KeyCode::Char('l') =>
+                KeyCode::Tab | KeyCode::Right =>
                     self.confirm_button = (self.confirm_button + 1) % 2,
-                KeyCode::BackTab | KeyCode::Left | KeyCode::Char('k') | KeyCode::Char('h') =>
+                KeyCode::BackTab | KeyCode::Left =>
                     self.confirm_button = if self.confirm_button == 0 { 1 } else { 0 },
                 KeyCode::Enter => {
                     if self.confirm_button == 0 {

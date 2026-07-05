@@ -350,11 +350,11 @@ impl HistoryTab {
     fn render_confirm_popup(&self, f: &mut Frame, area: Rect) {
         let is_delete = self.confirm_action == Some(ConfirmAction::Delete);
         let (title, msg, c) = if is_delete {
-            (" Confirm Delete ", " Delete this session? ", theme::current().red)
+            (lang::current().confirm_delete_title, lang::current().confirm_delete_session_msg, theme::current().red)
         } else {
-            (" Open Session ", " Open this session in Claude Code? ", theme::current().cyan)
+            (lang::current().confirm_open_title, lang::current().confirm_open_msg, theme::current().cyan)
         };
-        shared_confirm(f, area, title, msg, "Confirm", "Cancel", c, self.confirm_button);
+        shared_confirm(f, area, title, msg, lang::current().confirm_confirm, lang::current().confirm_cancel, c, self.confirm_button);
     }
 
     fn render_search_box(&self, f: &mut Frame, area: Rect) {
