@@ -55,7 +55,14 @@ fn transform_sse_data(data_json: &str, original_model: &str, actual_model: &str)
     let ccs_model = actual_model.replace("[1m]", "");
     if let Some(msg) = json.get_mut("message") {
         if let Some(model) = msg.get_mut("model") {
-            *model = Value::String(original_model.to_string());
+            // If the actual upstream model had [1m] → also tag the original
+            // so Claude Code recognizes the 1M context variant when resuming
+            let restored = if actual_model.contains("[1m]") {
+                format!("{}[1m]", original_model)
+            } else {
+                original_model.to_string()
+            };
+            *model = Value::String(restored);
         }
         // Put ccs_ fields inside message so Claude Code preserves them in JSONL
         if let Some(msg_obj) = msg.as_object_mut() {
