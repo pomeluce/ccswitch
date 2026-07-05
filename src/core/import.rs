@@ -43,6 +43,8 @@ struct MessageContent {
     content: Option<serde_json::Value>,
     #[allow(dead_code)]
     role: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
     /// Proxy mode marker injected by CCSwitch
     #[serde(default)]
     ccs_proxy: Option<bool>,
@@ -77,16 +79,27 @@ fn extract_json_str(line: &str, key: &str) -> Option<String> {
     let after_key = &line[start + key.len()..];
     let colon = after_key.find(':')?;
     let after_colon = after_key[colon + 1..].trim();
-    if !after_colon.starts_with('"') { return None; }
+    if !after_colon.starts_with('"') {
+        return None;
+    }
     let content = &after_colon[1..];
     let mut result = String::new();
     let mut chars = content.chars();
     while let Some(c) = chars.next() {
-        if c == '\\' { chars.next(); continue; }
-        if c == '"' { break; }
+        if c == '\\' {
+            chars.next();
+            continue;
+        }
+        if c == '"' {
+            break;
+        }
         result.push(c);
     }
-    if result.is_empty() { None } else { Some(result) }
+    if result.is_empty() {
+        None
+    } else {
+        Some(result)
+    }
 }
 
 fn truncate_title(s: &str) -> String {
@@ -104,22 +117,16 @@ fn parse_timestamp(val: &serde_json::Value) -> Option<i64> {
             let ts = n.as_f64()? as i64;
             Some(if ts > 1_000_000_000_000 { ts } else { ts * 1000 })
         }
-        serde_json::Value::String(s) => {
-            chrono::DateTime::parse_from_rfc3339(s)
-                .ok()
-                .map(|dt| dt.timestamp_millis())
-        }
+        serde_json::Value::String(s) => chrono::DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.timestamp_millis()),
         _ => None,
     }
 }
 
 fn extract_command(text: &str) -> Option<String> {
-    let name = text
-        .split("<command-name>").nth(1)?
-        .split("</command-name>").next()?
-        .trim().to_string();
+    let name = text.split("<command-name>").nth(1)?.split("</command-name>").next()?.trim().to_string();
     let args = text
-        .split("<command-args>").nth(1)
+        .split("<command-args>")
+        .nth(1)
         .and_then(|s| s.split("</command-args>").next())
         .map(|s| s.trim())
         .filter(|s| !s.is_empty());
@@ -140,22 +147,17 @@ fn ts_to_iso(ts_ms: i64) -> String {
 
 /// Import with progress callback. Incremental: only processes files whose
 /// mtime differs from the stored index in session_log_sync.
-pub fn import_claude_sessions_with_progress(
-    db: &Db,
-    on_progress: impl Fn(usize, usize, usize),
-) -> Result<usize, anyhow::Error> {
+pub fn import_claude_sessions_with_progress(db: &Db, on_progress: impl Fn(usize, usize, usize)) -> Result<usize, anyhow::Error> {
     let projects_dir = claude_projects_dir();
     if !projects_dir.exists() {
         return Ok(0);
     }
 
     let file_index: HashMap<String, i64> = {
-        let mut stmt = db.conn().prepare(
-            "SELECT file_path, file_mtime FROM session_log_sync WHERE scan_type IN ('session','both')",
-        )?;
-        let rows = stmt.query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
-        })?;
+        let mut stmt = db
+            .conn()
+            .prepare("SELECT file_path, file_mtime FROM session_log_sync WHERE scan_type IN ('session','both')")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
         rows.filter_map(|r| r.ok()).collect()
     };
 
@@ -196,7 +198,9 @@ pub fn import_claude_sessions_with_progress(
                 )?;
             }
             Ok(None) => {}
-            Err(e) => { tracing::warn!("Failed to parse session file {:?}: {}", path, e); }
+            Err(e) => {
+                tracing::warn!("Failed to parse session file {:?}: {}", path, e);
+            }
         }
 
         let files_done = idx + 1;
@@ -241,11 +245,15 @@ fn detect_mode(lines: &[&str]) -> String {
         };
         if parsed.msg_type.as_deref() == Some("assistant") {
             if let Some(ref msg) = parsed.message {
+                // Skip synthetic messages (Claude Code internal, e.g. "No response requested")
+                if msg.model.as_deref() == Some("<synthetic>") {
+                    continue;
+                }
                 if msg.ccs_proxy == Some(true) {
                     return "proxy".to_string();
                 }
             }
-            // First assistant message found without proxy marker → local
+            // First real assistant message found without proxy marker → local
             return "local".to_string();
         }
     }
@@ -255,7 +263,8 @@ fn detect_mode(lines: &[&str]) -> String {
 fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::Error> {
     let meta = std::fs::metadata(path)?;
     let size_bytes = meta.len() as i64;
-    let file_mtime = meta.modified()
+    let file_mtime = meta
+        .modified()
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| {
@@ -286,32 +295,70 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
         if !in_range {
             if let Some(title) = parse_title_only(line) {
                 match title {
-                    TitleField::Custom(t) => { custom_title = Some(t); }
-                    TitleField::Ai(t) => { ai_title = Some(t); }
-                    TitleField::LastPrompt(t) => { last_prompt = Some(truncate_title(&t)); }
+                    TitleField::Custom(t) => {
+                        custom_title = Some(t);
+                    }
+                    TitleField::Ai(t) => {
+                        ai_title = Some(t);
+                    }
+                    TitleField::LastPrompt(t) => {
+                        last_prompt = Some(truncate_title(&t));
+                    }
                 }
             }
             continue;
         }
-        let parsed: JsonlLine = match serde_json::from_str(line) { Ok(l) => l, Err(_) => continue };
-        if let Some(ref sid) = parsed.session_id { if session_id.is_none() { session_id = Some(sid.clone()); } }
-        if let Some(ref c) = parsed.cwd { if cwd.is_none() { cwd = Some(c.clone()); } }
-        if let Some(ref ts) = parsed.timestamp { if created_at.is_none() { created_at = parse_timestamp(ts); } }
-        if let Some(ref ct) = parsed.custom_title { if !ct.is_empty() { custom_title = Some(ct.clone()); } }
-        if let Some(ref at) = parsed.ai_title { if !at.is_empty() { ai_title = Some(at.clone()); } }
-        if let Some(ref lp) = parsed.last_prompt { if !lp.is_empty() { last_prompt = Some(truncate_title(lp)); } }
+        let parsed: JsonlLine = match serde_json::from_str(line) {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+        if let Some(ref sid) = parsed.session_id {
+            if session_id.is_none() {
+                session_id = Some(sid.clone());
+            }
+        }
+        if let Some(ref c) = parsed.cwd {
+            if cwd.is_none() {
+                cwd = Some(c.clone());
+            }
+        }
+        if let Some(ref ts) = parsed.timestamp {
+            if created_at.is_none() {
+                created_at = parse_timestamp(ts);
+            }
+        }
+        if let Some(ref ct) = parsed.custom_title {
+            if !ct.is_empty() {
+                custom_title = Some(ct.clone());
+            }
+        }
+        if let Some(ref at) = parsed.ai_title {
+            if !at.is_empty() {
+                ai_title = Some(at.clone());
+            }
+        }
+        if let Some(ref lp) = parsed.last_prompt {
+            if !lp.is_empty() {
+                last_prompt = Some(truncate_title(lp));
+            }
+        }
     }
 
     let mut fallback_title: Option<String> = None;
     if custom_title.is_none() && ai_title.is_none() && last_prompt.is_none() {
         for line in lines.iter().rev().take(tail_count) {
-            let parsed: JsonlLine = match serde_json::from_str(line) { Ok(l) => l, Err(_) => continue };
+            let parsed: JsonlLine = match serde_json::from_str(line) {
+                Ok(l) => l,
+                Err(_) => continue,
+            };
             if parsed.msg_type.as_deref() == Some("user") {
                 if let Some(ref msg) = parsed.message {
                     if let Some(ref content) = msg.content {
                         if let Some(text) = content.as_str() {
                             let t = text.trim();
-                            if t.is_empty() { continue; }
+                            if t.is_empty() {
+                                continue;
+                            }
                             if t.starts_with('<') {
                                 if let Some(cmd) = extract_command(t) {
                                     fallback_title = Some(cmd);
@@ -328,9 +375,7 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
         }
     }
 
-    let session_id = session_id.or_else(|| {
-        path.file_stem().and_then(|n| n.to_str()).map(|s| s.to_string())
-    }).unwrap_or_default();
+    let session_id = session_id.or_else(|| path.file_stem().and_then(|n| n.to_str()).map(|s| s.to_string())).unwrap_or_default();
 
     if session_id.is_empty() {
         return Ok(None);
@@ -338,15 +383,8 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
 
     let cwd = cwd.unwrap_or_default();
     let start_time = created_at.map(ts_to_iso).unwrap_or_default();
-    let project_name = std::path::Path::new(&cwd)
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_default();
-    let title = custom_title
-        .or(ai_title)
-        .or(last_prompt)
-        .or(fallback_title)
-        .unwrap_or(project_name);
+    let project_name = std::path::Path::new(&cwd).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let title = custom_title.or(ai_title).or(last_prompt).or(fallback_title).unwrap_or(project_name);
 
     // Detect proxy mode: scan last 30 lines for assistant message with ccs_proxy marker
     let mode = detect_mode(&lines);
@@ -405,12 +443,7 @@ struct UsageData {
 }
 
 /// Background-thread function: collect changed files, parse them, send batches via channel.
-pub fn parse_files_in_background(
-    app_type: String,
-    ctx: ScanContext,
-    batch_size: usize,
-    tx: std::sync::mpsc::Sender<ScanEvent>,
-) {
+pub fn parse_files_in_background(app_type: String, ctx: ScanContext, batch_size: usize, tx: std::sync::mpsc::Sender<ScanEvent>) {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
     let projects_dir = PathBuf::from(&home).join(".claude/projects");
     let mut changed_files: Vec<(PathBuf, String)> = Vec::new();
@@ -424,8 +457,7 @@ pub fn parse_files_in_background(
         return;
     }
 
-    let known_set: std::collections::HashSet<&str> =
-        ctx.known_msg_ids.iter().map(|s| s.as_str()).collect();
+    let known_set: std::collections::HashSet<&str> = ctx.known_msg_ids.iter().map(|s| s.as_str()).collect();
     let mut total_records = 0usize;
     let mut last_report = 0usize;
 
@@ -455,10 +487,7 @@ pub fn parse_files_in_background(
     let _ = tx.send(ScanEvent::Done {});
 }
 
-fn parse_single_file(
-    path: &PathBuf,
-    known_msg_ids: &std::collections::HashSet<&str>,
-) -> Vec<UsageRecord> {
+fn parse_single_file(path: &PathBuf, known_msg_ids: &std::collections::HashSet<&str>) -> Vec<UsageRecord> {
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
         Err(_) => return Vec::new(),
@@ -478,12 +507,7 @@ fn parse_single_file(
                 return None;
             }
             // Prefer ccs_model (actual upstream model from proxy) over message.model
-            let model = msg
-                .ccs_model
-                .as_deref()
-                .or(msg.model.as_deref())
-                .unwrap_or("unknown")
-                .replace("[1m]", "");
+            let model = msg.ccs_model.as_deref().or(msg.model.as_deref()).unwrap_or("unknown").replace("[1m]", "");
             if model == "<synthetic>" {
                 return None;
             }
@@ -510,11 +534,7 @@ fn parse_single_file(
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-pub fn collect_changed_files(
-    dir: &PathBuf,
-    out: &mut Vec<(PathBuf, String)>,
-    file_index: &HashMap<String, i64>,
-) {
+pub fn collect_changed_files(dir: &PathBuf, out: &mut Vec<(PathBuf, String)>, file_index: &HashMap<String, i64>) {
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
