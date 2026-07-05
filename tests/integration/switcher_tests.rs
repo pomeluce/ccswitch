@@ -18,16 +18,13 @@ api_key = "sk-test-key"
 [[providers.profiles]]
 id = "prof1"
 name = "Default"
-opus = "opus-model"
-sonnet = "sonnet-model"
-haiku = "haiku-model"
-subagent = "sub-model"
+reasoning_model = "r-model"
+task_model = "t-model"
 default = true
 "#).unwrap();
 
     let db_path = dir.path().join("test.db");
     let settings_path = dir.path().join("settings.json");
-    // Simulate HOME
     std::env::set_var("HOME", dir.path().to_str().unwrap());
 
     let mgr = ConfigManager::new(&db_path, Some(&defaults_path)).unwrap();
@@ -36,13 +33,15 @@ default = true
         Some(&settings_path),
     ).unwrap();
 
-    assert_eq!(config.opus_model, "opus-model");
+    assert_eq!(config.reasoning_model, "r-model");
+    assert_eq!(config.task_model, "t-model");
     assert_eq!(config.auth_token, "sk-test-key");
 
-    // Verify settings.json was written
     let content = fs::read_to_string(&settings_path).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-    assert_eq!(parsed["env"]["ANTHROPIC_MODEL"], "opus-model");
+    assert_eq!(parsed["env"]["ANTHROPIC_MODEL"], "r-model");
+    assert_eq!(parsed["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "t-model");
+    assert_eq!(parsed["env"]["CLAUDE_CODE_SUBAGENT_MODEL"], "t-model");
     assert_eq!(parsed["env"]["ANTHROPIC_BASE_URL"], "https://api.test.com");
 }
 
@@ -60,10 +59,8 @@ api_key = "env:TEST_KEY"
 [[providers.profiles]]
 id = "prof1"
 name = "Default"
-opus = "opus-model"
-sonnet = "sonnet-model"
-haiku = "haiku-model"
-subagent = "sub-model"
+reasoning_model = "r-model"
+task_model = "t-model"
 "#).unwrap();
 
     std::env::set_var("TEST_KEY", "resolved-key");
@@ -76,9 +73,7 @@ subagent = "sub-model"
         Some(&settings_path),
     ).unwrap();
 
-    // In proxy mode, settings.json points to localhost
     assert_eq!(config.base_url, "http://127.0.0.1:15721");
-    // SQLite should have active settings
     assert_eq!(mgr.get_setting("active_provider"), Some("p1".into()));
     assert_eq!(mgr.get_setting("active_profile"), Some("prof1".into()));
     assert_eq!(mgr.get_setting("proxy_mode"), Some("true".into()));

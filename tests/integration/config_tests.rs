@@ -29,7 +29,7 @@ default = true
     .unwrap();
 
     let db_path = dir.path().join("test.db");
-    let mgr = ConfigManager::new(&db_path, Some(&defaults_path)).unwrap();
+    let mgr = ConfigManager::new(&dir.path().join("ccswitch.db"), Some(&defaults_path)).unwrap();
     let providers = mgr.list_providers().unwrap();
     assert_eq!(providers.len(), 1);
     assert_eq!(providers[0].name, "Test Provider");
@@ -63,22 +63,21 @@ subagent = "sys-sub"
     .unwrap();
 
     // ConfigManager uses model.db (not test.db) — open and pre-populate that.
-    let db_path = dir.path().join("model.db");
-    let db = Db::open(&db_path).unwrap();
+    let db = Db::open(&dir.path().join("ccswitch.db")).unwrap();
     // User adds a new profile under the system provider
     use ccswitch::core::models::{Provider, Source};
-    db.insert_user_provider(&Provider {
+    db.insert_provider(&Provider {
         id: "p1".into(),
         name: "My Override".into(),
         api_url: "https://my.example.com".into(),
         api_key: "sk-xyz".into(),
         profiles: vec![],
         source: Source::User,
-    })
+    }, "claude")
     .unwrap();
     drop(db);
 
-    let mgr = ConfigManager::new(&db_path, Some(&defaults_path)).unwrap();
+    let mgr = ConfigManager::new(&dir.path().join("ccswitch.db"), Some(&defaults_path)).unwrap();
     let providers = mgr.list_providers().unwrap();
     let p1 = providers.iter().find(|p| p.id == "p1").unwrap();
     // User override wins for provider fields
