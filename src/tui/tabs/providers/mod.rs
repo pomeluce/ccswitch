@@ -304,9 +304,9 @@ impl ProvidersTab {
             Some(ProviderAction::Switch) => (lang::current().confirm_switch_title, lang::current().confirm_switch_msg, theme::current().cyan),
             Some(ProviderAction::Delete) => {
                 if self.panel == Panel::ProviderList {
-                    (lang::current().confirm_delete_provider, " Delete this provider? ", theme::current().red)
+                    (lang::current().confirm_delete_provider, lang::current().confirm_delete_provider_msg, theme::current().red)
                 } else {
-                    (lang::current().confirm_delete_profile, " Delete this profile? ", theme::current().red)
+                    (lang::current().confirm_delete_profile, lang::current().confirm_delete_profile_msg, theme::current().red)
                 }
             }
             _ => return,
@@ -328,7 +328,7 @@ impl TabContent for ProvidersTab {
 
         // ── Left: Provider list ──
         let provider_items: Vec<ListItem> = self.providers.iter().enumerate().map(|(i, p)| {
-            let is_sel = self.panel == Panel::ProviderList && self.selected_provider_idx == i;
+            let is_sel = self.selected_provider_idx == i;
             let arrow = if is_sel { "❯ " } else { "  " };
             let tc = if is_sel { theme::current().cyan } else { theme::current().fg };
             ListItem::new(vec![
@@ -350,7 +350,11 @@ impl TabContent for ProvidersTab {
         let prov_list = List::new(provider_items)
             .block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
                 .title(format!("{} ({})", lang::current().providers_title, self.providers.len()))
-                .border_style(Style::default().fg(theme::current().dim)))
+                .border_style(if self.panel == Panel::ProviderList {
+                    Style::default().fg(theme::current().cyan)
+                } else {
+                    Style::default().fg(theme::current().dim)
+                }))
             .highlight_style(Style::default());
         f.render_stateful_widget(prov_list, left, &mut self.provider_state);
 
@@ -383,7 +387,11 @@ impl TabContent for ProvidersTab {
                 Line::from(Span::styled(lang::current().no_profiles, Style::default().fg(theme::current().comment))).centered(),
             ]).block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED)
                 .title("Profiles (0)")
-                .border_style(Style::default().fg(theme::current().dim)));
+                .border_style(if self.panel == Panel::ProfileList {
+                    Style::default().fg(theme::current().cyan)
+                } else {
+                    Style::default().fg(theme::current().dim)
+                }));
             f.render_widget(p, right);
         } else {
             let prof_list = List::new(profile_items)
@@ -582,10 +590,13 @@ impl ProvidersTab {
                 }
             }
             KeyCode::Enter => {
-                self.confirm_action = Some(ProviderAction::Switch);
-                self.confirm_button = 0;
+                if !self.profiles.is_empty() {
+                    self.confirm_action = Some(ProviderAction::Switch);
+                    self.confirm_button = 0;
+                }
             }
             KeyCode::Char('d') | KeyCode::Char('D') => {
+                if self.profiles.is_empty() { return false; }
                 if let Some(pr) = self.selected_profile() {
                     if !pr.source.can_delete() {
                         self.message = Some(lang::current().msg_cannot_delete_sys_profile.into());
@@ -596,6 +607,7 @@ impl ProvidersTab {
                 self.confirm_button = 0;
             }
             KeyCode::Char('e') | KeyCode::Char('E') => {
+                if self.profiles.is_empty() { return false; }
                 if let Some(pr) = self.selected_profile() {
                     if !pr.source.can_delete() {
                         self.message = Some(lang::current().msg_cannot_edit_sys_profile.into());

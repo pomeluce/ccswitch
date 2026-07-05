@@ -139,7 +139,7 @@ pub fn render_message_popup(f: &mut Frame, area: Rect, msg: &str) {
     .block(
         Block::bordered()
             .border_set(ratatui::symbols::border::ROUNDED)
-            .title(Line::from(" Notice ").centered())
+            .title(Line::from(lang::current().notice_title).centered())
             .border_style(Style::default().fg(theme::current().yellow)),
     );
     f.render_widget(Clear, popup);
