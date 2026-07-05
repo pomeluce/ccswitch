@@ -19,10 +19,8 @@ api_key = "env:TEST_KEY"
 [[providers.profiles]]
 id = "test-profile"
 name = "Test Profile"
-opus = "model-opus"
-sonnet = "model-sonnet"
-haiku = "model-haiku"
-subagent = "model-sub"
+reasoning_model = "model-reasoning"
+task_model = "model-task"
 default = true
 "#,
     )
@@ -54,10 +52,8 @@ api_key = "env:SYS_KEY"
 [[providers.profiles]]
 id = "prof1"
 name = "System Profile"
-opus = "sys-opus"
-sonnet = "sys-sonnet"
-haiku = "sys-haiku"
-subagent = "sys-sub"
+reasoning_model = "sys-reasoning"
+task_model = "sys-task"
 "#,
     )
     .unwrap();
@@ -66,14 +62,17 @@ subagent = "sys-sub"
     let db = Db::open(&dir.path().join("ccswitch.db")).unwrap();
     // User adds a new profile under the system provider
     use ccswitch::core::models::{Provider, Source};
-    db.insert_provider(&Provider {
-        id: "p1".into(),
-        name: "My Override".into(),
-        api_url: "https://my.example.com".into(),
-        api_key: "sk-xyz".into(),
-        profiles: vec![],
-        source: Source::User,
-    }, "claude")
+    db.insert_provider(
+        &Provider {
+            id: "p1".into(),
+            name: "My Override".into(),
+            api_url: "https://my.example.com".into(),
+            api_key: "sk-xyz".into(),
+            profiles: vec![],
+            source: Source::User,
+        },
+        "claude",
+    )
     .unwrap();
     drop(db);
 
@@ -87,4 +86,3 @@ subagent = "sys-sub"
     assert_eq!(p1.profiles.len(), 1);
     assert_eq!(p1.profiles[0].name, "System Profile");
 }
-
