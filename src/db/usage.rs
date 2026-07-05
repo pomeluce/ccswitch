@@ -58,6 +58,7 @@ impl Db {
     pub fn insert_usage_log(
         &self,
         app_type: &str,
+        model: &str,
         provider_id: &str,
         profile_id: &str,
         session_id: Option<&str>,
@@ -75,7 +76,7 @@ impl Db {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 app_type,
-                provider_id,
+                model,
                 provider_id,
                 profile_id,
                 session_id,
@@ -195,41 +196,46 @@ impl Db {
         records: &[UsageRecord],
     ) -> Result<usize, anyhow::Error> {
         let mut imported = 0usize;
-        self.conn().execute("BEGIN", [])?;
-        for r in records {
-            self.conn().execute(
-                "INSERT OR IGNORE INTO usage_logs (app_type, model, provider_id, profile_id, session_id, message_id,
-                 prompt_tokens, completion_tokens, cache_read_tokens, cache_creation_tokens, total_tokens, timestamp, data_source)
-                 VALUES (?1, ?2, '', '', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'import')",
-                params![
-                    app_type,
-                    r.model,
-                    sid,
-                    r.msg_id,
-                    r.input,
-                    r.output,
-                    r.cr,
-                    r.cc,
-                    r.input + r.output + r.cr + r.cc,
-                    r.date
-                ],
-            )?;
-            imported += 1;
+        let result: Result<usize, anyhow::Error> = (|| {
+            self.conn().execute("BEGIN", [])?;
+            for r in records {
+                self.conn().execute(
+                    "INSERT OR IGNORE INTO usage_logs (app_type, model, provider_id, profile_id, session_id, message_id,
+                     prompt_tokens, completion_tokens, cache_read_tokens, cache_creation_tokens, total_tokens, timestamp, data_source)
+                     VALUES (?1, ?2, '', '', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'import')",
+                    params![
+                        app_type,
+                        r.model,
+                        sid,
+                        r.msg_id,
+                        r.input,
+                        r.output,
+                        r.cr,
+                        r.cc,
+                        r.input + r.output + r.cr + r.cc,
+                        r.date
+                    ],
+                )?;
+                imported += 1;
+            }
+            if let Some(mtime) = file_mtime(file_path) {
+                let now_iso = chrono::Local::now()
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string();
+                let file_path_str = file_path.to_string_lossy().to_string();
+                self.conn().execute(
+                    "INSERT OR REPLACE INTO session_log_sync (file_path, file_mtime, scan_type, last_synced_at)
+                     VALUES (?1, ?2, 'usage', ?3)",
+                    params![file_path_str, mtime, now_iso],
+                )?;
+            }
+            self.conn().execute("COMMIT", [])?;
+            Ok(imported)
+        })();
+        if result.is_err() {
+            let _ = self.conn().execute("ROLLBACK", []);
         }
-        // Update session_log_sync
-        if let Some(mtime) = file_mtime(file_path) {
-            let now_iso = chrono::Local::now()
-                .format("%Y-%m-%d %H:%M:%S")
-                .to_string();
-            let file_path_str = file_path.to_string_lossy().to_string();
-            self.conn().execute(
-                "INSERT OR REPLACE INTO session_log_sync (file_path, file_mtime, scan_type, last_synced_at)
-                 VALUES (?1, ?2, 'usage', ?3)",
-                params![file_path_str, mtime, now_iso],
-            )?;
-        }
-        self.conn().execute("COMMIT", [])?;
-        Ok(imported)
+        result
     }
 }
 

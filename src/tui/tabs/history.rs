@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use crate::tui::lang;
+use std::sync::Arc;
 
 use super::super::theme;
 use super::super::widgets::session_detail::{render_empty_detail, render_session_detail};
@@ -31,6 +31,7 @@ pub struct HistoryTab {
     pub confirm_action: Option<ConfirmAction>,
     pub needs_terminal_reinit: bool,
     pub launch_project: Option<String>,
+    pub launch_session_id: Option<String>,
     confirm_button: usize, // 0=Confirm, 1=Cancel
     mgr: Arc<ConfigManager>,
 }
@@ -60,6 +61,7 @@ impl HistoryTab {
             confirm_action: None,
             needs_terminal_reinit: false,
             launch_project: None,
+            launch_session_id: None,
             confirm_button: 0,
             mgr,
         }
@@ -112,6 +114,7 @@ impl HistoryTab {
             if let Some(s) = self.sessions.get(idx) {
                 self.needs_terminal_reinit = true;
                 self.launch_project = Some(s.project_path.clone());
+                self.launch_session_id = Some(s.id.clone());
             }
         }
     }

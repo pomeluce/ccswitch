@@ -27,9 +27,14 @@ impl ProxyServer {
     /// Listens on `127.0.0.1:<port>` and handles all requests by forwarding
     /// them to the active upstream provider.
     pub async fn serve(self, port: u16) -> anyhow::Result<()> {
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(30))
+            .timeout(std::time::Duration::from_secs(600))
+            .build()?;
+
         let state = Arc::new(ProxyState {
             mgr: self.mgr.clone(),
-            client: reqwest::Client::new(),
+            client,
         });
 
         let app = Router::<Arc<ProxyState>>::new()

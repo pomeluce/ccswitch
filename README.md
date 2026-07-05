@@ -9,7 +9,7 @@ Claude Code 模型配置管理器 — Rust TUI + CLI 工具。
 - **模型管理**：按供应商组织模型配置（DeepSeek, OpenRouter, Z.AI 等），两层导航
 - **一键切换**：本地模式直接写入 `~/.claude/settings.json`，代理模式更新 SQLite
 - **会话历史**：自动扫描 Claude Code 本地会话文件，支持搜索、过滤
-- **代理服务**：本地 HTTP 代理（端口 15721），systemd user service / 后台进程
+- **代理服务**：本地 HTTP 代理（端口 15721），自动模型名转换，支持 systemd / launchd / 计划任务后台运行
 - **Token 用量**：按模型统计 Token 消耗，带缓存避免每帧查询
 - **多语言**：内置中文 / English 切换，设置持久化
 
@@ -59,7 +59,7 @@ Claude Code 模型配置管理器 — Rust TUI + CLI 工具。
 }
 ```
 
-Home Manager 会自动将配置写入 `~/.config/ccswitch/defaults.toml`，并安装 systemd user service。
+Home Manager 会自动将配置写入 `~/.config/ccswitch/defaults.toml`，并安装 systemd user service（从 `assets/ccs-proxy.service` 读取）。
 
 #### NixOS 全局安装
 
@@ -175,6 +175,13 @@ ccs proxy start                  # 后台启动代理（自动检测 systemd）
 ccs proxy stop                   # 停止代理
 ccs proxy status                 # 查看代理状态
 ccs proxy serve                  # 前台运行代理（调试用）
+ccs service install              # 安装后台服务（开机自启）
+ccs service uninstall            # 卸载后台服务
+
+# 服务安装平台支持：
+#   Linux   → systemd user service
+#   macOS   → launchd agent
+#   Windows → 计划任务 (Schtasks)
 
 # 用量与历史
 ccs usage                        # Token 用量统计（默认本周）
@@ -288,38 +295,56 @@ task_model = "anthropic/claude-haiku-4"
 
 ### 设置标签页
 
+单面板居中布局，所有设置项垂直排列。
+
 | 键            | 功能                       |
 | ------------- | -------------------------- |
 | `J/K` `↑/↓`   | 选择设置项                 |
-| `←/→` `Enter` | 切换选项值                  |
+| `H/L` `←/→`  | 切换选项值                  |
 
 支持切换主题（7 种）、模式（local / proxy）、语言（中文 / English）。
+切换模式会立即生效（自动重写 `settings.json`）。
 
 ## 写入映射
 
-切换 profile 时写入 Claude Code 的 `settings.json`：
+切换 profile 时写入 Claude Code 的 `settings.json`。
+
+### Local 模式
 
 | 环境变量                          | 值                     |
 | --------------------------------- | ---------------------- |
+| `ANTHROPIC_AUTH_TOKEN`            | 解析后的 API key       |
+| `ANTHROPIC_BASE_URL`              | 上游 API 地址          |
 | `ANTHROPIC_MODEL`                 | `reasoning_model`      |
 | `ANTHROPIC_DEFAULT_OPUS_MODEL`    | `reasoning_model`      |
 | `ANTHROPIC_DEFAULT_SONNET_MODEL`  | `reasoning_model`      |
 | `ANTHROPIC_DEFAULT_HAIKU_MODEL`   | `task_model`（去 [1m]）|
 | `CLAUDE_CODE_SUBAGENT_MODEL`      | `task_model`（去 [1m]）|
 
+### Proxy 模式
+
+| 环境变量                          | 值                          |
+| --------------------------------- | --------------------------- |
+| `ANTHROPIC_AUTH_TOKEN`            | `ccswitch-proxy`（占位符）  |
+| `ANTHROPIC_BASE_URL`              | `http://127.0.0.1:15721`   |
+
+模型变量不在 settings.json 中设置，由 proxy server 透明处理。
+
 ## 模式
 
-### 本地模式
+### 本地模式（Local）
 
-直接修改 `~/.claude/settings.json` 的 `env` 字段（只更新模型相关变量，保留用户其他配置）。
+直接修改 `~/.claude/settings.json` 的 `env` 字段，Claude Code 直接访问上游 API。
 
-### 代理模式
+### 代理模式（Proxy）
 
-1. 启动本地代理监听 `127.0.0.1:15721`
-2. 自动设置 `ANTHROPIC_BASE_URL` 指向本地代理
-3. 代理根据当前选中的 profile 转发请求到上游 API
-4. 切换 profile 时无需重启代理，代理每次请求读取最新配置
-5. 支持流式 SSE 响应透传
+1. `ccs service install` 安装后台服务（或 `ccs proxy start` 手动启动）
+2. 代理监听 `127.0.0.1:15721`
+3. `settings.json` 的 `ANTHROPIC_BASE_URL` 指向代理，Claude Code 所有请求经过代理
+4. 代理自动进行模型名转换：
+   - 请求体：`claude-opus-4-8` → `reasoning_model`，其他 → `task_model`，去除 `[1m]`
+   - 响应流：`message.model` 还原为原始名称，注入 `ccs_model` / `ccs_proxy` 标记
+5. 切换 profile 无需重启代理，代理每次请求从 DB 读取最新配置
 6. 自动记录 Token 用量到 SQLite
 
 ## 开发

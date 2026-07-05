@@ -165,6 +165,7 @@ impl UsageTab {
                 Err(mpsc::TryRecvError::Disconnected) => {
                     self.scan_state = ScanState::Idle;
                     self.scan_rx = None;
+                    self.scan_handle = None;
                     return;
                 }
             },

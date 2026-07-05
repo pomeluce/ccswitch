@@ -2,7 +2,7 @@ use anyhow::Context;
 use rusqlite::Connection;
 
 /// Current schema version. Increment each time we add a migration step.
-pub(crate) const CURRENT_USER_VERSION: i32 = 1;
+pub(crate) const CURRENT_USER_VERSION: i32 = 2;
 
 /// Apply schema migrations on the given connection.
 pub(crate) fn apply_migrations(conn: &Connection) -> Result<(), anyhow::Error> {
@@ -21,6 +21,9 @@ pub(crate) fn apply_migrations(conn: &Connection) -> Result<(), anyhow::Error> {
 
     if version < 1 {
         migrate_v1(conn).context("migrate v1")?;
+    }
+    if version < 2 {
+        migrate_v2(conn).context("migrate v2")?;
     }
 
     Ok(())
@@ -156,5 +159,20 @@ fn migrate_v1(conn: &Connection) -> Result<(), anyhow::Error> {
     )?;
 
     tracing::info!("Migration v1 complete: 10 tables created");
+    Ok(())
+}
+
+fn migrate_v2(conn: &Connection) -> Result<(), anyhow::Error> {
+    conn.execute_batch(
+        "BEGIN;
+         -- Add source column (system = defaults.toml, user = manually added)
+         ALTER TABLE providers ADD COLUMN source TEXT NOT NULL DEFAULT 'user';
+         ALTER TABLE profiles ADD COLUMN source TEXT NOT NULL DEFAULT 'user';
+
+         PRAGMA user_version = 2;
+         COMMIT;",
+    )?;
+
+    tracing::info!("Migration v2 complete: source columns added");
     Ok(())
 }

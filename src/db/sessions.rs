@@ -1,6 +1,6 @@
+use super::connection::Db;
 use rusqlite::params;
 use serde::Serialize;
-use super::connection::Db;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SessionRecord {
@@ -23,7 +23,6 @@ pub struct SessionRecord {
 }
 
 impl Db {
-    #[allow(dead_code)]
     pub fn insert_session(&self, s: &SessionRecord, app_type: &str) -> Result<(), rusqlite::Error> {
         self.conn().execute(
             "INSERT OR REPLACE INTO session_history (id, app_type, project_path, profile_id, mode, start_time, end_time, prompt_tokens, completion_tokens, message_count, title, size_bytes, file_mtime)
@@ -33,22 +32,41 @@ impl Db {
         Ok(())
     }
 
-    /// Delete a session record by ID.
+    /// Delete a session record, its usage logs, and the on-disk JSONL file.
     pub fn delete_session(&self, id: &str) -> Result<(), rusqlite::Error> {
-        self.conn().execute(
-            "DELETE FROM session_history WHERE id = ?1",
-            params![id],
-        )?;
+        self.conn().execute("DELETE FROM usage_logs WHERE session_id = ?1", params![id])?;
+        self.conn().execute("DELETE FROM session_history WHERE id = ?1", params![id])?;
+
+        // Delete the actual JSONL file from disk
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+        let projects_dir = std::path::PathBuf::from(&home).join(".claude/projects");
+        let file_name = format!("{}.jsonl", id);
+        if let Some(file_path) = Self::find_session_file(&projects_dir, &file_name) {
+            if let Err(e) = std::fs::remove_file(&file_path) {
+                tracing::warn!("Failed to delete session file {}: {}", file_path.display(), e);
+            }
+        }
+
         Ok(())
     }
 
-    pub fn query_sessions(
-        &self,
-        app_type: &str,
-        project: Option<&str>,
-        search: Option<&str>,
-        limit: usize,
-    ) -> Result<Vec<SessionRecord>, rusqlite::Error> {
+    /// Find a session JSONL file by name under the projects directory (recursive).
+    fn find_session_file(dir: &std::path::Path, file_name: &str) -> Option<std::path::PathBuf> {
+        let entries = std::fs::read_dir(dir).ok()?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(found) = Self::find_session_file(&path, file_name) {
+                    return Some(found);
+                }
+            } else if path.file_name().map_or(false, |n| n == file_name) {
+                return Some(path);
+            }
+        }
+        None
+    }
+
+    pub fn query_sessions(&self, app_type: &str, project: Option<&str>, search: Option<&str>, limit: usize) -> Result<Vec<SessionRecord>, rusqlite::Error> {
         let mut sql = String::from(
             "SELECT id, project_path, profile_id, mode, start_time, end_time, prompt_tokens, completion_tokens, message_count, title, size_bytes, file_mtime
              FROM session_history WHERE app_type = ?1",
@@ -73,35 +91,27 @@ impl Db {
         param_values.push(limit_str);
 
         let mut stmt = self.conn().prepare(&sql)?;
-        let rows = stmt.query_map(
-            rusqlite::params_from_iter(param_values.iter().map(|s| s.as_str())),
-            |row| {
-                Ok(SessionRecord {
-                    id: row.get(0)?,
-                    project_path: row.get(1)?,
-                    profile_id: row.get(2)?,
-                    mode: row.get(3)?,
-                    start_time: row.get(4)?,
-                    end_time: row.get(5)?,
-                    prompt_tokens: row.get(6)?,
-                    completion_tokens: row.get(7)?,
-                    message_count: row.get(8)?,
-                    title: row.get(9)?,
-                    size_bytes: row.get::<_, i64>(10).unwrap_or(0),
-                    file_mtime: row.get::<_, String>(11).unwrap_or_default(),
-                    search_text: String::new(), // populated below
-                })
-            },
-        )?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(param_values.iter().map(|s| s.as_str())), |row| {
+            Ok(SessionRecord {
+                id: row.get(0)?,
+                project_path: row.get(1)?,
+                profile_id: row.get(2)?,
+                mode: row.get(3)?,
+                start_time: row.get(4)?,
+                end_time: row.get(5)?,
+                prompt_tokens: row.get(6)?,
+                completion_tokens: row.get(7)?,
+                message_count: row.get(8)?,
+                title: row.get(9)?,
+                size_bytes: row.get::<_, i64>(10).unwrap_or(0),
+                file_mtime: row.get::<_, String>(11).unwrap_or_default(),
+                search_text: String::new(), // populated below
+            })
+        })?;
         let mut rows: Vec<SessionRecord> = rows.collect::<Result<Vec<_>, _>>()?;
         for s in &mut rows {
             if s.search_text.is_empty() {
-                s.search_text = format!(
-                    "{} {}",
-                    s.title.as_deref().unwrap_or(""),
-                    s.project_path
-                )
-                .to_lowercase();
+                s.search_text = format!("{} {}", s.title.as_deref().unwrap_or(""), s.project_path).to_lowercase();
             }
         }
         Ok(rows)

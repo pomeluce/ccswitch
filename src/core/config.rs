@@ -68,6 +68,11 @@ impl ConfigManager {
             }).collect()
         } else { vec![] };
 
+        // Sync TOML providers/profiles to DB (source='system')
+        if !system_providers.is_empty() {
+            db.sync_system_providers("claude", &system_providers).ok();
+        }
+
         Ok(ConfigManager { db, system_providers })
     }
 
@@ -77,22 +82,28 @@ impl ConfigManager {
 
     pub fn list_providers(&self) -> Result<Vec<Provider>, anyhow::Error> {
         const APP: &str = "claude";
-        let user_providers = self.db.get_providers(APP)?;
+        let db_providers = self.db.get_providers(APP)?;
         let mut result = self.system_providers.clone();
 
-        for up in &user_providers {
-            if let Some(existing) = result.iter_mut().find(|p| p.id == up.id) {
-                existing.name = up.name.clone(); existing.api_url = up.api_url.clone();
-                existing.api_key = up.api_key.clone(); existing.source = Source::User;
-            } else { result.push(up.clone()); }
+        for dp in &db_providers {
+            if let Some(existing) = result.iter_mut().find(|p| p.id == dp.id) {
+                existing.name = dp.name.clone();
+                existing.api_url = dp.api_url.clone();
+                existing.api_key = dp.api_key.clone();
+                existing.source = dp.source; // Use DB source (system/user)
+            } else {
+                result.push(dp.clone());
+            }
         }
 
         for provider in &mut result {
-            let user_profiles = self.db.get_profiles(&provider.id)?;
-            for uprof in &user_profiles {
-                if let Some(existing_prof) = provider.profiles.iter_mut().find(|p| p.id == uprof.id) {
-                    *existing_prof = uprof.clone(); existing_prof.source = Source::User;
-                } else { provider.profiles.push(uprof.clone()); }
+            let db_profiles = self.db.get_profiles(&provider.id)?;
+            for dp in &db_profiles {
+                if let Some(existing) = provider.profiles.iter_mut().find(|p| p.id == dp.id) {
+                    *existing = dp.clone();
+                } else {
+                    provider.profiles.push(dp.clone());
+                }
             }
         }
         Ok(result)

@@ -212,3 +212,18 @@ pub fn truncate(s: &str, max: usize) -> String {
         s.to_string()
     }
 }
+
+/// Display-width of a string: ASCII = 1, CJK/etc = 2 columns
+pub fn display_width(s: &str) -> usize {
+    s.chars().map(|c| if c > '\u{7e}' { 2 } else { 1 }).sum()
+}
+
+/// Pad a label to the given display-width, appending `: ` suffix
+pub fn pad_label(label: &str, w: usize) -> String {
+    let dw = display_width(label);
+    if dw >= w {
+        format!("{}: ", label)
+    } else {
+        format!("{}{}: ", label, " ".repeat(w - dw))
+    }
+}

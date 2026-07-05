@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Represents whether a config came from system defaults or user DB
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Source {
     #[default]
     #[serde(rename = "system")]
@@ -13,6 +13,24 @@ pub enum Source {
 impl Source {
     pub fn can_delete(&self) -> bool {
         matches!(self, Source::User)
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Source::System => "system",
+            Source::User => "user",
+        }
+    }
+}
+
+impl std::str::FromStr for Source {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "system" => Ok(Source::System),
+            "user" => Ok(Source::User),
+            _ => Err(()),
+        }
     }
 }
 

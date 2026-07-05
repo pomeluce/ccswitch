@@ -1,6 +1,6 @@
 use crate::tui::lang;
 use super::super::super::theme;
-use super::super::super::widgets::shared::centered_rect;
+use super::super::super::widgets::shared::{centered_rect, pad_label};
 use crossterm::event::KeyCode;
 use ratatui::{
     layout::Rect,
@@ -225,12 +225,6 @@ pub fn render_provider_form(form: &ProviderForm, f: &mut Frame, area: Rect) {
 struct VisSlice {
     text: String,
     skip: usize,
-}
-
-fn display_width(s: &str) -> usize { s.chars().map(|c| if c > '\u{7e}' { 2 } else { 1 }).sum() }
-fn pad_label(label: &str, w: usize) -> String {
-    let dw = display_width(label);
-    if dw >= w { format!("{}: ", label) } else { format!("{}{}: ", label, " ".repeat(w - dw)) }
 }
 
 fn slice_value(text: &str, cursor: usize, max_w: usize) -> VisSlice {

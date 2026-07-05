@@ -1,5 +1,6 @@
 use super::super::lang;
 use super::super::theme::{self, THEMES};
+use super::super::widgets::shared::{display_width, pad_label};
 use super::TabContent;
 use crate::core::config::ConfigManager;
 use crossterm::event::KeyCode;
@@ -82,8 +83,26 @@ impl SettingsTab {
         } else {
             self.mode_idx - 1
         };
-        if let Err(e) = self.mgr.set_setting("proxy_mode", &(self.mode_idx == 1).to_string()) {
+        let is_proxy = self.mode_idx == 1;
+        if let Err(e) = self.mgr.set_setting("proxy_mode", &is_proxy.to_string()) {
             tracing::warn!("Failed to save mode: {}", e);
+        }
+
+        // Immediately apply the mode change to settings.json if a profile is active
+        let mode = if is_proxy {
+            crate::core::models::SwitchMode::Proxy
+        } else {
+            crate::core::models::SwitchMode::Local
+        };
+        if let (Some(prov_id), Some(prof_id)) = (
+            self.mgr.get_setting("active_provider"),
+            self.mgr.get_setting("active_profile"),
+        ) {
+            if let Err(e) = crate::core::switcher::switch_profile(
+                &self.mgr, &prov_id, &prof_id, mode, None,
+            ) {
+                tracing::warn!("Failed to apply mode switch: {}", e);
+            }
         }
     }
 
@@ -101,19 +120,6 @@ impl SettingsTab {
         if let Err(e) = self.mgr.set_setting("language", name) {
             tracing::warn!("Failed to save language: {}", e);
         }
-    }
-}
-
-fn display_width(s: &str) -> usize {
-    s.chars().map(|c| if c > '\u{7e}' { 2 } else { 1 }).sum()
-}
-
-fn pad_label(label: &str, w: usize) -> String {
-    let dw = display_width(label);
-    if dw >= w {
-        format!("{}: ", label)
-    } else {
-        format!("{}{}: ", label, " ".repeat(w - dw))
     }
 }
 
@@ -169,7 +175,8 @@ impl TabContent for SettingsTab {
         match code {
             KeyCode::Tab | KeyCode::BackTab => return false,
             KeyCode::Char('j') | KeyCode::Down => {
-                self.selected = (self.selected + 1).min(2);
+                let max = self.items().len().saturating_sub(1);
+                self.selected = (self.selected + 1).min(max);
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 self.selected = self.selected.saturating_sub(1);

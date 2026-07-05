@@ -37,7 +37,7 @@
         {
           packages.default = rustPlatform.buildRustPackage {
             pname = "ccswitch";
-            version = "1.6.0";
+            version = "1.7.2";
             src = ./.;
             cargoLock = {
               lockFile = ./Cargo.lock;
@@ -182,20 +182,11 @@
                   source = format.generate "ccswitch-defaults.toml" cfg.defaults;
                 };
 
-              systemd.user.services.ccs-proxy = {
-                Unit = {
-                  Description = "CCSwitch Proxy Server";
-                  After = [ "network.target" ];
-                };
-                Install = {
-                  WantedBy = [ "default.target" ];
-                };
-                Service = {
-                  ExecStart = "${self.packages.${pkgs.system}.default}/bin/ccs proxy serve";
-                  Restart = "on-failure";
-                  RestartSec = "5";
-                };
-              };
+              # systemd user service — reads unit definition from assets/ccs-proxy.service
+              # (single source of truth shared with deb/rpm packaging)
+              xdg.configFile."systemd/user/ccs-proxy.service".text =
+                builtins.replaceStrings [ "/usr/bin/ccs" ] [ "${self.packages.${pkgs.system}.default}/bin/ccs" ]
+                  (builtins.readFile ./assets/ccs-proxy.service);
             };
           };
       };

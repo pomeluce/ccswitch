@@ -14,10 +14,11 @@ impl Db {
             std::fs::create_dir_all(parent).ok();
         }
 
-        // Clean orphaned WAL/SHM (belt-and-suspenders — SQLite recreates as needed)
+        // Clean orphaned WAL/SHM files (e.g. after manual DB deletion or crash)
+        // SQLite auto-recovers in WAL mode, but stray files waste disk space.
+        let wal = PathBuf::from(format!("{}-wal", path.display()));
+        let shm = PathBuf::from(format!("{}-shm", path.display()));
         if !path.exists() {
-            let wal = PathBuf::from(format!("{}-wal", path.display()));
-            let shm = PathBuf::from(format!("{}-shm", path.display()));
             std::fs::remove_file(&wal).ok();
             std::fs::remove_file(&shm).ok();
         }

@@ -1,0 +1,147 @@
+use bytes::Bytes;
+use serde_json::Value;
+use tokio::sync::mpsc;
+use tokio_stream::{StreamExt, wrappers::ReceiverStream};
+
+/// Transform the request body: replace `model` with the actual upstream model,
+/// return the original model name so it can be restored in the response.
+pub fn transform_request_body(
+    body_bytes: &[u8],
+    reasoning_model: &str,
+    task_model: &str,
+) -> Result<(Vec<u8>, String, String), String> {
+    let mut json: Value =
+        serde_json::from_slice(body_bytes).map_err(|e| format!("JSON parse: {}", e))?;
+
+    let original_model = json["model"].as_str().unwrap_or("").to_string();
+
+    if original_model.is_empty() {
+        return Err("No model field in request body".into());
+    }
+
+    // Determine which model to use:
+    // - opus/sonnet → reasoning_model
+    // - everything else (haiku, subagent) → task_model
+    let lower = original_model.to_lowercase();
+    let actual_model = if lower.contains("opus") || lower.contains("sonnet") {
+        reasoning_model
+    } else {
+        task_model
+    };
+
+    // Strip [1m] suffix for the actual API request (CCSwitch convention)
+    let api_model = actual_model.replace("[1m]", "");
+    json["model"] = Value::String(api_model);
+
+    let new_body = serde_json::to_vec(&json).map_err(|e| format!("JSON serialize: {}", e))?;
+
+    Ok((new_body, original_model, actual_model.to_string()))
+}
+
+/// Transform a single SSE event's `data:` JSON payload:
+/// - Replace `message.model` → original_model
+/// - Add `ccs_model` → actual_model
+/// - Add `ccs_proxy` → true
+fn transform_sse_data(data_json: &str, original_model: &str, actual_model: &str) -> Result<String, String> {
+    let trimmed = data_json.trim();
+    if trimmed.is_empty() || !trimmed.starts_with('{') {
+        return Ok(data_json.to_string());
+    }
+
+    let mut json: Value =
+        serde_json::from_str(trimmed).map_err(|e| format!("SSE JSON parse: {}: {}", e, trimmed))?;
+
+    // Replace message.model + inject ccs_ fields inside message
+    let ccs_model = actual_model.replace("[1m]", "");
+    if let Some(msg) = json.get_mut("message") {
+        if let Some(model) = msg.get_mut("model") {
+            *model = Value::String(original_model.to_string());
+        }
+        // Put ccs_ fields inside message so Claude Code preserves them in JSONL
+        if let Some(msg_obj) = msg.as_object_mut() {
+            msg_obj.insert("ccs_model".into(), Value::String(ccs_model));
+            msg_obj.insert("ccs_proxy".into(), Value::Bool(true));
+        }
+    }
+
+    let result = serde_json::to_string(&json).map_err(|e| format!("SSE JSON serialize: {}", e))?;
+    Ok(result)
+}
+
+/// Process raw SSE bytes: find `data:` lines, transform the JSON, return modified bytes.
+fn transform_sse_chunk(bytes: &[u8], original_model: &str, actual_model: &str) -> Vec<u8> {
+    let text = String::from_utf8_lossy(bytes);
+    let mut result = String::with_capacity(text.len() + 128);
+    let mut data_start = 0usize;
+
+    for (i, _) in text.match_indices('\n') {
+        let line = &text[data_start..i];
+        if line.starts_with("data: ") {
+            let payload = &line[6..]; // after "data: "
+            match transform_sse_data(payload, original_model, actual_model) {
+                Ok(transformed) => {
+                    result.push_str("data: ");
+                    result.push_str(&transformed);
+                }
+                Err(_) => {
+                    result.push_str(line);
+                }
+            }
+        } else {
+            result.push_str(line);
+        }
+        result.push('\n');
+        data_start = i + 1;
+    }
+
+    if data_start < text.len() {
+        result.push_str(&text[data_start..]);
+    }
+
+    result.into_bytes()
+}
+
+/// Transform an upstream SSE byte stream: split on \n\n → transform data lines → re-emit.
+/// Returns an axum Body for the proxy response.
+pub fn transform_response_stream(
+    upstream_body: impl futures_core::Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static,
+    original_model: String,
+    actual_model: String,
+) -> axum::body::Body {
+    let (tx, rx) = mpsc::channel::<Result<Bytes, axum::Error>>(32);
+    let mut stream = Box::pin(upstream_body);
+
+    tokio::spawn(async move {
+        let mut buffer = Vec::new();
+        loop {
+            match stream.as_mut().next().await {
+                Some(Ok(bytes)) => {
+                    buffer.extend_from_slice(&bytes);
+                    // Emit complete SSE events (separated by \n\n)
+                    while let Some(pos) = buffer.windows(2).position(|w| w == b"\n\n") {
+                        let event_bytes: Vec<u8> = buffer[..pos + 2].to_vec();
+                        buffer.drain(..pos + 2);
+                        let transformed =
+                            transform_sse_chunk(&event_bytes, &original_model, &actual_model);
+                        if tx.send(Ok(Bytes::from(transformed))).await.is_err() {
+                            return; // receiver dropped
+                        }
+                    }
+                }
+                Some(Err(e)) => {
+                    let _ = tx.send(Err(axum::Error::new(e))).await;
+                    return;
+                }
+                None => {
+                    // Stream ended — emit remaining buffer
+                    if !buffer.is_empty() {
+                        let _ = tx.send(Ok(Bytes::from(buffer))).await;
+                    }
+                    return;
+                }
+            }
+        }
+    });
+
+    axum::body::Body::from_stream(ReceiverStream::new(rx))
+}

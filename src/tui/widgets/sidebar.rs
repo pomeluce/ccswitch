@@ -1,7 +1,6 @@
 use super::super::tabs::Tab;
 use crate::tui::lang;
 use super::super::theme;
-use crate::db::Db;
 use ratatui::{
     layout::Rect,
     style::Style,
@@ -10,7 +9,7 @@ use ratatui::{
     Frame,
 };
 
-pub fn render_sidebar(f: &mut Frame, area: Rect, active_tab: Tab, db: &Db) {
+pub fn render_sidebar(f: &mut Frame, area: Rect, active_tab: Tab, is_proxy: bool) {
     let tabs = [
         (Tab::Providers, lang::current().tab_providers),
         (Tab::Usage, lang::current().tab_usage),
@@ -18,8 +17,7 @@ pub fn render_sidebar(f: &mut Frame, area: Rect, active_tab: Tab, db: &Db) {
         (Tab::Settings, lang::current().tab_settings),
     ];
 
-    let proxy_running = db.get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false);
-    let mode_label = if proxy_running {
+    let mode_label = if is_proxy {
         format!("{} proxy", lang::current().mode_prefix)
     } else {
         format!("{} local", lang::current().mode_prefix)

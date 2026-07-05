@@ -8,7 +8,6 @@ use crate::core::config::ConfigManager;
 
 use super::tabs::{history::HistoryTab, providers::ProvidersTab, settings::SettingsTab, usage::UsageTab, Tab, TabContent};
 
-#[allow(dead_code)]
 pub struct App {
     pub mgr: Arc<ConfigManager>,
     pub active_tab: Tab,
@@ -76,8 +75,14 @@ impl App {
             if self.history_tab.needs_terminal_reinit {
                 ratatui::restore();
                 if let Some(ref project) = self.history_tab.launch_project.take() {
-                    println!("\n  Launching Claude Code in {}\n", project);
-                    if let Err(e) = std::process::Command::new("claude").current_dir(project).status() {
+                    let sid = self.history_tab.launch_session_id.take().unwrap_or_default();
+                    println!("\n  Launching Claude Code session {} in {}\n", sid, project);
+                    let mut cmd = std::process::Command::new("claude");
+                    cmd.current_dir(project);
+                    if !sid.is_empty() {
+                        cmd.args(["--resume", &sid]);
+                    }
+                    if let Err(e) = cmd.status() {
                         eprintln!("Failed to launch Claude: {}", e);
                     }
                     print!("\n  Returning to CCSwitch...\n");
@@ -109,8 +114,8 @@ impl App {
                             .into_iter()
                             .filter(|s| s.size_bytes > 0)
                             .collect::<Vec<_>>();
-                        self.history_tab.all_sessions = sessions.clone();
-                        self.history_tab.sessions = sessions;
+                        self.history_tab.all_sessions = sessions;
+                        self.history_tab.refresh();
                     }
                     // Trigger usage scan for changed files (calls existing background scan)
                     if !self.usage_tab.is_scanning() {
@@ -211,7 +216,8 @@ impl App {
             ])
             .areas(main_area);
 
-        render_sidebar(f, sidebar_area, self.active_tab, self.mgr.db());
+        let is_proxy = self.mgr.get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false);
+        render_sidebar(f, sidebar_area, self.active_tab, is_proxy);
         render_app_bar(f, app_bar_area, &self.app_type);
 
         match self.active_tab {

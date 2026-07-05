@@ -15,7 +15,7 @@ pub enum Commands {
         /// Target profile as "provider_id/profile_id" or just "profile_id"
         target: Option<String>,
         /// Use local mode (modify settings.json directly)
-        #[arg(long)]
+        #[arg(long, conflicts_with = "proxy")]
         local: bool,
         /// Use proxy mode
         #[arg(long)]
@@ -58,6 +58,12 @@ pub enum Commands {
         action: ProxyAction,
     },
 
+    /// Install / uninstall background service
+    Service {
+        #[command(subcommand)]
+        action: ServiceAction,
+    },
+
     /// Show token usage statistics
     Usage {
         #[arg(long, default_value = "week")]
@@ -94,4 +100,20 @@ pub enum ProxyAction {
     Status,
     /// Run proxy in foreground (debugging)
     Serve,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ServiceAction {
+    /// Install background service (default: user-level)
+    Install {
+        /// Install as system-level service (requires root)
+        #[arg(long)]
+        system: bool,
+    },
+    /// Uninstall background service
+    Uninstall {
+        /// Uninstall system-level service (requires root)
+        #[arg(long)]
+        system: bool,
+    },
 }

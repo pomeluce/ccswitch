@@ -43,6 +43,9 @@ struct MessageContent {
     content: Option<serde_json::Value>,
     #[allow(dead_code)]
     role: Option<String>,
+    /// Proxy mode marker injected by CCSwitch
+    #[serde(default)]
+    ccs_proxy: Option<bool>,
 }
 
 fn claude_projects_dir() -> PathBuf {
@@ -211,12 +214,7 @@ pub fn import_claude_sessions(db: &Db) -> Result<usize, anyhow::Error> {
 }
 
 fn file_mtime_secs(path: &PathBuf) -> i64 {
-    std::fs::metadata(path)
-        .ok()
-        .and_then(|m| m.modified().ok())
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
+    file_mtime(path).unwrap_or(0)
 }
 
 fn collect_jsonl_files(dir: &PathBuf) -> Vec<PathBuf> {
@@ -232,6 +230,26 @@ fn collect_jsonl_files(dir: &PathBuf) -> Vec<PathBuf> {
         }
     }
     files
+}
+
+/// Scan the last 30 lines of a JSONL file for an assistant message with `ccs_proxy` marker.
+fn detect_mode(lines: &[&str]) -> String {
+    for line in lines.iter().rev().take(30) {
+        let parsed: JsonlLine = match serde_json::from_str(line) {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+        if parsed.msg_type.as_deref() == Some("assistant") {
+            if let Some(ref msg) = parsed.message {
+                if msg.ccs_proxy == Some(true) {
+                    return "proxy".to_string();
+                }
+            }
+            // First assistant message found without proxy marker → local
+            return "local".to_string();
+        }
+    }
+    "local".to_string()
 }
 
 fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::Error> {
@@ -330,12 +348,15 @@ fn parse_session_file(path: &PathBuf) -> Result<Option<SessionRecord>, anyhow::E
         .or(fallback_title)
         .unwrap_or(project_name);
 
+    // Detect proxy mode: scan last 30 lines for assistant message with ccs_proxy marker
+    let mode = detect_mode(&lines);
+
     let search_text = format!("{} {}", title, cwd).to_lowercase();
     Ok(Some(SessionRecord {
         id: session_id,
         project_path: cwd,
         profile_id: None,
-        mode: "local".to_string(),
+        mode,
         start_time,
         end_time: None,
         prompt_tokens: 0,
@@ -368,6 +389,9 @@ struct UsageMessage {
     role: Option<String>,
     model: Option<String>,
     usage: Option<UsageData>,
+    /// Actual upstream model name injected by CCSwitch proxy
+    #[serde(default)]
+    ccs_model: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -453,7 +477,13 @@ fn parse_single_file(
             if !msg_id.is_empty() && known_msg_ids.contains(msg_id.as_str()) {
                 return None;
             }
-            let model = msg.model.as_deref().unwrap_or("unknown").replace("[1m]", "");
+            // Prefer ccs_model (actual upstream model from proxy) over message.model
+            let model = msg
+                .ccs_model
+                .as_deref()
+                .or(msg.model.as_deref())
+                .unwrap_or("unknown")
+                .replace("[1m]", "");
             if model == "<synthetic>" {
                 return None;
             }

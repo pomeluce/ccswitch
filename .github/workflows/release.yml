@@ -110,6 +110,14 @@ jobs:
               bin.install "ccs"
             end
 
+            service do
+              run [opt_bin/"ccs", "proxy", "serve"]
+              keep_alive true
+              run_at_load true
+              log_path "/tmp/ccs-proxy.log"
+              error_log_path "/tmp/ccs-proxy.log"
+            end
+
             test do
               system "#{bin}/ccs", "--version"
             end

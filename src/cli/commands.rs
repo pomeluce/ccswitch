@@ -1,18 +1,22 @@
 use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::CommandFactory;
-use crate::cli::args::{CliArgs, Commands, ProxyAction};
+use crate::cli::args::{CliArgs, Commands, ProxyAction, ServiceAction};
 use crate::core::config::ConfigManager;
 use crate::core::models::SwitchMode;
 use crate::core::switcher::switch_profile;
 
+fn mask_key(key: &str) -> String {
+    if key.starts_with("env:") || key.len() <= 8 {
+        key.to_string()
+    } else {
+        format!("{}...{}", &key[..4], &key[key.len()-4..])
+    }
+}
+
 fn get_db_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
     PathBuf::from(home).join(".config/ccswitch").join("ccswitch.db")
-}
-
-fn get_defaults_path() -> Option<PathBuf> {
-    None // let ConfigManager resolve via XDG/legacy path
 }
 
 pub fn run_cli(args: CliArgs) -> Result<()> {
@@ -36,8 +40,8 @@ pub fn run_cli(args: CliArgs) -> Result<()> {
     }
 
     let db_path = get_db_path();
-    let defaults_path = get_defaults_path();
-    let mgr = ConfigManager::new(&db_path, defaults_path.as_deref())?;
+    let defaults_path: Option<&std::path::Path> = None;
+    let mgr = ConfigManager::new(&db_path, defaults_path)?;
 
     match command {
         Commands::Switch { target, local: _, proxy } => {
@@ -59,6 +63,9 @@ pub fn run_cli(args: CliArgs) -> Result<()> {
         Commands::Proxy { action } => {
             handle_proxy(action)?;
         }
+        Commands::Service { action } => {
+            handle_service(action)?;
+        }
         Commands::Usage { range, profile } => {
             handle_usage(&mgr, &range, profile.as_deref())?;
         }
@@ -72,19 +79,20 @@ pub fn run_cli(args: CliArgs) -> Result<()> {
 }
 
 fn handle_switch(mgr: &ConfigManager, target: Option<String>, mode: SwitchMode) -> Result<()> {
-    let target = target.unwrap_or_else(|| {
-        // TODO in Task 16: fuzzy-select via skim/fzf when TUI not available
-        // For now: use default
-        let providers = mgr.list_providers().unwrap_or_default();
-        for p in &providers {
-            for pr in &p.profiles {
-                if pr.default {
-                    return format!("{}/{}", p.id, pr.id);
+    let target = target.map_or_else(
+        || {
+            let providers = mgr.list_providers().unwrap_or_default();
+            for p in &providers {
+                for pr in &p.profiles {
+                    if pr.default {
+                        return Ok::<_, anyhow::Error>(format!("{}/{}", p.id, pr.id));
+                    }
                 }
             }
-        }
-        String::new()
-    });
+            anyhow::bail!("No target specified and no default profile found. Use 'ccs switch <provider>/<profile>'.");
+        },
+        |t| Ok(t),
+    )?;
 
     let (provider_id, profile_id) = target
         .split_once('/')
@@ -169,7 +177,8 @@ fn handle_edit(mgr: &ConfigManager, target: &str) -> Result<()> {
         for p in &providers {
             if p.id == target {
                 println!("Provider: {} ({})", p.name, p.id);
-                println!("  URL: {}  Key: {}", p.api_url, p.api_key);
+                let masked_key = mask_key(&p.api_key);
+                println!("  URL: {}  Key: {}", p.api_url, masked_key);
             }
         }
     }
@@ -199,6 +208,15 @@ fn handle_remove(mgr: &ConfigManager, target: &str) -> Result<()> {
     Ok(())
 }
 
+fn handle_service(action: ServiceAction) -> Result<()> {
+    use crate::proxy::service;
+    match action {
+        ServiceAction::Install { system } => service::install_service(system)?,
+        ServiceAction::Uninstall { system } => service::uninstall_service(system)?,
+    }
+    Ok(())
+}
+
 fn handle_proxy(action: ProxyAction) -> Result<()> {
     use crate::proxy::service;
     match action {
@@ -207,8 +225,8 @@ fn handle_proxy(action: ProxyAction) -> Result<()> {
         ProxyAction::Status => service::proxy_status()?,
         ProxyAction::Serve => {
             let db_path = get_db_path();
-            let defaults_path = get_defaults_path();
-            let mgr = ConfigManager::new(&db_path, defaults_path.as_deref())?;
+            let defaults_path: Option<&std::path::Path> = None;
+            let mgr = ConfigManager::new(&db_path, defaults_path)?;
             let port: u16 = mgr
                 .db()
                 .get_setting("proxy_port")

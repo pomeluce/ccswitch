@@ -10,11 +10,5 @@ impl Db {
         self.conn().execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)", params![key, value])?;
         Ok(())
     }
-
-    #[allow(dead_code)]
-    pub fn remove_setting(&self, key: &str) -> Result<(), rusqlite::Error> {
-        self.conn().execute("DELETE FROM settings WHERE key = ?1", params![key])?;
-        Ok(())
-    }
 }
 
