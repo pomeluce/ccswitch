@@ -37,7 +37,7 @@
         {
           packages.default = rustPlatform.buildRustPackage {
             pname = "ccswitch";
-            version = "1.7.2";
+            version = "1.7.3";
             src = ./.;
             cargoLock = {
               lockFile = ./Cargo.lock;
