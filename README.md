@@ -6,11 +6,12 @@ Claude Code 模型配置管理器 — Rust TUI + CLI 工具。
 
 ## 功能
 
-- **模型管理**：按供应商组织模型配置（DeepSeek, OpenRouter, Z.AI 等），支持增删改
+- **模型管理**：按供应商组织模型配置（DeepSeek, OpenRouter, Z.AI 等），两层导航
 - **一键切换**：本地模式直接写入 `~/.claude/settings.json`，代理模式更新 SQLite
-- **会话历史**：自动扫描 Claude Code 本地会话文件，支持搜索、过滤、恢复
+- **会话历史**：自动扫描 Claude Code 本地会话文件，支持搜索、过滤
 - **代理服务**：本地 HTTP 代理（端口 15721），systemd user service / 后台进程
-- **Token 用量**：按 profile 统计 Token 消耗，趋势柱状图
+- **Token 用量**：按模型统计 Token 消耗，带缓存避免每帧查询
+- **多语言**：内置中文 / English 切换，设置持久化
 
 ## 安装
 
@@ -154,7 +155,7 @@ sudo mv ccs /usr/local/bin/
 ccs    # 无参数启动 TUI
 ```
 
-按 `1/2/3` 或 `Tab/Shift+Tab` 切换标签页。
+左侧栏 `J/K` 选择标签页，`Tab` / `Shift+Tab` 切换，`Enter` 确认。
 
 ### CLI 模式
 
@@ -178,7 +179,7 @@ ccs proxy serve                  # 前台运行代理（调试用）
 # 用量与历史
 ccs usage                        # Token 用量统计（默认本周）
 ccs usage --day|--week|--month   # 按日/周/月
-ccs usage --profile <name>       # 按 profile 过滤
+ccs usage --profile <name>       # 按模型过滤
 ccs history                      # 会话历史
 ccs history --project <name>     # 按项目过滤
 ccs history --search <keyword>   # 搜索会话
@@ -190,14 +191,11 @@ ccs man                          # 输出 roff 格式 man page
 
 ## 配置
 
-配置文件位置（优先级从高到低）：
+配置文件位置：
 
-- `~/.config/ccswitch/defaults.toml` — XDG 标准（Home Manager 生成）
-- `/etc/ccswitch/defaults.toml` — 系统全局默认（NixOS 生成）
-- `~/.config/ccswitch/model.db` — 用户模型配置
-- `~/.config/ccswitch/usage.db` — Token 用量统计（含增量索引）
-- `~/.config/ccswitch/session.db` — 会话历史记录
-- `~/.config/ccswitch/ccs.log` — TUI 运行日志
+- `~/.config/ccswitch/ccswitch.db` — SQLite 数据库（模型配置、用量、会话）
+- `~/.config/ccswitch/defaults.toml` — 系统默认配置（Home Manager / NixOS 生成）
+- `~/.local/share/ccswitch/ccs.log` — TUI 运行日志
 
 ### 首次启动
 
@@ -232,10 +230,8 @@ api_key = "env:OPENROUTER_API_KEY"
 [[providers.profiles]]
 id = "claude"
 name = "Claude"
-opus = "anthropic/claude-opus-4"
-sonnet = "anthropic/claude-sonnet-4"
-haiku = "anthropic/claude-haiku-4"
-subagent = "anthropic/claude-haiku-4"
+reasoning_model = "anthropic/claude-opus-4"
+task_model = "anthropic/claude-haiku-4"
 ```
 
 ### API Key 格式
@@ -252,41 +248,64 @@ subagent = "anthropic/claude-haiku-4"
 
 | 键                  | 功能           |
 | ------------------- | -------------- |
-| `Tab` / `Shift+Tab` | 切换标签页     |
-| `1` / `2` / `3`     | 直接跳转标签页 |
+| `Tab` / `Shift+Tab` | 切换侧边栏标签页 |
+| `Space`             | 切换 Claude / Codex |
 | `Q` / `q`           | 退出           |
 
 ### 模型标签页
 
-| 键          | 功能                                   |
-| ----------- | -------------------------------------- |
-| `j/k` `↑/↓` | 上下导航                               |
-| `Enter`     | 切换到此模型（弹窗确认）               |
-| `D` / `d`   | 删除用户配置（弹窗确认）               |
-| `E` / `e`   | 编辑配置（TUI 表单弹窗）               |
-| `/`         | 搜索（分词匹配 provider + profile 名） |
-| `Esc`       | 退出搜索                               |
+两层导航：左侧 Provider 列表 → 右侧 Profile 列表
+
+| 键            | 功能                             |
+| ------------- | -------------------------------- |
+| `J/K` `↑/↓`   | Provider 列表导航 / Profile 导航 |
+| `Enter`       | 进入 Profile 列表 / 切换模型     |
+| `A`           | 添加 Provider / Profile           |
+| `E`           | 编辑 Provider / Profile           |
+| `D`           | 删除 Provider / Profile（需确认）|
+| `Esc`         | 返回 Provider 列表                |
 
 ### 会话标签页
 
 | 键          | 功能                                   |
 | ----------- | -------------------------------------- |
-| `j/k` `↑/↓` | 上下导航（循环滚动）                   |
+| `J/K` `↑/↓` | 上下导航（循环滚动）                   |
 | `Enter`     | 打开会话（弹窗确认，启动 Claude Code） |
-| `D` / `d`   | 物理删除会话（弹窗确认）               |
+| `D`         | 删除会话（弹窗确认）                   |
 | `/`         | 搜索（分词匹配标题 + 项目名）          |
-| `Esc`       | 退出编辑表单 / 关闭弹窗                |
+| `Esc`       | 退出搜索 / 关闭弹窗                    |
 
 ### 用量标签页
 
 | 键            | 功能                       |
 | ------------- | -------------------------- |
-| `j/k` `↑/↓`   | 导航模型列表               |
-| `t`           | 切换时间范围（天/周/全部） |
+| `J/K` `↑/↓`   | 导航模型列表               |
+| `T`           | 切换时间范围（天/周/月）   |
 | `/`           | 搜索模型                   |
 | `PgUp`/`PgDn` | 滚动右侧日用量图表         |
 
 左侧显示选中模型的今日/本周/总计/请求数统计卡片及模型排名。右侧显示选中模型的近 7 天用量柱状图。首次启动时用量数据在后台异步扫描，右侧面板显示扫描进度条。
+
+### 设置标签页
+
+| 键            | 功能                       |
+| ------------- | -------------------------- |
+| `J/K` `↑/↓`   | 选择设置项                 |
+| `←/→` `Enter` | 切换选项值                  |
+
+支持切换主题（7 种）、模式（local / proxy）、语言（中文 / English）。
+
+## 写入映射
+
+切换 profile 时写入 Claude Code 的 `settings.json`：
+
+| 环境变量                          | 值                     |
+| --------------------------------- | ---------------------- |
+| `ANTHROPIC_MODEL`                 | `reasoning_model`      |
+| `ANTHROPIC_DEFAULT_OPUS_MODEL`    | `reasoning_model`      |
+| `ANTHROPIC_DEFAULT_SONNET_MODEL`  | `reasoning_model`      |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL`   | `task_model`（去 [1m]）|
+| `CLAUDE_CODE_SUBAGENT_MODEL`      | `task_model`（去 [1m]）|
 
 ## 模式
 
