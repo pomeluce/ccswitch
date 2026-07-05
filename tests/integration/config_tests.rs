@@ -26,7 +26,6 @@ default = true
     )
     .unwrap();
 
-    let db_path = dir.path().join("test.db");
     let mgr = ConfigManager::new(&dir.path().join("ccswitch.db"), Some(&defaults_path)).unwrap();
     let providers = mgr.list_providers().unwrap();
     assert_eq!(providers.len(), 1);

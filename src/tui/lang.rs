@@ -99,7 +99,6 @@ pub struct Lang {
     pub setting_theme: &'static str,
     pub setting_mode: &'static str,
     pub setting_language: &'static str,
-    pub setting_toggle_hint: &'static str,
 
     // App bar
     pub app_claude: &'static str,
@@ -207,8 +206,6 @@ const LANG_ZH: Lang = Lang {
     setting_theme: "主题",
     setting_mode: "模式",
     setting_language: "语言",
-    setting_toggle_hint: "←/→ 或 Enter 切换",
-
     app_claude: " Claude ",
     app_codex: " Codex ",
 
@@ -308,8 +305,6 @@ const LANG_EN: Lang = Lang {
     setting_theme: "Theme",
     setting_mode: "Mode",
     setting_language: "Language",
-    setting_toggle_hint: "←/→ or Enter to toggle",
-
     app_claude: " Claude ",
     app_codex: " Codex ",
 

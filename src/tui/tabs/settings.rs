@@ -3,11 +3,11 @@ use super::super::theme::{self, THEMES};
 use super::TabContent;
 use crate::core::config::ConfigManager;
 use crossterm::event::KeyCode;
+use ratatui::layout::Rect;
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Paragraph},
     Frame,
 };
 use std::sync::Arc;
@@ -16,7 +16,6 @@ const MODES: &[&str] = &["local", "proxy"];
 
 pub struct SettingsTab {
     mgr: Arc<ConfigManager>,
-    pub state: ListState,
     selected: usize,
     theme_idx: usize,
     mode_idx: usize,
@@ -42,14 +41,14 @@ impl SettingsTab {
             lang::LANGS.iter().position(|(n, _)| *n == saved_lang).unwrap_or(0)
         };
 
-        let mode_idx = if mgr.get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false) {
-            1
-        } else {
-            0
-        };
-        let mut state = ListState::default();
-        state.select(Some(0));
-        SettingsTab { mgr, state, selected: 0, theme_idx, mode_idx, lang_idx }
+        let mode_idx = if mgr.get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false) { 1 } else { 0 };
+        SettingsTab {
+            mgr,
+            selected: 0,
+            theme_idx,
+            mode_idx,
+            lang_idx,
+        }
     }
 
     fn items(&self) -> Vec<(&str, String)> {
@@ -64,78 +63,128 @@ impl SettingsTab {
     fn cycle_theme(&mut self, forward: bool) {
         self.theme_idx = if forward {
             (self.theme_idx + 1) % THEMES.len()
-        } else if self.theme_idx == 0 { THEMES.len() - 1 } else { self.theme_idx - 1 };
+        } else if self.theme_idx == 0 {
+            THEMES.len() - 1
+        } else {
+            self.theme_idx - 1
+        };
         theme::set_theme(THEMES[self.theme_idx]);
-        if let Err(e) = self.mgr.set_setting("theme", THEMES[self.theme_idx]) { tracing::warn!("Failed to save theme: {}", e); }
+        if let Err(e) = self.mgr.set_setting("theme", THEMES[self.theme_idx]) {
+            tracing::warn!("Failed to save theme: {}", e);
+        }
     }
 
     fn cycle_mode(&mut self, forward: bool) {
         self.mode_idx = if forward {
             (self.mode_idx + 1) % MODES.len()
-        } else if self.mode_idx == 0 { MODES.len() - 1 } else { self.mode_idx - 1 };
-        if let Err(e) = self.mgr.set_setting("proxy_mode", &(self.mode_idx == 1).to_string()) { tracing::warn!("Failed to save mode: {}", e); }
+        } else if self.mode_idx == 0 {
+            MODES.len() - 1
+        } else {
+            self.mode_idx - 1
+        };
+        if let Err(e) = self.mgr.set_setting("proxy_mode", &(self.mode_idx == 1).to_string()) {
+            tracing::warn!("Failed to save mode: {}", e);
+        }
     }
 
     fn cycle_lang(&mut self, forward: bool) {
         let n = lang::LANGS.len();
         self.lang_idx = if forward {
             (self.lang_idx + 1) % n
-        } else if self.lang_idx == 0 { n - 1 } else { self.lang_idx - 1 };
+        } else if self.lang_idx == 0 {
+            n - 1
+        } else {
+            self.lang_idx - 1
+        };
         let name = lang::LANGS[self.lang_idx].0;
         lang::set_lang(name);
-        if let Err(e) = self.mgr.set_setting("language", name) { tracing::warn!("Failed to save language: {}", e); }
+        if let Err(e) = self.mgr.set_setting("language", name) {
+            tracing::warn!("Failed to save language: {}", e);
+        }
+    }
+}
+
+fn display_width(s: &str) -> usize {
+    s.chars().map(|c| if c > '\u{7e}' { 2 } else { 1 }).sum()
+}
+
+fn pad_label(label: &str, w: usize) -> String {
+    let dw = display_width(label);
+    if dw >= w {
+        format!("{}: ", label)
+    } else {
+        format!("{}{}: ", label, " ".repeat(w - dw))
     }
 }
 
 impl TabContent for SettingsTab {
     fn render(&mut self, f: &mut Frame, area: Rect, _app_type: &str) {
         let l = lang::current();
-        let main = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
-            .split(area);
+        let items = self.items();
 
-        let items: Vec<ListItem> = self.items().iter().enumerate().map(|(i, (name, _))| {
+        // Calculate max label display-width for : alignment
+        let max_label_dw = items.iter().map(|(label, _)| display_width(label)).max().unwrap_or(0);
+
+        // Calculate max value display-width (including < > brackets)
+        let max_value_dw = items.iter().map(|(_, v)| display_width(v) + 2).max().unwrap_or(0);
+
+        // Content width = label: + value<>, pad_w centres this in the inner area
+        let inner_w = area.width.saturating_sub(2) as usize;
+        let content_w = max_label_dw + 3 + max_value_dw;
+        let pad_w = inner_w.saturating_sub(content_w) / 2;
+        let pad = " ".repeat(pad_w);
+
+        let mut lines: Vec<Line> = vec![Line::from(""), Line::from("")];
+        for (i, (label, value)) in items.iter().enumerate() {
             let is_sel = i == self.selected;
-            let arrow = if is_sel { "❯ " } else { "  " };
-            let color = if is_sel { theme::current().cyan } else { theme::current().fg };
-            ListItem::new(vec![Line::from(Span::styled(format!("{}{}", arrow, name), Style::default().fg(color))), Line::from("")])
-        }).collect();
+            let label_color = if is_sel { theme::current().cyan } else { theme::current().fg };
+            let value_style = if is_sel {
+                Style::default().fg(theme::current().purple)
+            } else {
+                Style::default().fg(theme::current().dim)
+            };
 
-        let list = List::new(items).block(Block::bordered()
+            lines.push(Line::from(vec![
+                Span::styled(pad.clone(), Style::default()),
+                Span::styled(pad_label(label, max_label_dw), Style::default().fg(label_color)),
+                Span::styled(format!("<{}>", value), value_style),
+                Span::styled(pad.clone(), Style::default()),
+            ]));
+
+            if i < items.len() - 1 {
+                lines.push(Line::from(""));
+            }
+        }
+
+        let block = Block::bordered()
             .border_set(ratatui::symbols::border::ROUNDED)
             .title(l.settings_title)
-            .border_style(Style::default().fg(theme::current().dim)))
-            .highlight_style(Style::default());
-        f.render_stateful_widget(list, main[0], &mut self.state);
+            .border_style(Style::default().fg(theme::current().dim));
 
-        let (name, value) = &self.items()[self.selected];
-        let lines = vec![
-            Line::from(""),
-            Line::from(Span::styled(format!("  {}", name), Style::default().fg(theme::current().cyan))),
-            Line::from(""),
-            Line::from(Span::styled(format!("  <  {}  >", value), Style::default().fg(theme::current().purple))),
-            Line::from(""),
-            Line::from(""),
-            Line::from(Span::styled(format!("  {}", l.setting_toggle_hint), Style::default().fg(theme::current().dim))),
-        ];
-        let p = Paragraph::new(lines).block(Block::bordered()
-            .border_set(ratatui::symbols::border::ROUNDED)
-            .title(format!(" {} ", name))
-            .border_style(Style::default().fg(theme::current().dim)));
-        f.render_widget(p, main[1]);
+        let p = Paragraph::new(lines).block(block);
+        f.render_widget(p, area);
     }
 
     fn handle_key(&mut self, code: KeyCode) -> bool {
         match code {
             KeyCode::Tab | KeyCode::BackTab => return false,
-            KeyCode::Char('j') | KeyCode::Down => { self.selected = (self.selected + 1).min(2); self.state.select(Some(self.selected)); }
-            KeyCode::Char('k') | KeyCode::Up => { self.selected = self.selected.saturating_sub(1); self.state.select(Some(self.selected)); }
-            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => match self.selected {
-                0 => self.cycle_theme(true), 1 => self.cycle_mode(true), 2 => self.cycle_lang(true), _ => {}
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.selected = (self.selected + 1).min(2);
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.selected = self.selected.saturating_sub(1);
+            }
+            KeyCode::Char('l') | KeyCode::Right => match self.selected {
+                0 => self.cycle_theme(true),
+                1 => self.cycle_mode(true),
+                2 => self.cycle_lang(true),
+                _ => {}
             },
-            KeyCode::Left | KeyCode::Char('h') => match self.selected {
-                0 => self.cycle_theme(false), 1 => self.cycle_mode(false), 2 => self.cycle_lang(false), _ => {}
+            KeyCode::Char('h') | KeyCode::Left => match self.selected {
+                0 => self.cycle_theme(false),
+                1 => self.cycle_mode(false),
+                2 => self.cycle_lang(false),
+                _ => {}
             },
             _ => return false,
         }
@@ -146,7 +195,7 @@ impl TabContent for SettingsTab {
         let l = lang::current();
         vec![
             vec![(" J/K ".into(), theme::current().comment), (l.sc_nav.into(), theme::current().comment)],
-            vec![(" ←/→ ".into(), theme::current().comment), (l.sc_toggle.into(), theme::current().comment)],
+            vec![(" H/L ".into(), theme::current().comment), (l.sc_toggle.into(), theme::current().comment)],
             vec![(" Q ".into(), theme::current().comment), (l.sc_quit.into(), theme::current().comment)],
         ]
     }
@@ -158,8 +207,13 @@ impl TabContent for SettingsTab {
         let mut lines = 1usize;
         let mut cur = 0usize;
         for gw in &widths {
-            if cur + gw > w && cur > 0 { lines += 1; cur = 0; }
-            if cur > 0 { cur += sep; }
+            if cur + gw > w && cur > 0 {
+                lines += 1;
+                cur = 0;
+            }
+            if cur > 0 {
+                cur += sep;
+            }
             cur += gw;
         }
         lines
