@@ -42,10 +42,8 @@ Claude Code 模型配置管理器 — Rust TUI + CLI 工具。
                   profiles = [
                     {
                       id = "v4"; name = "V4";
-                      opus = "deepseek-v4-pro[1m]";
-                      sonnet = "deepseek-v4-pro[1m]";
-                      haiku = "deepseek-v4-flash";
-                      subagent = "deepseek-v4-flash";
+                      reasoning_model = "deepseek-v4-pro[1m]";
+                      task_model = "deepseek-v4-flash";
                       default = true;
                     }
                   ];
@@ -221,10 +219,8 @@ api_key = "env:DEEPSEEK_API_KEY"
 [[providers.profiles]]
 id = "v4"
 name = "V4"
-opus = "deepseek-v4-pro[1m]"
-sonnet = "deepseek-v4-pro[1m]"
-haiku = "deepseek-v4-flash"
-subagent = "deepseek-v4-flash"
+reasoning_model = "deepseek-v4-pro[1m]"
+task_model = "deepseek-v4-flash"
 default = true
 
 [[providers]]
