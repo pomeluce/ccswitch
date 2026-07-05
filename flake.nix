@@ -144,10 +144,14 @@
                                   options = {
                                     id = lib.mkOption { type = lib.types.str; };
                                     name = lib.mkOption { type = lib.types.str; };
-                                    opus = lib.mkOption { type = lib.types.str; };
-                                    sonnet = lib.mkOption { type = lib.types.str; };
-                                    haiku = lib.mkOption { type = lib.types.str; };
-                                    subagent = lib.mkOption { type = lib.types.str; };
+                                    reasoning_model = lib.mkOption {
+                                      type = lib.types.str;
+                                      default = "";
+                                    };
+                                    task_model = lib.mkOption {
+                                      type = lib.types.str;
+                                      default = "";
+                                    };
                                     default = lib.mkOption {
                                       type = lib.types.bool;
                                       default = false;
