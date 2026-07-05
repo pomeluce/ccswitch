@@ -32,6 +32,9 @@ Claude Code 模型配置管理器 — Rust TUI + CLI 工具。
         {
           programs.ccswitch = {
             enable = true;
+            envVars = {
+              DEEPSEEK_API_KEY = "sk-xxx";
+            };
             defaults = {
               version = 1;
               providers = [
@@ -59,7 +62,11 @@ Claude Code 模型配置管理器 — Rust TUI + CLI 工具。
 }
 ```
 
-Home Manager 会自动将配置写入 `~/.config/ccswitch/defaults.toml`，并安装 systemd user service（从 `assets/ccs-proxy.service` 读取）。
+Home Manager 会自动：
+
+- 将 `defaults` 写入 `~/.config/ccswitch/defaults.toml`
+- 将 `envVars` 写入 `~/.config/environment.d/ccswitch.conf`（systemd 自动加载）
+- 安装并启用 `ccs-proxy` systemd user service
 
 #### NixOS 全局安装
 
@@ -253,24 +260,24 @@ task_model = "anthropic/claude-haiku-4"
 
 ### 全局
 
-| 键                  | 功能           |
-| ------------------- | -------------- |
-| `Tab` / `Shift+Tab` | 切换侧边栏标签页 |
+| 键                  | 功能                |
+| ------------------- | ------------------- |
+| `Tab` / `Shift+Tab` | 切换侧边栏标签页    |
 | `Space`             | 切换 Claude / Codex |
-| `Q` / `q`           | 退出           |
+| `Q` / `q`           | 退出                |
 
 ### 模型标签页
 
 两层导航：左侧 Provider 列表 → 右侧 Profile 列表
 
-| 键            | 功能                             |
-| ------------- | -------------------------------- |
-| `J/K` `↑/↓`   | Provider 列表导航 / Profile 导航 |
-| `Enter`       | 进入 Profile 列表 / 切换模型     |
-| `A`           | 添加 Provider / Profile           |
-| `E`           | 编辑 Provider / Profile           |
-| `D`           | 删除 Provider / Profile（需确认）|
-| `Esc`         | 返回 Provider 列表                |
+| 键          | 功能                              |
+| ----------- | --------------------------------- |
+| `J/K` `↑/↓` | Provider 列表导航 / Profile 导航  |
+| `Enter`     | 进入 Profile 列表 / 切换模型      |
+| `A`         | 添加 Provider / Profile           |
+| `E`         | 编辑 Provider / Profile           |
+| `D`         | 删除 Provider / Profile（需确认） |
+| `Esc`       | 返回 Provider 列表                |
 
 ### 会话标签页
 
@@ -284,12 +291,12 @@ task_model = "anthropic/claude-haiku-4"
 
 ### 用量标签页
 
-| 键            | 功能                       |
-| ------------- | -------------------------- |
-| `J/K` `↑/↓`   | 导航模型列表               |
-| `T`           | 切换时间范围（天/周/月）   |
-| `/`           | 搜索模型                   |
-| `PgUp`/`PgDn` | 滚动右侧日用量图表         |
+| 键            | 功能                     |
+| ------------- | ------------------------ |
+| `J/K` `↑/↓`   | 导航模型列表             |
+| `T`           | 切换时间范围（天/周/月） |
+| `/`           | 搜索模型                 |
+| `PgUp`/`PgDn` | 滚动右侧日用量图表       |
 
 左侧显示选中模型的今日/本周/总计/请求数统计卡片及模型排名。右侧显示选中模型的近 7 天用量柱状图。首次启动时用量数据在后台异步扫描，右侧面板显示扫描进度条。
 
@@ -297,13 +304,12 @@ task_model = "anthropic/claude-haiku-4"
 
 单面板居中布局，所有设置项垂直排列。
 
-| 键            | 功能                       |
-| ------------- | -------------------------- |
-| `J/K` `↑/↓`   | 选择设置项                 |
-| `H/L` `←/→`  | 切换选项值                  |
+| 键          | 功能       |
+| ----------- | ---------- |
+| `J/K` `↑/↓` | 选择设置项 |
+| `H/L` `←/→` | 切换选项值 |
 
-支持切换主题（7 种）、模式（local / proxy）、语言（中文 / English）。
-切换模式会立即生效（自动重写 `settings.json`）。
+支持切换主题（7 种）、模式（local / proxy）、语言（中文 / English）。切换模式会立即生效（自动重写 `settings.json`）。
 
 ## 写入映射
 
@@ -311,22 +317,22 @@ task_model = "anthropic/claude-haiku-4"
 
 ### Local 模式
 
-| 环境变量                          | 值                     |
-| --------------------------------- | ---------------------- |
-| `ANTHROPIC_AUTH_TOKEN`            | 解析后的 API key       |
-| `ANTHROPIC_BASE_URL`              | 上游 API 地址          |
-| `ANTHROPIC_MODEL`                 | `reasoning_model`      |
-| `ANTHROPIC_DEFAULT_OPUS_MODEL`    | `reasoning_model`      |
-| `ANTHROPIC_DEFAULT_SONNET_MODEL`  | `reasoning_model`      |
-| `ANTHROPIC_DEFAULT_HAIKU_MODEL`   | `task_model`（去 [1m]）|
-| `CLAUDE_CODE_SUBAGENT_MODEL`      | `task_model`（去 [1m]）|
+| 环境变量                         | 值                      |
+| -------------------------------- | ----------------------- |
+| `ANTHROPIC_AUTH_TOKEN`           | 解析后的 API key        |
+| `ANTHROPIC_BASE_URL`             | 上游 API 地址           |
+| `ANTHROPIC_MODEL`                | `reasoning_model`       |
+| `ANTHROPIC_DEFAULT_OPUS_MODEL`   | `reasoning_model`       |
+| `ANTHROPIC_DEFAULT_SONNET_MODEL` | `reasoning_model`       |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL`  | `task_model`（去 [1m]） |
+| `CLAUDE_CODE_SUBAGENT_MODEL`     | `task_model`（去 [1m]） |
 
 ### Proxy 模式
 
-| 环境变量                          | 值                          |
-| --------------------------------- | --------------------------- |
-| `ANTHROPIC_AUTH_TOKEN`            | `ccswitch-proxy`（占位符）  |
-| `ANTHROPIC_BASE_URL`              | `http://127.0.0.1:15721`   |
+| 环境变量               | 值                         |
+| ---------------------- | -------------------------- |
+| `ANTHROPIC_AUTH_TOKEN` | `ccswitch-proxy`（占位符） |
+| `ANTHROPIC_BASE_URL`   | `http://127.0.0.1:15721`   |
 
 模型变量不在 settings.json 中设置，由 proxy server 透明处理。
 

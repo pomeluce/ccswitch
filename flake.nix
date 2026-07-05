@@ -37,7 +37,7 @@
         {
           packages.default = rustPlatform.buildRustPackage {
             pname = "ccswitch";
-            version = "1.7.3";
+            version = "1.7.4";
             src = ./.;
             cargoLock = {
               lockFile = ./Cargo.lock;
@@ -117,6 +117,11 @@
           {
             options.programs.ccswitch = {
               enable = lib.mkEnableOption "CCSwitch model configuration manager";
+              envVars = lib.mkOption {
+                type = lib.types.attrsOf lib.types.str;
+                default = { };
+                description = "Environment variables passed to the proxy service (e.g. API keys).";
+              };
               defaults = lib.mkOption {
                 type =
                   let
@@ -182,11 +187,26 @@
                   source = format.generate "ccswitch-defaults.toml" cfg.defaults;
                 };
 
-              # systemd user service — reads unit definition from assets/ccs-proxy.service
-              # (single source of truth shared with deb/rpm packaging)
-              xdg.configFile."systemd/user/ccs-proxy.service".text =
-                builtins.replaceStrings [ "/usr/bin/ccs" ] [ "${self.packages.${pkgs.system}.default}/bin/ccs" ]
-                  (builtins.readFile ./assets/ccs-proxy.service);
+              # systemd environment.d — env vars for proxy (API key resolution)
+              xdg.configFile."environment.d/ccswitch.conf".text = lib.concatStrings (
+                lib.mapAttrsToList (k: v: "${k}=${v}\n") cfg.envVars
+              );
+
+              # Proxy service
+              systemd.user.services.ccs-proxy = {
+                Unit = {
+                  Description = "CCSwitch Proxy Server";
+                  After = [ "network.target" ];
+                };
+                Install = {
+                  WantedBy = [ "default.target" ];
+                };
+                Service = {
+                  ExecStart = "${self.packages.${pkgs.system}.default}/bin/ccs proxy serve";
+                  Restart = "on-failure";
+                  RestartSec = "5";
+                };
+              };
             };
           };
       };
