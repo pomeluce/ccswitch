@@ -34,10 +34,8 @@ pub struct Lang {
     pub label_user: &'static str,
     pub label_profile_id: &'static str,
     pub label_profile_name: &'static str,
-    pub label_opus: &'static str,
-    pub label_sonnet: &'static str,
-    pub label_haiku: &'static str,
-    pub label_subagent: &'static str,
+    pub label_reasoning: &'static str,
+    pub label_task_model: &'static str,
     pub label_prov_name: &'static str,
     pub label_prov_id: &'static str,
     pub label_api_url: &'static str,
@@ -110,10 +108,7 @@ pub struct Lang {
     pub error_launch_claude: &'static str,
 }
 
-pub const LANGS: &[(&str, &Lang)] = &[
-    ("中文", &LANG_ZH),
-    ("English", &LANG_EN),
-];
+pub const LANGS: &[(&str, &Lang)] = &[("English", &LANG_EN), ("中文", &LANG_ZH)];
 
 const LANG_ZH: Lang = Lang {
     tab_providers: "模型",
@@ -145,10 +140,8 @@ const LANG_ZH: Lang = Lang {
     label_user: "用户",
     label_profile_id: "配置 ID",
     label_profile_name: "配置名称",
-    label_opus: "Opus 模型",
-    label_sonnet: "Sonnet 模型",
-    label_haiku: "Haiku 模型",
-    label_subagent: "子代理模型",
+    label_reasoning: "推理模型",
+    label_task_model: "任务模型",
     label_prov_name: "名称",
     label_prov_id: "ID",
     label_api_url: "API 地址",
@@ -242,10 +235,8 @@ const LANG_EN: Lang = Lang {
     label_user: "user",
     label_profile_id: "Profile ID",
     label_profile_name: "Profile Name",
-    label_opus: "Opus model",
-    label_sonnet: "Sonnet model",
-    label_haiku: "Haiku model",
-    label_subagent: "SubAgent model",
+    label_reasoning: "Reasoning Model",
+    label_task_model: "Task Model",
     label_prov_name: "Name",
     label_prov_id: "ID",
     label_api_url: "API URL",

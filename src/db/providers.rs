@@ -40,41 +40,41 @@ impl Db {
     }
 }
 
-// ── Claude Profiles ──
+// ── Profiles ──
 
 impl Db {
-    pub fn insert_claude_profile(&self, provider_id: &str, p: &Profile) -> Result<(), rusqlite::Error> {
+    pub fn insert_profile(&self, provider_id: &str, p: &Profile, app_type: &str) -> Result<(), rusqlite::Error> {
         self.conn().execute(
-            "INSERT OR REPLACE INTO claude_profiles (id, provider_id, name, opus_model, sonnet_model, haiku_model, subagent_model, is_default)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![p.id, provider_id, p.name, p.opus, p.sonnet, p.haiku, p.subagent, p.default as i32],
+            "INSERT OR REPLACE INTO profiles (id, app_type, name, provider_id, reasoning_model, task_model, is_default)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![p.id, app_type, p.name, provider_id, p.reasoning_model, p.task_model, p.default as i32],
         )?;
         Ok(())
     }
 
-    pub fn get_claude_profiles(&self, provider_id: &str) -> Result<Vec<Profile>, rusqlite::Error> {
+    pub fn get_profiles(&self, provider_id: &str, app_type: &str) -> Result<Vec<Profile>, rusqlite::Error> {
         let mut stmt = self.conn().prepare(
-            "SELECT id, name, opus_model, sonnet_model, haiku_model, subagent_model, is_default
-             FROM claude_profiles WHERE provider_id = ?1 ORDER BY name",
+            "SELECT id, name, reasoning_model, task_model, is_default
+             FROM profiles WHERE provider_id = ?1 AND app_type = ?2 ORDER BY name",
         )?;
-        let rows = stmt.query_map(params![provider_id], |row| {
+        let rows = stmt.query_map(params![provider_id, app_type], |row| {
             Ok(Profile {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                opus: row.get(2)?,
-                sonnet: row.get(3)?,
-                haiku: row.get(4)?,
-                subagent: row.get(5)?,
-                default: row.get::<_, i32>(6)? != 0,
+                reasoning_model: row.get(2)?,
+                task_model: row.get(3)?,
+                default: row.get::<_, i32>(4)? != 0,
                 source: Source::User,
             })
         })?;
         rows.collect()
     }
 
-    pub fn delete_claude_profile(&self, id: &str) -> Result<(), rusqlite::Error> {
-        self.conn()
-            .execute("DELETE FROM claude_profiles WHERE id = ?1", params![id])?;
+    pub fn delete_profile(&self, id: &str, app_type: &str) -> Result<(), rusqlite::Error> {
+        self.conn().execute(
+            "DELETE FROM profiles WHERE id = ?1 AND app_type = ?2",
+            params![id, app_type],
+        )?;
         Ok(())
     }
 }

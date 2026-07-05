@@ -208,8 +208,8 @@ impl ProvidersTab {
     fn do_add_profile(&mut self) {
         let prov_id = self.selected_provider().map(|p| p.id.clone()).unwrap_or_default();
         self.edit_form = Some(EditForm {
-            fields: [String::new(), String::new(), String::new(), String::new(), String::new(), String::new()],
-            cursors: [0, 0, 0, 0, 0, 0],
+            fields: [String::new(), String::new(), String::new(), String::new()],
+            cursors: [0, 0, 0, 0],
             focused: 0, is_edit: false,
             prov_id,
                     });
@@ -217,8 +217,8 @@ impl ProvidersTab {
 
     fn do_edit(&mut self) {
         let Some(prof) = self.selected_profile() else { return };
-        let fields = [prof.id.clone(), prof.name.clone(), prof.opus.clone(), prof.sonnet.clone(), prof.haiku.clone(), prof.subagent.clone()];
-        let cursors = [fields[0].len(), fields[1].len(), fields[2].len(), fields[3].len(), fields[4].len(), fields[5].len()];
+        let fields = [prof.id.clone(), prof.name.clone(), prof.reasoning_model.clone(), prof.task_model.clone()];
+        let cursors = [fields[0].len(), fields[1].len(), fields[2].len(), fields[3].len()];
         let prov_id = self.selected_provider().map(|p| p.id.clone()).unwrap_or_default();
         self.edit_form = Some(EditForm {
             fields, cursors, focused: 0, is_edit: true, prov_id,
@@ -234,11 +234,10 @@ impl ProvidersTab {
         };
         let pr = Profile {
             id: prof_id, name: form.fields[1].clone(),
-            opus: form.fields[2].clone(), sonnet: form.fields[3].clone(),
-            haiku: form.fields[4].clone(), subagent: form.fields[5].clone(),
+            reasoning_model: form.fields[2].clone(), task_model: form.fields[3].clone(),
             default: false, source: crate::core::models::Source::User,
         };
-        if let Err(e) = self.mgr.db().insert_claude_profile(&form.prov_id, &pr) {
+        if let Err(e) = self.mgr.db().insert_profile(&form.prov_id, &pr, "claude") {
             self.message = Some(format!("Failed to save: {}", e));
             tracing::error!("Failed to insert user profile: {}", e);
             return;
@@ -280,7 +279,7 @@ impl ProvidersTab {
             if !prof.source.can_delete() { return; }
             prof.id.clone()
         };
-        if let Err(e) = self.mgr.db().delete_claude_profile(&prof_id) {
+        if let Err(e) = self.mgr.db().delete_profile(&prof_id, "claude") {
             self.message = Some(format!("Failed to delete: {}", e));
             tracing::error!("Failed to delete user profile: {}", e);
             return;
@@ -370,7 +369,7 @@ impl TabContent for ProvidersTab {
                     Span::styled("     ", Style::default()),
                     Span::styled(&pr.id, Style::default().fg(theme::current().comment)),
                     Span::styled(" \u{b7} ", Style::default().fg(theme::current().dim)),
-                    Span::styled(&pr.opus, Style::default().fg(theme::current().comment)),
+                    Span::styled(&pr.reasoning_model, Style::default().fg(theme::current().comment)),
                     Span::styled(" \u{b7} ", Style::default().fg(theme::current().dim)),
                     Span::styled(source_label(pr.source), Style::default().fg(theme::current().comment)),
                 ]),

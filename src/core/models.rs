@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Represents whether a config came from system defaults or user DB
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, PartialOrd, Ord)]
 pub enum Source {
     #[default]
     #[serde(rename = "system")]
@@ -34,10 +34,10 @@ pub struct Provider {
 pub struct Profile {
     pub id: String,
     pub name: String,
-    pub opus: String,
-    pub sonnet: String,
-    pub haiku: String,
-    pub subagent: String,
+    #[serde(alias = "opus")]
+    pub reasoning_model: String,
+    #[serde(alias = "haiku")]
+    pub task_model: String,
     #[serde(default)]
     pub default: bool,
     #[serde(skip)]
@@ -53,10 +53,8 @@ pub struct ActiveConfig {
     pub profile_name: String,
     pub base_url: String,
     pub auth_token: String,
-    pub opus_model: String,
-    pub sonnet_model: String,
-    pub haiku_model: String,
-    pub subagent_model: String,
+    pub reasoning_model: String,
+    pub task_model: String,
 }
 
 /// How the switch should be applied
@@ -65,4 +63,3 @@ pub enum SwitchMode {
     Local,
     Proxy,
 }
-

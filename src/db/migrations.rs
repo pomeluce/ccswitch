@@ -2,16 +2,11 @@ use anyhow::Context;
 use rusqlite::Connection;
 
 /// Current schema version. Increment each time we add a migration step.
-pub(crate) const CURRENT_USER_VERSION: i32 = 2;
+pub(crate) const CURRENT_USER_VERSION: i32 = 3;
 
 /// Apply schema migrations on the given connection.
-/// - user_version == 0  → fresh install: run v1 DDL, set version = 1
-/// - user_version < CURRENT → run incremental steps
-/// - user_version > CURRENT → error (DB from newer app version)
 pub(crate) fn apply_migrations(conn: &Connection) -> Result<(), anyhow::Error> {
-    let version: i32 = conn
-        .pragma_query_value(None, "user_version", |r| r.get(0))
-        .context("read user_version")?;
+    let version: i32 = conn.pragma_query_value(None, "user_version", |r| r.get(0)).context("read user_version")?;
 
     if version > CURRENT_USER_VERSION {
         anyhow::bail!(
@@ -28,7 +23,9 @@ pub(crate) fn apply_migrations(conn: &Connection) -> Result<(), anyhow::Error> {
     if version < 2 {
         migrate_v2(conn).context("migrate v2")?;
     }
-
+    if version < 3 {
+        migrate_v3(conn).context("migrate v3")?;
+    }
     Ok(())
 }
 
@@ -53,30 +50,16 @@ fn migrate_v1(conn: &Connection) -> Result<(), anyhow::Error> {
              PRIMARY KEY (id, app_type)
          );
 
-         CREATE TABLE IF NOT EXISTS claude_profiles (
-             id TEXT PRIMARY KEY,
-             provider_id TEXT NOT NULL,
+         CREATE TABLE IF NOT EXISTS profiles (
+             id TEXT NOT NULL,
+             app_type TEXT NOT NULL CHECK(app_type IN ('claude','codex')),
              name TEXT NOT NULL,
-             opus_model TEXT NOT NULL,
-             sonnet_model TEXT NOT NULL,
-             haiku_model TEXT NOT NULL,
-             subagent_model TEXT NOT NULL,
+             provider_id TEXT NOT NULL DEFAULT '',
+             reasoning_model TEXT NOT NULL,
+             task_model TEXT NOT NULL DEFAULT '',
              is_default BOOLEAN NOT NULL DEFAULT 0,
-             created_at TEXT NOT NULL DEFAULT (datetime('now'))
-         );
-
-         CREATE TABLE IF NOT EXISTS codex_profiles (
-             id TEXT PRIMARY KEY,
-             provider_id TEXT NOT NULL,
-             name TEXT NOT NULL,
-             model TEXT NOT NULL,
-             reasoning_effort TEXT NOT NULL DEFAULT 'medium',
-             reasoning_summary TEXT NOT NULL DEFAULT 'auto',
-             verbosity TEXT NOT NULL DEFAULT 'medium',
-             review_model TEXT NOT NULL DEFAULT '',
-             plan_reasoning_effort TEXT NOT NULL DEFAULT '',
-             is_default BOOLEAN NOT NULL DEFAULT 0,
-             created_at TEXT NOT NULL DEFAULT (datetime('now'))
+             created_at TEXT NOT NULL DEFAULT (datetime('now')),
+             PRIMARY KEY (id, app_type)
          );
 
          CREATE TABLE IF NOT EXISTS settings (
@@ -189,51 +172,53 @@ fn migrate_v1(conn: &Connection) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-/// v2: Fix FK on claude_profiles / codex_profiles.
-/// `providers(id)` is not unique (PK is `(id, app_type)`), so FOREIGN KEY to it
-/// causes "foreign key mismatch" errors. Profiles are already scoped by table name,
-/// so the FK is unnecessary — remove it.
+/// v2: Clean up old FK on profiles (no-op for new installs, skip if already migrated).
 fn migrate_v2(conn: &Connection) -> Result<(), anyhow::Error> {
+    // Old FK cleanup was handled in prior versions. This migration exists only
+    // to bump user_version past 2.
+    conn.execute_batch("PRAGMA user_version = 2;")?;
+    Ok(())
+}
+
+/// v3: Replace claude_profiles + codex_profiles with unified profiles table.
+fn migrate_v3(conn: &Connection) -> Result<(), anyhow::Error> {
     conn.execute_batch(
-        "BEGIN;
-         -- Recreate claude_profiles without FK
-         CREATE TABLE claude_profiles_new (
-             id TEXT PRIMARY KEY,
-             provider_id TEXT NOT NULL,
+        "CREATE TABLE IF NOT EXISTS profiles (
+             id TEXT NOT NULL,
+             app_type TEXT NOT NULL CHECK(app_type IN ('claude','codex')),
              name TEXT NOT NULL,
-             opus_model TEXT NOT NULL,
-             sonnet_model TEXT NOT NULL,
-             haiku_model TEXT NOT NULL,
-             subagent_model TEXT NOT NULL,
+             provider_id TEXT NOT NULL DEFAULT '',
+             reasoning_model TEXT NOT NULL,
+             task_model TEXT NOT NULL DEFAULT '',
              is_default BOOLEAN NOT NULL DEFAULT 0,
-             created_at TEXT NOT NULL DEFAULT (datetime('now'))
-         );
-         INSERT INTO claude_profiles_new SELECT * FROM claude_profiles;
-         DROP TABLE claude_profiles;
-         ALTER TABLE claude_profiles_new RENAME TO claude_profiles;
-
-         -- Recreate codex_profiles without FK
-         CREATE TABLE codex_profiles_new (
-             id TEXT PRIMARY KEY,
-             provider_id TEXT NOT NULL,
-             name TEXT NOT NULL,
-             model TEXT NOT NULL,
-             reasoning_effort TEXT NOT NULL DEFAULT 'medium',
-             reasoning_summary TEXT NOT NULL DEFAULT 'auto',
-             verbosity TEXT NOT NULL DEFAULT 'medium',
-             review_model TEXT NOT NULL DEFAULT '',
-             plan_reasoning_effort TEXT NOT NULL DEFAULT '',
-             is_default BOOLEAN NOT NULL DEFAULT 0,
-             created_at TEXT NOT NULL DEFAULT (datetime('now'))
-         );
-         INSERT INTO codex_profiles_new SELECT * FROM codex_profiles;
-         DROP TABLE codex_profiles;
-         ALTER TABLE codex_profiles_new RENAME TO codex_profiles;
-
-         PRAGMA user_version = 2;
-         COMMIT;",
+             created_at TEXT NOT NULL DEFAULT (datetime('now')),
+             PRIMARY KEY (id, app_type)
+         );"
     )?;
 
-    tracing::info!("Migration v2 complete: removed FK on profiles");
+    // Migrate data from old tables if they exist
+    let has_claude = conn.prepare("SELECT 1 FROM claude_profiles LIMIT 1").is_ok();
+    let has_codex = conn.prepare("SELECT 1 FROM codex_profiles LIMIT 1").is_ok();
+
+    if has_claude {
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO profiles (id, app_type, name, provider_id, reasoning_model, task_model, is_default, created_at)
+             SELECT id, 'claude', name, provider_id, opus_model, COALESCE(haiku_model,''), is_default, created_at
+             FROM claude_profiles;
+             DROP TABLE IF EXISTS claude_profiles;"
+        )?;
+    }
+    if has_codex {
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO profiles (id, app_type, name, provider_id, reasoning_model, task_model, is_default, created_at)
+             SELECT id, 'codex', name, provider_id, model, '', is_default, created_at
+             FROM codex_profiles;
+             DROP TABLE IF EXISTS codex_profiles;"
+        )?;
+    }
+
+    conn.execute_batch("PRAGMA user_version = 3;")?;
+
+    tracing::info!("Migration v3 complete: unified profiles table");
     Ok(())
 }

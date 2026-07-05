@@ -11,21 +11,20 @@ use ratatui::{
 };
 
 pub struct EditForm {
-    pub fields: [String; 6],
-    pub cursors: [usize; 6],
+    pub fields: [String; 4],
+    pub cursors: [usize; 4],
     pub focused: usize,
     pub prov_id: String,
     pub is_edit: bool,
 }
 
-pub fn edit_labels() -> [&'static str; 6] {
+pub fn edit_labels() -> [&'static str; 4] {
     let l = lang::current();
-    [l.label_profile_id, l.label_profile_name, l.label_opus, l.label_sonnet, l.label_haiku, l.label_subagent]
+    [l.label_profile_id, l.label_profile_name, l.label_reasoning, l.label_task_model]
 }
 
 impl EditForm {
     pub fn handle_key(&mut self, code: KeyCode) {
-        // Skip readonly id field (index 0) in edit mode
         if self.is_edit && self.focused == 0 && !matches!(code, KeyCode::Tab | KeyCode::BackTab) {
             return;
         }
@@ -33,10 +32,10 @@ impl EditForm {
         let cur = &mut self.cursors[self.focused];
         match code {
             KeyCode::Tab => {
-                self.focused = (self.focused + 1) % 6;
+                self.focused = (self.focused + 1) % 4;
             }
             KeyCode::BackTab => {
-                self.focused = if self.focused == 0 { 5 } else { self.focused - 1 };
+                self.focused = if self.focused == 0 { 3 } else { self.focused - 1 };
             }
             KeyCode::Left => {
                 *cur = cur.saturating_sub(1);
