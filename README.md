@@ -35,6 +35,7 @@ Claude Code 模型配置管理器 — Rust TUI + CLI 工具。
             envVars = {
               DEEPSEEK_API_KEY = "sk-xxx";
             };
+            # 或直接传文件路径: envVars = "/path/to/env";
             defaults = {
               version = 1;
               providers = [
@@ -65,8 +66,7 @@ Claude Code 模型配置管理器 — Rust TUI + CLI 工具。
 Home Manager 会自动：
 
 - 将 `defaults` 写入 `~/.config/ccswitch/defaults.toml`
-- 将 `envVars` 写入 `~/.config/environment.d/ccswitch.conf`（systemd 自动加载）
-- 安装并启用 `ccs-proxy` systemd user service
+- 安装并启用 `ccs-proxy` systemd user service（通过 `envVars` 传入环境文件路径）
 
 #### NixOS 全局安装
 

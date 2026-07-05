@@ -118,9 +118,12 @@
             options.programs.ccswitch = {
               enable = lib.mkEnableOption "CCSwitch model configuration manager";
               envVars = lib.mkOption {
-                type = lib.types.attrsOf lib.types.str;
-                default = { };
-                description = "Environment variables passed to the proxy service (e.g. API keys).";
+                type = lib.types.nullOr (lib.types.either lib.types.str (lib.types.attrsOf lib.types.str));
+                default = null;
+                example = {
+                  DEEPSEEK_API_KEY = "sk-xxx";
+                };
+                description = "Environment file path or attrset of env vars for proxy service.";
               };
               defaults = lib.mkOption {
                 type =
@@ -187,10 +190,10 @@
                   source = format.generate "ccswitch-defaults.toml" cfg.defaults;
                 };
 
-              # systemd environment.d — env vars for proxy (API key resolution)
-              xdg.configFile."environment.d/ccswitch.conf".text = lib.concatStrings (
-                lib.mapAttrsToList (k: v: "${k}=${v}\n") cfg.envVars
-              );
+              # Env file: attrset → generate file; string → use as-is
+              xdg.configFile."ccswitch/env" = lib.mkIf (cfg.envVars != null && !lib.isString cfg.envVars) {
+                text = lib.concatStrings (lib.mapAttrsToList (k: v: "${k}=${v}\n") cfg.envVars);
+              };
 
               # Proxy service
               systemd.user.services.ccs-proxy = {
@@ -205,6 +208,9 @@
                   ExecStart = "${self.packages.${pkgs.system}.default}/bin/ccs proxy serve";
                   Restart = "on-failure";
                   RestartSec = "5";
+                }
+                // lib.optionalAttrs (cfg.envVars != null) {
+                  EnvironmentFile = if lib.isString cfg.envVars then cfg.envVars else "%h/.config/ccswitch/env";
                 };
               };
             };
