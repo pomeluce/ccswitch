@@ -15,8 +15,7 @@ fn mask_key(key: &str) -> String {
 }
 
 fn get_db_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    PathBuf::from(home).join(".config/ccswitch").join("ccswitch.db")
+    crate::core::config::db_path()
 }
 
 pub fn run_cli(args: CliArgs) -> Result<()> {

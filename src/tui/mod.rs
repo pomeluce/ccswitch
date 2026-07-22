@@ -5,13 +5,12 @@ pub mod theme;
 pub mod tabs;
 pub mod widgets;
 
-use std::path::PathBuf;
+use crate::core::config;
 
 pub fn run_tui() -> anyhow::Result<()> {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    let db_path = PathBuf::from(&home).join(".config/ccswitch").join("ccswitch.db");
-    let defaults_path = PathBuf::from(&home).join(".config/ccswitch/defaults.toml");
+    let db_path = config::db_path();
+    let defaults_path = config::defaults_path();
 
-    let mut app = app::App::new(db_path, defaults_path)?;
+    let mut app = app::App::new(&db_path, defaults_path.as_deref())?;
     app.run()
 }

@@ -65,6 +65,8 @@ pub struct Lang {
 
     // Usage tab
     pub chart_title: &'static str,
+    pub models_title: &'static str,
+    pub usage_tab_title: &'static str,
     pub scan_scanning: &'static str,
     pub scan_files: &'static str,
     pub scan_records: &'static str,
@@ -174,6 +176,8 @@ const LANG_ZH: Lang = Lang {
     msg_cannot_edit_sys_provider: "无法编辑系统默认供应商",
 
     chart_title: "本周",
+    models_title: "模型",
+    usage_tab_title: "用量",
     scan_scanning: "正在扫描 Claude Code 会话...",
     scan_files: "个文件",
     scan_records: "条记录已导入",
@@ -273,6 +277,8 @@ const LANG_EN: Lang = Lang {
     msg_cannot_edit_sys_provider: "Cannot edit system default provider",
 
     chart_title: "This Week",
+    models_title: "Models",
+    usage_tab_title: " Usage ",
     scan_scanning: "Scanning Claude Code sessions...",
     scan_files: "files",
     scan_records: "records imported",

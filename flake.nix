@@ -5,8 +5,6 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
     rust-overlay.url = "github:oxalica/rust-overlay";
-    # home-manager is not needed as a flake input — the homeModules.default
-    # module is standalone and imported by the user's own home-manager config.
   };
 
   outputs =
@@ -37,7 +35,7 @@
         {
           packages.default = rustPlatform.buildRustPackage {
             pname = "ccswitch";
-            version = "1.7.5";
+            version = "1.8.0";
             src = ./.;
             cargoLock = {
               lockFile = ./Cargo.lock;

@@ -320,7 +320,7 @@ impl ProvidersTab {
 }
 
 impl TabContent for ProvidersTab {
-    fn render(&mut self, f: &mut Frame, area: Rect, _app_type: &str) {
+    fn render(&mut self, f: &mut Frame, area: Rect) {
         let [left, right] = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])

@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::{mpsc, Arc};
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
@@ -16,19 +15,17 @@ pub struct App {
     pub history_tab: HistoryTab,
     pub settings_tab: SettingsTab,
     pub should_quit: bool,
-    pub app_type: String,
     /// 30s polling channel — receives true when JSONL files change
     poll_rx: Option<mpsc::Receiver<bool>>,
 }
 
 impl App {
-    pub fn new(db_path: PathBuf, defaults_path: PathBuf) -> anyhow::Result<Self> {
-        let mgr = Arc::new(ConfigManager::new(&db_path, Some(&defaults_path))?);
+    pub fn new(db_path: &std::path::Path, defaults_path: Option<&std::path::Path>) -> anyhow::Result<Self> {
+        let mgr = Arc::new(ConfigManager::new(db_path, defaults_path)?);
         let providers_tab = ProvidersTab::new(mgr.clone());
         let usage_tab = UsageTab::new(mgr.clone());
         let history_tab = HistoryTab::new(mgr.clone());
         let settings_tab = SettingsTab::new(mgr.clone());
-        // Start 30s background file watcher for live incremental updates
         let poll_rx = Some(super::file_watcher::spawn_polling_thread(30));
 
         Ok(App {
@@ -39,7 +36,6 @@ impl App {
             history_tab,
             settings_tab,
             should_quit: false,
-            app_type: "claude".to_string(),
             poll_rx,
         })
     }
@@ -48,22 +44,17 @@ impl App {
         let mut terminal = ratatui::init();
         let result = self.event_loop(&mut terminal);
         ratatui::restore();
-        // Gracefully wait for background threads
         self.usage_tab.shutdown();
         result
     }
 
     fn event_loop(&mut self, terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> anyhow::Result<()> {
         while !self.should_quit {
-            // Poll background scan events every tick (for smooth progress bar)
             self.usage_tab.poll_scan_events();
-
-            // Check 30s file watcher for live incremental updates
             self.poll_file_changes();
 
             terminal.draw(|f| self.render(f))?;
 
-            // Non-blocking poll: 100ms timeout so scan progress updates without keypresses
             if event::poll(std::time::Duration::from_millis(100))? {
                 if let Event::Key(key) = event::read()? {
                     if key.kind == KeyEventKind::Press {
@@ -71,7 +62,6 @@ impl App {
                     }
                 }
             }
-            // Handle terminal suspend for external process (claude)
             if self.history_tab.needs_terminal_reinit {
                 ratatui::restore();
                 if let Some(ref project) = self.history_tab.launch_project.take() {
@@ -94,22 +84,18 @@ impl App {
         Ok(())
     }
 
-    /// Check 30s polling channel. If files changed, run incremental imports
-    /// and refresh data for the active tab.
     fn poll_file_changes(&mut self) {
         if let Some(rx) = &self.poll_rx {
             match rx.try_recv() {
                 Ok(true) => {
                     tracing::info!("File watcher: changes detected, running incremental imports");
-                    // Incremental session import (updates existing + imports new)
                     if let Err(e) = crate::core::import::import_claude_sessions(self.mgr.db()) {
                         tracing::warn!("Polling session import failed: {}", e);
                     } else {
-                        // Refresh history tab data
                         let sessions = self
                             .mgr
                             .db()
-                            .query_sessions(&self.app_type, None, None, 200)
+                            .query_sessions("claude", None, None, 200)
                             .unwrap_or_default()
                             .into_iter()
                             .filter(|s| s.size_bytes > 0)
@@ -117,12 +103,11 @@ impl App {
                         self.history_tab.all_sessions = sessions;
                         self.history_tab.refresh();
                     }
-                    // Trigger usage scan for changed files (calls existing background scan)
                     if !self.usage_tab.is_scanning() {
                         self.usage_tab.trigger_incremental_scan();
                     }
                 }
-                Ok(false) => {} // No changes
+                Ok(false) => {}
                 Err(mpsc::TryRecvError::Empty) => {}
                 Err(mpsc::TryRecvError::Disconnected) => {
                     self.poll_rx = None;
@@ -132,7 +117,6 @@ impl App {
     }
 
     fn handle_key(&mut self, code: KeyCode) {
-        // Let active tab handle keys first
         let handled = match self.active_tab {
             Tab::Providers => self.providers_tab.handle_key(code),
             Tab::Usage => self.usage_tab.handle_key(code),
@@ -143,23 +127,9 @@ impl App {
             return;
         }
 
-        // Tab/Shift+Tab: sidebar tab navigation
         match code {
-            KeyCode::Tab => { self.next_tab(); return; }
-            KeyCode::BackTab => { self.prev_tab(); return; }
-            _ => {}
-        }
-
-        // Space / Shift+Space: switch app type
-        match code {
-            KeyCode::Char(' ') => {
-                self.app_type = super::widgets::app_bar::toggle_app_type(&self.app_type).to_string();
-                return;
-            }
-            _ => {}
-        }
-
-        match code {
+            KeyCode::Tab => { self.next_tab(); }
+            KeyCode::BackTab => { self.prev_tab(); }
             KeyCode::Char('q') | KeyCode::Char('Q') => self.should_quit = true,
             _ => {}
         }
@@ -184,15 +154,16 @@ impl App {
     }
 
     fn render(&mut self, f: &mut Frame) {
-        use super::widgets::app_bar::render_app_bar;
         use super::widgets::shared::render_shortcut_bar;
-        use super::widgets::sidebar::render_sidebar;
+        use crate::tui::lang;
         use ratatui::layout::{Constraint, Direction, Layout};
+        use ratatui::style::Style;
+        use ratatui::text::{Line, Span};
+        use ratatui::widgets::Paragraph;
 
         let area = f.area();
 
-        // Calculate shortcut bar height for the active tab (width = main area, ~sidebar 14 cols)
-        let main_width = area.width.saturating_sub(16);
+        let main_width = area.width.saturating_sub(2);
         let sc_lines = match self.active_tab {
             Tab::Providers => self.providers_tab.shortcut_lines(main_width),
             Tab::Usage => self.usage_tab.shortcut_lines(main_width),
@@ -200,33 +171,49 @@ impl App {
             Tab::Settings => self.settings_tab.shortcut_lines(main_width),
         };
 
-        // Level 1: sidebar | main
-        let [sidebar_area, main_area] = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(16), Constraint::Min(20)])
-            .areas(area);
-
-        // Level 2: main → app_bar | content | shortcuts
-        let [app_bar_area, content_area, sc_area] = Layout::default()
+        // Layout: tab_bar | content | shortcuts
+        let [tab_bar_area, content_area, sc_area] = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),
+                Constraint::Length(1),
                 Constraint::Min(3),
                 Constraint::Length(2 + sc_lines as u16),
             ])
-            .areas(main_area);
+            .areas(area);
 
-        let is_proxy = self.mgr.get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false);
-        render_sidebar(f, sidebar_area, self.active_tab, is_proxy);
-        render_app_bar(f, app_bar_area, &self.app_type);
+        // ── Tab bar ──
+        let tabs: [(&str, Tab); 4] = [
+            (lang::current().tab_providers, Tab::Providers),
+            (lang::current().tab_usage, Tab::Usage),
+            (lang::current().tab_history, Tab::History),
+            (lang::current().tab_settings, Tab::Settings),
+        ];
+        let tab_spans: Vec<Span> = tabs
+            .iter()
+            .flat_map(|(label, tab)| {
+                let style = if *tab == self.active_tab {
+                    Style::default().fg(super::theme::current().cyan)
+                } else {
+                    Style::default().fg(super::theme::current().dim)
+                };
+                vec![
+                    Span::styled(" ", Style::default()),
+                    Span::styled(*label, style),
+                ]
+            })
+            .collect();
+        let tab_bar = Paragraph::new(Line::from(tab_spans));
+        f.render_widget(tab_bar, tab_bar_area);
 
+        // ── Content ──
         match self.active_tab {
-            Tab::Providers => self.providers_tab.render(f, content_area, &self.app_type),
-            Tab::Usage => self.usage_tab.render(f, content_area, &self.app_type),
-            Tab::History => self.history_tab.render(f, content_area, &self.app_type),
-            Tab::Settings => self.settings_tab.render(f, content_area, &self.app_type),
+            Tab::Providers => self.providers_tab.render(f, content_area),
+            Tab::Usage => self.usage_tab.render(f, content_area),
+            Tab::History => self.history_tab.render(f, content_area),
+            Tab::Settings => self.settings_tab.render(f, content_area),
         }
 
+        // ── Shortcut bar ──
         let groups = match self.active_tab {
             Tab::Providers => self.providers_tab.shortcut_groups(),
             Tab::Usage => self.usage_tab.shortcut_groups(),

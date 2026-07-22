@@ -203,9 +203,9 @@ impl UsageTab {
 }
 
 impl TabContent for UsageTab {
-    fn render(&mut self, f: &mut Frame, area: Rect, app_type: &str) {
-        if self.app_type != app_type { self.cached_daily = None; }
-        self.app_type = app_type.to_string();
+    fn render(&mut self, f: &mut Frame, area: Rect) {
+        if self.app_type != "claude" { self.cached_daily = None; }
+        self.app_type = "claude".to_string();
         let main = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
@@ -414,7 +414,7 @@ impl UsageTab {
             .block(
                 Block::bordered()
                     .border_set(ratatui::symbols::border::ROUNDED)
-                    .title(format!("Models — \u{3a3} {}", format_tokens(self.total_tokens())))
+                    .title(format!("{} — \u{3a3} {}", lang::current().models_title, format_tokens(self.total_tokens())))
                     .border_style(Style::default().fg(theme::current().dim)),
             )
             .highlight_style(Style::default());
@@ -433,7 +433,7 @@ impl UsageTab {
                 Line::from(Span::styled(lang::current().no_usage, Style::default().fg(theme::current().comment))).centered(),
                 Line::from(""),
                 Line::from(Span::styled(lang::current().no_usage_hint, Style::default().fg(theme::current().dim))).centered(),
-            ]).block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED).title(" Usage ").border_style(Style::default().fg(theme::current().dim)));
+            ]).block(Block::bordered().border_set(ratatui::symbols::border::ROUNDED).title(lang::current().usage_tab_title).border_style(Style::default().fg(theme::current().dim)));
             f.render_widget(p, area);
         }
     }

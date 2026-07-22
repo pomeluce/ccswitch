@@ -121,7 +121,7 @@ impl HistoryTab {
 }
 
 impl TabContent for HistoryTab {
-    fn render(&mut self, f: &mut Frame, area: Rect, _app_type: &str) {
+    fn render(&mut self, f: &mut Frame, area: Rect) {
         let main = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
@@ -195,7 +195,7 @@ impl TabContent for HistoryTab {
             .block(
                 Block::bordered()
                     .border_set(ratatui::symbols::border::ROUNDED)
-                    .title(format!("Sessions ({})", count))
+                    .title(format!("{} ({})", lang::current().sessions_title, count))
                     .border_style(Style::default().fg(theme::current().dim)),
             )
             .highlight_style(Style::default());

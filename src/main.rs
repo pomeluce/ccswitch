@@ -10,14 +10,12 @@ use cli::args::CliArgs;
 fn main() {
     let args = CliArgs::parse();
     if args.command.is_none() {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-
         // First-launch check: import session data with progress before TUI starts.
         // Subsequent launches skip this — session_history already has data.
-        pre_tui_import(&home);
+        pre_tui_import();
 
         // Init tracing to file in TUI mode — stderr output corrupts the terminal.
-        let log_dir = std::path::PathBuf::from(&home).join(".local/share/ccswitch");
+        let log_dir = ccswitch::core::config::data_dir();
         std::fs::create_dir_all(&log_dir).ok();
         let log_path = log_dir.join("ccs.log");
         let file = match std::fs::OpenOptions::new().create(true).append(true).open(&log_path) {
@@ -49,8 +47,8 @@ fn main() {
 
 /// If this is the first launch (no session data yet), run session import
 /// with a terminal progress bar before the TUI starts.
-fn pre_tui_import(home: &str) {
-    let db_path = std::path::PathBuf::from(home).join(".config/ccswitch/ccswitch.db");
+fn pre_tui_import() {
+    let db_path = crate::core::config::db_path();
 
     let db = match db::Db::open(&db_path) {
         Ok(db) => db,

@@ -124,7 +124,7 @@ impl SettingsTab {
 }
 
 impl TabContent for SettingsTab {
-    fn render(&mut self, f: &mut Frame, area: Rect, _app_type: &str) {
+    fn render(&mut self, f: &mut Frame, area: Rect) {
         let l = lang::current();
         let items = self.items();
 

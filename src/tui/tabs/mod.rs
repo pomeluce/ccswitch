@@ -14,7 +14,7 @@ pub enum Tab {
 }
 
 pub trait TabContent {
-    fn render(&mut self, f: &mut Frame, area: ratatui::layout::Rect, app_type: &str);
+    fn render(&mut self, f: &mut Frame, area: ratatui::layout::Rect);
     fn handle_key(&mut self, code: ratatui::crossterm::event::KeyCode) -> bool;
     /// Shortcut key groups for the global shortcut bar: [(key, label_color), ...]
     fn shortcut_groups(&self) -> Vec<Vec<(String, ratatui::style::Color)>>;

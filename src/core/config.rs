@@ -4,10 +4,43 @@ use anyhow::Context;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
+/// Config directory for ccswitch: XDG_CONFIG_HOME on Linux, AppData on Windows,
+/// Library/Application Support on macOS.
+pub fn config_dir() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("ccswitch")
+}
+
+/// Data directory for ccswitch (logs, runtime data).
+#[allow(dead_code)]
+pub fn data_dir() -> PathBuf {
+    dirs::data_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("ccswitch")
+}
+
+/// Config DB path.
+pub fn db_path() -> PathBuf {
+    config_dir().join("ccswitch.db")
+}
+
+/// System defaults path (for TOML overrides). Uses XDG config + /etc fallback.
+pub fn defaults_path() -> Option<PathBuf> {
+    let user = config_dir().join("defaults.toml");
+    if user.exists() {
+        return Some(user);
+    }
+    let system = PathBuf::from("/etc/ccswitch/defaults.toml");
+    if system.exists() {
+        return Some(system);
+    }
+    None
+}
+
 fn default_config_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    let xdg = PathBuf::from(&home).join(".config/ccswitch/defaults.toml");
-    if xdg.exists() { return xdg; }
+    let user = config_dir().join("defaults.toml");
+    if user.exists() { return user; }
     PathBuf::from("/etc/ccswitch/defaults.toml")
 }
 
