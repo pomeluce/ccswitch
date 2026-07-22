@@ -159,7 +159,7 @@ impl App {
         use ratatui::layout::{Constraint, Direction, Layout};
         use ratatui::style::Style;
         use ratatui::text::{Line, Span};
-        use ratatui::widgets::Paragraph;
+        use ratatui::widgets::{Block, Paragraph};
 
         let area = f.area();
 
@@ -175,13 +175,17 @@ impl App {
         let [tab_bar_area, content_area, sc_area] = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1),
+                Constraint::Length(3),
                 Constraint::Min(3),
                 Constraint::Length(2 + sc_lines as u16),
             ])
             .areas(area);
 
         // ── Tab bar ──
+        let is_proxy = self.mgr.get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false);
+        let mode_value = if is_proxy { "proxy" } else { "local" };
+        let mode_color = if is_proxy { super::theme::current().green } else { super::theme::current().yellow };
+
         let tabs: [(&str, Tab); 4] = [
             (lang::current().tab_providers, Tab::Providers),
             (lang::current().tab_usage, Tab::Usage),
@@ -197,12 +201,27 @@ impl App {
                     Style::default().fg(super::theme::current().dim)
                 };
                 vec![
-                    Span::styled(" ", Style::default()),
+                    Span::styled("  ", Style::default()),
                     Span::styled(*label, style),
                 ]
             })
             .collect();
-        let tab_bar = Paragraph::new(Line::from(tab_spans));
+
+        let title_line = Line::from(vec![
+            Span::styled("ccswitch-tui ", Style::default().fg(super::theme::current().dim)),
+        ]);
+        let bottom_line = Line::from(vec![
+            Span::styled(format!(" {}: ", lang::current().mode_prefix), Style::default().fg(super::theme::current().dim)),
+            Span::styled(mode_value, Style::default().fg(mode_color)),
+        ]);
+        let tab_line = Line::from(tab_spans);
+
+        let tab_bar = Paragraph::new(vec![title_line, tab_line, bottom_line])
+            .block(
+                Block::bordered()
+                    .border_set(ratatui::symbols::border::ROUNDED)
+                    .border_style(Style::default().fg(super::theme::current().dim)),
+            );
         f.render_widget(tab_bar, tab_bar_area);
 
         // ── Content ──
