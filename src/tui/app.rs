@@ -154,16 +154,15 @@ impl App {
     }
 
     fn render(&mut self, f: &mut Frame) {
+        use super::widgets::app_bar::render_app_bar;
         use super::widgets::shared::render_shortcut_bar;
-        use crate::tui::lang;
+        use super::widgets::sidebar::render_sidebar;
         use ratatui::layout::{Constraint, Direction, Layout};
-        use ratatui::style::Style;
-        use ratatui::text::{Line, Span};
-        use ratatui::widgets::{Block, Paragraph};
 
         let area = f.area();
 
-        let main_width = area.width.saturating_sub(2);
+        // Calculate shortcut bar height for the active tab (width = main area, ~sidebar 14 cols)
+        let main_width = area.width.saturating_sub(16);
         let sc_lines = match self.active_tab {
             Tab::Providers => self.providers_tab.shortcut_lines(main_width),
             Tab::Usage => self.usage_tab.shortcut_lines(main_width),
@@ -171,60 +170,26 @@ impl App {
             Tab::Settings => self.settings_tab.shortcut_lines(main_width),
         };
 
-        // Layout: tab_bar | content | shortcuts
-        let [tab_bar_area, content_area, sc_area] = Layout::default()
+        // Level 1: sidebar | main
+        let [sidebar_area, main_area] = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(16), Constraint::Min(20)])
+            .areas(area);
+
+        // Level 2: main → app_bar | content | shortcuts
+        let [app_bar_area, content_area, sc_area] = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(3),
                 Constraint::Min(3),
                 Constraint::Length(2 + sc_lines as u16),
             ])
-            .areas(area);
+            .areas(main_area);
 
-        // ── Tab bar ──
         let is_proxy = self.mgr.get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false);
-        let mode_value = if is_proxy { "proxy" } else { "local" };
-        let mode_color = if is_proxy { super::theme::current().green } else { super::theme::current().yellow };
+        render_sidebar(f, sidebar_area, self.active_tab, is_proxy);
+        render_app_bar(f, app_bar_area);
 
-        let tabs: [(&str, Tab); 4] = [
-            (lang::current().tab_providers, Tab::Providers),
-            (lang::current().tab_usage, Tab::Usage),
-            (lang::current().tab_history, Tab::History),
-            (lang::current().tab_settings, Tab::Settings),
-        ];
-        let tab_spans: Vec<Span> = tabs
-            .iter()
-            .flat_map(|(label, tab)| {
-                let style = if *tab == self.active_tab {
-                    Style::default().fg(super::theme::current().cyan)
-                } else {
-                    Style::default().fg(super::theme::current().dim)
-                };
-                vec![
-                    Span::styled("  ", Style::default()),
-                    Span::styled(*label, style),
-                ]
-            })
-            .collect();
-
-        let title_line = Line::from(vec![
-            Span::styled("ccswitch-tui ", Style::default().fg(super::theme::current().dim)),
-        ]);
-        let bottom_line = Line::from(vec![
-            Span::styled(format!(" {}: ", lang::current().mode_prefix), Style::default().fg(super::theme::current().dim)),
-            Span::styled(mode_value, Style::default().fg(mode_color)),
-        ]);
-        let tab_line = Line::from(tab_spans);
-
-        let tab_bar = Paragraph::new(vec![title_line, tab_line, bottom_line])
-            .block(
-                Block::bordered()
-                    .border_set(ratatui::symbols::border::ROUNDED)
-                    .border_style(Style::default().fg(super::theme::current().dim)),
-            );
-        f.render_widget(tab_bar, tab_bar_area);
-
-        // ── Content ──
         match self.active_tab {
             Tab::Providers => self.providers_tab.render(f, content_area),
             Tab::Usage => self.usage_tab.render(f, content_area),
@@ -232,7 +197,6 @@ impl App {
             Tab::Settings => self.settings_tab.render(f, content_area),
         }
 
-        // ── Shortcut bar ──
         let groups = match self.active_tab {
             Tab::Providers => self.providers_tab.shortcut_groups(),
             Tab::Usage => self.usage_tab.shortcut_groups(),
