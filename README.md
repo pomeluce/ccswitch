@@ -154,6 +154,15 @@ sudo mv ccs /usr/local/bin/
 
 从 [Releases](https://github.com/pomeluce/ccswitch/releases) 下载 zip 或 exe，解压后将 `ccs.exe` 放到 `%PATH%` 中。
 
+也可以通过 **Scoop** 安装：
+
+```bash
+scoop bucket add ccswitch https://github.com/pomeluce/scoop-ccswitch.git
+scoop install ccswitch
+```
+
+安装后执行 `ccs service install` 注册 Windows 计划任务后台服务。
+
 ## 使用
 
 ### TUI 模式

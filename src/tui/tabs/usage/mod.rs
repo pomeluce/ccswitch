@@ -155,48 +155,53 @@ impl UsageTab {
         self.summaries.iter().map(|s| Self::token_total(s)).max().unwrap_or(1)
     }
 
-    /// Called every event-loop tick — process exactly one event to stay responsive.
-    /// One Batch per tick; Progress and Done are lightweight and handled immediately.
+    /// Called every event-loop tick — drain ALL pending events at once to avoid
+    /// batching delays (one-per-tick would take N×100ms for N files).
     pub fn poll_scan_events(&mut self) {
-        let event = match &self.scan_rx {
-            Some(rx) => match rx.try_recv() {
-                Ok(e) => e,
-                Err(mpsc::TryRecvError::Empty) => return,
+        let rx = match &self.scan_rx {
+            Some(rx) => rx,
+            None => return,
+        };
+
+        let mut done = false;
+        loop {
+            match rx.try_recv() {
+                Ok(ScanEvent::Batch { sid, file_path, records, .. }) => {
+                    if !records.is_empty() {
+                        if let Err(e) = self.mgr.db().insert_usage_batch("claude", &sid, &file_path, &records) {
+                            tracing::error!("Failed to insert usage batch: {}", e);
+                        }
+                    }
+                }
+                Ok(ScanEvent::Progress { files_done, files_total, records }) => {
+                    if matches!(self.scan_state, ScanState::Scanning { .. }) {
+                        self.scan_state = ScanState::Scanning { files_done, files_total, records };
+                    }
+                }
+                Ok(ScanEvent::Done {}) => {
+                    done = true;
+                }
+                Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {
                     self.scan_state = ScanState::Idle;
                     self.scan_rx = None;
                     self.scan_handle = None;
                     return;
                 }
-            },
-            None => return,
-        };
+            }
+        }
 
-        match event {
-            ScanEvent::Batch { sid, file_path, records, .. } => {
-                if !records.is_empty() {
-                    if let Err(e) = self.mgr.db().insert_usage_batch("claude", &sid, &file_path, &records) {
-                        tracing::error!("Failed to insert usage batch: {}", e);
-                    }
-                }
+        if done {
+            tracing::info!("Usage scan complete");
+            self.scan_state = ScanState::Idle;
+            self.scan_rx = None;
+            if let Some(h) = self.scan_handle.take() {
+                let _ = h.join();
             }
-            ScanEvent::Progress { files_done, files_total, records } => {
-                if matches!(self.scan_state, ScanState::Scanning { .. }) {
-                    self.scan_state = ScanState::Scanning { files_done, files_total, records };
-                }
-            }
-            ScanEvent::Done {} => {
-                tracing::info!("Usage scan complete");
-                self.scan_state = ScanState::Idle;
-                self.scan_rx = None;
-                if let Some(h) = self.scan_handle.take() {
-                    let _ = h.join();
-                }
-                self.cached_daily = None;
-                self.summaries = self.mgr.db().query_usage(&self.app_type, &self.range).unwrap_or_default();
-                if !self.summaries.is_empty() && self.state.selected().is_none() {
-                    self.state.select(Some(0));
-                }
+            self.cached_daily = None;
+            self.summaries = self.mgr.db().query_usage(&self.app_type, &self.range).unwrap_or_default();
+            if !self.summaries.is_empty() && self.state.selected().is_none() {
+                self.state.select(Some(0));
             }
         }
     }
