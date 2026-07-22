@@ -8,8 +8,11 @@ impl Db {
     pub fn insert_provider(&self, p: &Provider, app_type: &str) -> Result<(), rusqlite::Error> {
         let source_str: &str = p.source.as_str();
         self.conn().execute(
-            "INSERT OR REPLACE INTO providers (id, app_type, name, api_url, api_key, source)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO providers (id, app_type, name, api_url, api_key, source)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(id, app_type) DO UPDATE SET
+                name=excluded.name, api_url=excluded.api_url,
+                api_key=excluded.api_key, source=excluded.source",
             params![p.id, app_type, p.name, p.api_url, p.api_key, source_str],
         )?;
         Ok(())
@@ -80,22 +83,27 @@ impl Db {
                 )?;
             }
         }
-        // Demote system providers that no longer exist in TOML
-        if !toml_ids.is_empty() {
+        // Demote system providers that no longer exist in TOML (always run —
+        // even when toml is empty, to clean up providers removed from defaults)
+        {
             let placeholders: Vec<String> = toml_ids.iter().enumerate()
                 .map(|(i, _)| format!("?{}", i + 2))
                 .collect();
-            let sql = format!(
-                "UPDATE providers SET source = 'user' WHERE app_type = ?1 AND source = 'system' AND id NOT IN ({})",
-                placeholders.join(",")
-            );
+            let sql = if toml_ids.is_empty() {
+                "UPDATE providers SET source = 'user' WHERE app_type = ?1 AND source = 'system'"
+            } else {
+                &format!(
+                    "UPDATE providers SET source = 'user' WHERE app_type = ?1 AND source = 'system' AND id NOT IN ({})",
+                    placeholders.join(",")
+                )
+            };
             let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
             param_values.push(Box::new(app_type.to_string()));
             for id in &toml_ids {
                 param_values.push(Box::new(id.to_string()));
             }
             self.conn().execute(
-                &sql,
+                sql,
                 rusqlite::params_from_iter(param_values.iter().map(|p| p.as_ref())),
             )?;
         }
@@ -109,8 +117,12 @@ impl Db {
     pub fn insert_profile(&self, provider_id: &str, p: &Profile) -> Result<(), rusqlite::Error> {
         let source_str: &str = p.source.as_str();
         self.conn().execute(
-            "INSERT OR REPLACE INTO profiles (id, name, provider_id, reasoning_model, task_model, is_default, source)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO profiles (id, name, provider_id, reasoning_model, task_model, is_default, source)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(id) DO UPDATE SET
+                name=excluded.name, provider_id=excluded.provider_id,
+                reasoning_model=excluded.reasoning_model, task_model=excluded.task_model,
+                is_default=excluded.is_default, source=excluded.source",
             params![p.id, p.name, provider_id, p.reasoning_model, p.task_model, p.default as i32, source_str],
         )?;
         Ok(())

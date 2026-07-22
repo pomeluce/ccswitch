@@ -125,11 +125,11 @@ fn handle_list(mgr: &ConfigManager, providers_only: bool, _profiles_only: bool) 
 fn handle_add(mgr: &ConfigManager, what: &str, parent_provider: Option<&str>) -> Result<()> {
     match what {
         "provider" => {
-            use dialoguer::Input;
+            use dialoguer::{Input, Password};
             let id: String = Input::new().with_prompt("Provider ID").interact_text()?;
             let name: String = Input::new().with_prompt("Name").interact_text()?;
             let api_url: String = Input::new().with_prompt("API URL").interact_text()?;
-            let api_key: String = Input::new().with_prompt("API Key (or env:VAR)").interact_text()?;
+            let api_key: String = Password::new().with_prompt("API Key (or env:VAR)").interact()?;
             let p = crate::core::models::Provider {
                 id, name, api_url, api_key,
                 profiles: vec![],
@@ -274,7 +274,7 @@ fn handle_history(mgr: &ConfigManager, project: Option<&str>, search: Option<&st
     println!("{:<6} {:<40} {:<12} {:>8} {:>6} Profile", "Date", "Title", "Project", "Tokens", "Msgs");
     println!("{}", "-".repeat(100));
     for s in &sessions {
-        let date = &s.start_time[5..16]; // "MM-DD HH:MM"
+        let date = s.start_time.get(5..16).unwrap_or(&s.start_time); // "MM-DD HH:MM", fallback safety
         let raw = s.title.as_deref().unwrap_or(&s.id);
         let is_uuid = raw.len() >= 32 && raw.chars().filter(|c| *c == '-').count() >= 4;
         let title: String = if is_uuid {

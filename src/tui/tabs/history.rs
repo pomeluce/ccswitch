@@ -33,6 +33,12 @@ pub struct HistoryTab {
     pub launch_project: Option<String>,
     pub launch_session_id: Option<String>,
     confirm_button: usize, // 0=Confirm, 1=Cancel
+    /// Cached active provider/profile for session detail panel (avoid per-frame DB reads)
+    cached_prov_name: String,
+    cached_prof_name: String,
+    /// Cached token count for the selected session
+    cached_tokens: Option<(i64, i64)>,
+    cached_tokens_sid: String,
     mgr: Arc<ConfigManager>,
 }
 
@@ -63,6 +69,10 @@ impl HistoryTab {
             launch_project: None,
             launch_session_id: None,
             confirm_button: 0,
+            cached_prov_name: String::new(),
+            cached_prof_name: String::new(),
+            cached_tokens: None,
+            cached_tokens_sid: String::new(),
             mgr,
         }
     }
@@ -205,12 +215,18 @@ impl TabContent for HistoryTab {
         // Right panel: detail preview
         if let Some(idx) = self.state.selected() {
             if let Some(s) = self.sessions.get(idx) {
-                let tokens = self.mgr.db().query_session_tokens(&s.id).ok();
-                let active_prov = self.mgr.get_setting("active_provider").unwrap_or_default();
-                let active_prof = self.mgr.get_setting("active_profile").unwrap_or_default();
-                let prov_name = if active_prov.is_empty() { None } else { Some(active_prov.as_str()) };
-                let prof_name = if active_prof.is_empty() { None } else { Some(active_prof.as_str()) };
-                render_session_detail(f, right_chunks[0], s, tokens, prov_name, prof_name);
+                // Cache tokens and provider/profile names — reload only on selection change
+                if self.cached_tokens_sid != s.id {
+                    self.cached_tokens = self.mgr.db().query_session_tokens(&s.id).ok();
+                    self.cached_tokens_sid = s.id.clone();
+                    let prov = self.mgr.get_setting("active_provider").unwrap_or_default();
+                    let prof = self.mgr.get_setting("active_profile").unwrap_or_default();
+                    self.cached_prov_name = prov;
+                    self.cached_prof_name = prof;
+                }
+                let prov_name = if self.cached_prov_name.is_empty() { None } else { Some(self.cached_prov_name.as_str()) };
+                let prof_name = if self.cached_prof_name.is_empty() { None } else { Some(self.cached_prof_name.as_str()) };
+                render_session_detail(f, right_chunks[0], s, self.cached_tokens, prov_name, prof_name);
             } else {
                 render_empty_detail(f, right_chunks[0], "No session selected");
             }

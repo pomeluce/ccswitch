@@ -11,7 +11,9 @@ impl Db {
     /// Open (or create) the database at `path`, applying schema migrations as needed.
     pub fn open(path: &Path) -> Result<Self, anyhow::Error> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).ok();
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                tracing::warn!("Failed to create DB directory '{}': {}", parent.display(), e);
+            }
         }
 
         // Clean orphaned WAL/SHM files (e.g. after manual DB deletion or crash)
@@ -28,7 +30,10 @@ impl Db {
 
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
-            .unwrap_or(0);
+            .inspect_err(|e| {
+                tracing::warn!("Failed to read DB user_version (corrupt DB?): {}", e);
+            })
+            .unwrap_or(migrations::CURRENT_USER_VERSION); // only migrate if genuinely too old
         if version < migrations::CURRENT_USER_VERSION {
             tracing::info!(
                 "Applying DB migrations v{} → v{}",

@@ -15,6 +15,8 @@ pub struct App {
     pub history_tab: HistoryTab,
     pub settings_tab: SettingsTab,
     pub should_quit: bool,
+    /// cached proxy_mode to avoid per-frame DB query
+    proxy_mode: bool,
     /// 30s polling channel — receives true when JSONL files change
     poll_rx: Option<mpsc::Receiver<bool>>,
 }
@@ -22,6 +24,7 @@ pub struct App {
 impl App {
     pub fn new(db_path: &std::path::Path, defaults_path: Option<&std::path::Path>) -> anyhow::Result<Self> {
         let mgr = Arc::new(ConfigManager::new(db_path, defaults_path)?);
+        let proxy_mode = mgr.get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false);
         let providers_tab = ProvidersTab::new(mgr.clone());
         let usage_tab = UsageTab::new(mgr.clone());
         let history_tab = HistoryTab::new(mgr.clone());
@@ -36,6 +39,7 @@ impl App {
             history_tab,
             settings_tab,
             should_quit: false,
+            proxy_mode,
             poll_rx,
         })
     }
@@ -52,6 +56,9 @@ impl App {
         while !self.should_quit {
             self.usage_tab.poll_scan_events();
             self.poll_file_changes();
+
+            // Refresh proxy_mode once per tick (cheap DB read, avoids per-frame query)
+            self.proxy_mode = self.mgr.get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false);
 
             terminal.draw(|f| self.render(f))?;
 
@@ -186,7 +193,7 @@ impl App {
             ])
             .areas(main_area);
 
-        let is_proxy = self.mgr.get_setting("proxy_mode").map(|v| v == "true").unwrap_or(false);
+        let is_proxy = self.proxy_mode;
         render_sidebar(f, sidebar_area, self.active_tab, is_proxy);
         render_app_bar(f, app_bar_area);
 

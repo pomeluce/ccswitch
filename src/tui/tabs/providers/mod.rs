@@ -207,6 +207,9 @@ impl ProvidersTab {
 
     fn do_add_profile(&mut self) {
         let prov_id = self.selected_provider().map(|p| p.id.clone()).unwrap_or_default();
+        if prov_id.is_empty() {
+            return;
+        }
         self.edit_form = Some(EditForm {
             fields: [String::new(), String::new(), String::new(), String::new()],
             cursors: [0, 0, 0, 0],

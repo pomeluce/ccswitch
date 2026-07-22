@@ -10,11 +10,17 @@ pub fn sync_active_from_settings(mgr: &ConfigManager) {
     }
     let content = match std::fs::read_to_string(&settings_path) {
         Ok(c) => c,
-        Err(_) => return,
+        Err(e) => {
+            tracing::warn!("Failed to read settings.json for sync: {}", e);
+            return;
+        }
     };
     let parsed: serde_json::Value = match serde_json::from_str(&content) {
         Ok(v) => v,
-        Err(_) => return,
+        Err(e) => {
+            tracing::warn!("Failed to parse settings.json for sync: {}", e);
+            return;
+        }
     };
     let source = parsed
         .get("last_switch")
@@ -34,11 +40,22 @@ pub fn sync_active_from_settings(mgr: &ConfigManager) {
             .any(|p| p.id == pid && p.profiles.iter().any(|pr| pr.id == pfid))
         {
             if let Err(e) = mgr.set_setting("active_provider", pid) {
-                tracing::error!("sync: failed to save active_provider: {}", e);
+                tracing::warn!("sync: failed to save active_provider: {}", e);
             }
             if let Err(e) = mgr.set_setting("active_profile", pfid) {
-                tracing::error!("sync: failed to save active_profile: {}", e);
+                tracing::warn!("sync: failed to save active_profile: {}", e);
             }
+        }
+
+        // Restore proxy_mode from last switch
+        let mode = parsed
+            .get("last_switch")
+            .and_then(|v| v.get("mode"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("local");
+        let is_proxy = mode == "proxy";
+        if let Err(e) = mgr.set_setting("proxy_mode", &is_proxy.to_string()) {
+            tracing::warn!("sync: failed to save proxy_mode: {}", e);
         }
     }
 }

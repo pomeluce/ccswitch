@@ -1,6 +1,5 @@
 use std::sync::atomic::{AtomicU8, Ordering};
 
-#[allow(dead_code)]
 pub struct Lang {
     // Sidebar
     pub tab_providers: &'static str,
@@ -103,15 +102,10 @@ pub struct Lang {
     pub setting_language: &'static str,
 
     // App bar
-    pub app_claude: &'static str,
-    pub app_codex: &'static str,
 
     // Confirm popup
     // Profile count
     pub profiles_count: &'static str,
-
-    // Errors
-    pub error_launch_claude: &'static str,
 }
 
 pub const LANGS: &[(&str, &Lang)] = &[("English", &LANG_EN), ("中文", &LANG_ZH)];
@@ -210,11 +204,8 @@ const LANG_ZH: Lang = Lang {
     setting_theme: "主题",
     setting_mode: "模式",
     setting_language: "语言",
-    app_claude: " Claude ",
-    app_codex: " Codex ",
 
     profiles_count: "个配置",
-    error_launch_claude: "启动 Claude 失败",
 };
 
 const LANG_EN: Lang = Lang {
@@ -311,11 +302,8 @@ const LANG_EN: Lang = Lang {
     setting_theme: "Theme",
     setting_mode: "Mode",
     setting_language: "Language",
-    app_claude: " Claude ",
-    app_codex: " Codex ",
 
     profiles_count: "profiles",
-    error_launch_claude: "Failed to launch Claude",
 };
 
 static ACTIVE: AtomicU8 = AtomicU8::new(0);

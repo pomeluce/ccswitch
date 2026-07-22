@@ -101,9 +101,10 @@ impl ConfigManager {
             }).collect()
         } else { vec![] };
 
-        // Sync TOML providers/profiles to DB (source='system')
-        if !system_providers.is_empty() {
-            db.sync_system_providers("claude", &system_providers).ok();
+        // Sync TOML providers/profiles to DB (source='system').
+        // Always call — even when empty, to demote stale system providers.
+        if let Err(e) = db.sync_system_providers("claude", &system_providers) {
+            tracing::warn!("Failed to sync system providers to DB: {}", e);
         }
 
         Ok(ConfigManager { db, system_providers })

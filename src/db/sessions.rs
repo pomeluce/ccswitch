@@ -52,11 +52,22 @@ impl Db {
 
     /// Find a session JSONL file by name under the projects directory (recursive).
     fn find_session_file(dir: &std::path::Path, file_name: &str) -> Option<std::path::PathBuf> {
+        Self::find_session_file_impl(dir, file_name, 10)
+    }
+
+    fn find_session_file_impl(dir: &std::path::Path, file_name: &str, depth: usize) -> Option<std::path::PathBuf> {
+        if depth == 0 {
+            return None;
+        }
         let entries = std::fs::read_dir(dir).ok()?;
         for entry in entries.flatten() {
             let path = entry.path();
+            // Skip symlinks to avoid cycles
+            if path.is_symlink() {
+                continue;
+            }
             if path.is_dir() {
-                if let Some(found) = Self::find_session_file(&path, file_name) {
+                if let Some(found) = Self::find_session_file_impl(&path, file_name, depth - 1) {
                     return Some(found);
                 }
             } else if path.file_name().map_or(false, |n| n == file_name) {
